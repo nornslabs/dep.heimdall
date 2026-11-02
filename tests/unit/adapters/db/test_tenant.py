@@ -20,8 +20,7 @@ def test_select_for_tenant_filters_on_installation_id() -> None:
     assert "WHERE unit_test_gadgets.installation_id = 7" in sql
 
 
-def test_tenant_scoped_column_is_indexed_and_required() -> None:
+def test_tenant_scoped_column_is_required() -> None:
     column = Gadget.__table__.c.installation_id  # pyright: ignore[reportAttributeAccessIssue]
 
     assert column.nullable is False
-    assert column.index is True

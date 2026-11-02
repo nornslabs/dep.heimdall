@@ -9,3 +9,5 @@ Installations, repos and layered heimdall.yml config.
 | `domain.py` | Pure logic, no I/O |
 | `ports.py` | Adapter interfaces |
 | `models.py` | Persistence models |
+
+Tables (`models.py`): `installations` (the tenant; `installation_id` is the key), `repos` (effective heimdall.yml in `config`).

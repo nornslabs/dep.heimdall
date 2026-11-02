@@ -1,5 +1,6 @@
 """Tenant scoping: every table carries installation_id and every query filters on it."""
 
+from sqlalchemy import BigInteger
 from sqlmodel import Field, SQLModel, select
 from sqlmodel.sql.expression import SelectOfScalar
 
@@ -7,9 +8,13 @@ from heimdall.shared.ids import InstallationId
 
 
 class TenantScoped(SQLModel):
-    """Base for every table model; adds the required, indexed ``installation_id`` column."""
+    """Base for every table model; adds the required BIGINT ``installation_id`` column.
 
-    installation_id: int = Field(index=True, nullable=False)
+    It has no index of its own: tables that are queried by tenant declare a composite index
+    starting with ``installation_id`` (see the LLD).
+    """
+
+    installation_id: int = Field(sa_type=BigInteger, nullable=False)
 
 
 def select_for_tenant[ModelT: TenantScoped](
