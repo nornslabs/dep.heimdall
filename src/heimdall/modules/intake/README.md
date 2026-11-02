@@ -9,3 +9,5 @@ The Gate: plain-code intake rule checks.
 | `domain.py` | Pure logic, no I/O |
 | `ports.py` | Adapter interfaces |
 | `models.py` | Persistence models |
+
+Tables (`models.py`): `intake_results` (one row per rule per head commit).

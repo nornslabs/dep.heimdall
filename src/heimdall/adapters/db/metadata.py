@@ -11,13 +11,21 @@ import heimdall.modules
 metadata = SQLModel.metadata
 """The MetaData every table model registers with."""
 
+SHARED_TABLE_MODULES = ("heimdall.adapters.db.outbox",)
+"""Tables written by every module, so they live in the adapter instead of one module."""
+
 
 def import_all_models() -> list[str]:
-    """Import each module's ``models.py`` so its tables register on ``metadata``.
+    """Import every table model so it registers on ``metadata``.
+
+    That is each feature module's ``models.py`` plus the shared tables in
+    ``SHARED_TABLE_MODULES``.
 
     Returns:
-        Dotted names of the models modules that were imported, in sorted order.
+        Dotted names of the feature modules' ``models`` that were imported, in sorted order.
     """
+    for dotted in SHARED_TABLE_MODULES:
+        importlib.import_module(dotted)
     imported: list[str] = []
     for module_info in sorted(pkgutil.iter_modules(heimdall.modules.__path__), key=_name):
         if not module_info.ispkg:

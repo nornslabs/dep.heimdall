@@ -9,3 +9,5 @@ Reproduction runs on GitHub Actions and their verdicts.
 | `domain.py` | Pure logic, no I/O |
 | `ports.py` | Adapter interfaces |
 | `models.py` | Persistence models |
+
+Tables (`models.py`): `repro_runs` (unique `(pr_id, head_sha, attempt)`; `with_fix` / `without_fix` results and `verdict`).

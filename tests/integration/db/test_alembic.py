@@ -1,25 +1,36 @@
-from pathlib import Path
-
 import pytest
-from alembic import command
-from alembic.config import Config
-from sqlalchemy import Connection, inspect
+from alembic.autogenerate import compare_metadata
+from alembic.runtime.migration import MigrationContext
+from sqlalchemy import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine
+
+from heimdall.adapters.db.metadata import import_all_models, metadata
 
 pytestmark = pytest.mark.integration
 
-ALEMBIC_INI = Path(__file__).resolve().parents[3] / "alembic.ini"
+TEST_TABLE_PREFIXES = ("test_", "unit_test_")
 
 
-def _upgrade_head(connection: Connection) -> list[str]:
-    config = Config(str(ALEMBIC_INI))
-    config.attributes["connection"] = connection
-    command.upgrade(config, "head")
-    return inspect(connection).get_table_names()
+def _is_test_table(diff: object) -> bool:
+    text = repr(diff)
+    return any(f"'{prefix}" in text or f"Table('{prefix}" in text for prefix in TEST_TABLE_PREFIXES)
 
 
-async def test_alembic_upgrade_head_runs_in_given_schema(engine: AsyncEngine) -> None:
-    async with engine.begin() as conn:
-        tables = await conn.run_sync(_upgrade_head)
+def _schema_drift(connection: Connection) -> list[object]:
+    import_all_models()
+    context = MigrationContext.configure(connection, opts={"compare_type": True})
+    return [diff for diff in compare_metadata(context, metadata) if not _is_test_table(diff)]
 
-    assert "alembic_version" in tables
+
+async def test_migrations_match_the_models(engine: AsyncEngine) -> None:
+    async with engine.connect() as conn:
+        drift = await conn.run_sync(_schema_drift)
+
+    assert drift == []
+
+
+async def test_migrations_record_their_version(engine: AsyncEngine) -> None:
+    async with engine.connect() as conn:
+        version = await conn.exec_driver_sql("SELECT version_num FROM alembic_version")
+
+        assert version.scalar_one()
