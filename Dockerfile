@@ -19,6 +19,7 @@ COPY src ./src
 COPY apps ./apps
 COPY agents ./agents
 COPY migrations ./migrations
+COPY alembic.ini ./
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN uv sync --locked --no-dev
 

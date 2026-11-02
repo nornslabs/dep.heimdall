@@ -1,1 +1,1 @@
-"""Async database engine, unit of work and Alembic glue."""
+"""Postgres adapter: async engine, unit of work, tenant filter and model metadata."""
