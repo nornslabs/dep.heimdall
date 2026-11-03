@@ -63,7 +63,9 @@ class PrEvent:
     linked_issue: int | None = None
     room_id: str | None = None
     room_message: str | None = None
+    repro_test_cmd: str | None = None
     repo_full_name: str = ""
+    base_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -79,6 +81,7 @@ class PrSnapshot:
     linked_issue: int | None
     state: PrState
     state_version: int
+    base_ref: str | None = None
 
 
 def next_state(state: PrState | None, event: EventKind, facts: Facts) -> Transition | Rejected:

@@ -7,8 +7,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
+from heimdall.modules.approval.workflow_models import WorkflowDispatchApproval
 from heimdall.modules.repro.api import (
     MAX_REPRO_RUNS,
     ReproStatus,
@@ -51,6 +53,7 @@ async def _checking_pr(sessions: async_sessionmaker[AsyncSession]) -> tuple[Tena
             author="octocat",
             head_sha="head-1",
             base_sha="base-1",
+            base_ref="main",
             kind=EventKind.PR_OPENED,
             facts=Facts(),
         ),
@@ -64,6 +67,7 @@ async def _checking_pr(sessions: async_sessionmaker[AsyncSession]) -> tuple[Tena
                 )
             )
         ).one()
+        assert pr.base_ref == "main"
         pr_id = pr.id
     await on_step_done(
         sessions,
@@ -81,7 +85,7 @@ async def test_start_run_queues_execution_and_timeout_together(
     engine: AsyncEngine,
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Persist a queued attempt and both jobs in the same transaction."""
+    """Persist a queued attempt, authorized dispatch, and deadline job together."""
     ctx, pr_id = await _checking_pr(sessions)
     run = await start_run(sessions, ctx, pr_id, "head-1", "pytest -q")
 
@@ -92,7 +96,27 @@ async def test_start_run_queues_execution_and_timeout_together(
             text("SELECT count(*) FROM procrastinate_jobs WHERE args->>'run_id' = :run_id"),
             {"run_id": str(run.id)},
         )
-    assert jobs == 2
+    assert jobs == 1
+    async with unit_of_work(sessions) as session:
+        dispatch = (
+            await session.exec(
+                select_for_tenant(OutboxMessage, ctx.installation_id).where(
+                    OutboxMessage.kind == "github.workflow_dispatch"
+                )
+            )
+        ).one()
+        approval = (
+            await session.exec(
+                select_for_tenant(WorkflowDispatchApproval, ctx.installation_id).where(
+                    WorkflowDispatchApproval.repro_run_id == run.id
+                )
+            )
+        ).one()
+        assert dispatch.payload["approval_id"] == str(approval.id)
+        assert dispatch.payload["request_hash"] == approval.request_hash
+        assert dispatch.payload["ref"] == "main"
+        assert dispatch.payload["inputs"]["base_sha"] == "base-1"
+        assert approval.approver == "policy:repro_dispatch"
 
 
 async def test_get_run_returns_attempt_for_its_installation(

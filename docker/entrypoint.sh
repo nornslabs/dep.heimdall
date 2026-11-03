@@ -9,7 +9,10 @@ case "$role" in
   api|worker|mcp|bridge)
     exec python "apps/$role/main.py" ;;
   huginn|loki|heimdall)
-    exec python "agents/$role/agent.py" ;;
+if [ "$role" = huginn ]; then
+exec python agents/huginn/runner.py
+fi
+exec python "agents/$role/agent.py" ;;
   *)
     echo "usage: entrypoint.sh {migrate|api|worker|mcp|bridge|huginn|loki|heimdall}" >&2
     exit 64 ;;

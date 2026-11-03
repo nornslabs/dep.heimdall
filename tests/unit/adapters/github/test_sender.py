@@ -110,3 +110,98 @@ async def test_sender_never_posts_when_approval_check_fails(
         await sender.send(_message("wrong-hash"))
 
     assert client.request is None
+
+
+@pytest.mark.asyncio
+async def test_sender_dispatches_only_an_authorized_exact_workflow_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Recheck policy authorization and preserve the approved workflow inputs."""
+    import hashlib
+    import json
+
+    run_id = uuid.uuid4()
+    approval_id = uuid.uuid4()
+    request = {
+        "repo_full_name": "octo/demo",
+        "workflow": "heimdall-repro.yml",
+        "ref": "base-sha",
+        "inputs": {
+            "repro_run_id": str(run_id),
+            "pr_number": "7",
+            "head_sha": "head-sha",
+            "base_sha": "base-sha",
+            "test_cmd": "pytest -q",
+        },
+    }
+    request_hash = hashlib.sha256(
+        json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    message = cast(
+        OutboxMessage,
+        type(
+            "OutboxStub",
+            (),
+            {
+                "id": uuid.uuid4(),
+                "installation_id": 12,
+                "kind": "github.workflow_dispatch",
+                "payload": {
+                    **request,
+                    "approval_id": str(approval_id),
+                    "request_hash": request_hash,
+                },
+                "idempotency_key": "github:repro-dispatch:test",
+            },
+        )(),
+    )
+
+    async def authorized(*args: object) -> bool:
+        return True
+
+    monkeypatch.setattr(sender_module, "verify_repro_workflow_dispatch", authorized)
+    client = FakeClient()
+    sender = GitHubSender(
+        cast(async_sessionmaker[AsyncSession], object()),
+        cast(GitHubAppClients, FakeClients(client)),
+    )
+    await sender.send(message)
+    assert client.request is not None
+    method, path, kwargs = client.request
+    assert method == "POST"
+    assert path == "/repos/octo/demo/actions/workflows/heimdall-repro.yml/dispatches"
+    assert kwargs["json"] == {"ref": "base-sha", "inputs": request["inputs"]}
+
+
+@pytest.mark.asyncio
+async def test_sender_rejects_modified_workflow_dispatch_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reject altered dispatch inputs before checking authorization or calling GitHub."""
+    message = _message("unused")
+    message.kind = "github.workflow_dispatch"
+    message.payload.update(
+        {
+            "repo_full_name": "octo/demo",
+            "workflow": "heimdall-repro.yml",
+            "ref": "base-sha",
+            "inputs": {"repro_run_id": str(uuid.uuid4())},
+            "approval_id": str(uuid.uuid4()),
+            "request_hash": "incorrect",
+        }
+    )
+
+    async def authorization_must_not_be_checked(*args: object) -> bool:
+        pytest.fail("modified payload reached approval lookup")
+
+    monkeypatch.setattr(
+        sender_module, "verify_repro_workflow_dispatch", authorization_must_not_be_checked
+    )
+    client = FakeClient()
+    sender = GitHubSender(
+        cast(async_sessionmaker[AsyncSession], object()),
+        cast(GitHubAppClients, FakeClients(client)),
+    )
+    with pytest.raises(ValueError, match="request hash changed"):
+        await sender.send(message)
+    assert client.request is None

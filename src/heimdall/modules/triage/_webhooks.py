@@ -68,11 +68,47 @@ async def receive_webhook(
         task_name = (
             "tenancy.on_installation_event"
             if event_name in {"installation", "installation_repositories"}
+            else "actions.process_workflow_run"
+            if event_name == "workflow_run" and action == "completed"
             else "triage.handle_event"
         )
-        await enqueue(
-            session,
-            task_name,
-            {"installation_id": installation_id, "delivery_id": delivery_id},
-        )
-    return True
+        task_args: dict[str, int | str] = {
+            "installation_id": installation_id,
+            "delivery_id": delivery_id,
+        }
+        if task_name == "actions.process_workflow_run":
+            task_args.update(_workflow_run_args(payload_values))
+        await enqueue(session, task_name, task_args)
+        return True
+
+
+def _workflow_run_args(payload: dict[str, object]) -> dict[str, int | str]:
+    """Extract bounded routing metadata from an authenticated workflow webhook."""
+    raw_run = payload.get("workflow_run")
+    raw_repo = payload.get("repository")
+    if not isinstance(raw_run, dict) or not isinstance(raw_repo, dict):
+        raise ValueError("workflow_run webhook is missing run or repository data")
+    run = cast(dict[str, object], raw_run)
+    repo = cast(dict[str, object], raw_repo)
+    workflow = run.get("workflow")
+    if not isinstance(workflow, dict):
+        raise ValueError("workflow_run webhook is missing workflow metadata")
+    workflow_data = cast(dict[str, object], workflow)
+    run_id = run.get("id")
+    head_sha = run.get("head_sha")
+    repo_full_name = repo.get("full_name")
+    workflow_path = workflow_data.get("path")
+    if (
+        not isinstance(run_id, int)
+        or run_id <= 0
+        or not isinstance(head_sha, str)
+        or not isinstance(repo_full_name, str)
+        or not isinstance(workflow_path, str)
+    ):
+        raise ValueError("workflow_run webhook has invalid routing metadata")
+    return {
+        "workflow_run_id": run_id,
+        "head_sha": head_sha,
+        "repo_full_name": repo_full_name,
+        "workflow_path": workflow_path.partition("@")[0],
+    }

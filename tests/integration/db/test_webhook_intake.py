@@ -58,3 +58,34 @@ async def test_invalid_installation_payload_does_not_create_records(
             {"id": delivery_id},
         )
     assert event is None
+
+
+async def test_completed_repro_workflow_queues_result_ingestion(
+    engine: AsyncEngine,
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """Route completed workflow events to the artifact reader, not PR triage."""
+    delivery_id = f"workflow-{uuid.uuid4().hex}"
+    payload = {
+        "installation": {"id": 91_002},
+        "repository": {"full_name": "seeded/demo"},
+        "workflow_run": {
+            "id": 3001,
+            "head_sha": "a" * 40,
+            "workflow": {"path": ".github/workflows/heimdall-repro.yml"},
+        },
+    }
+    assert await receive_webhook(sessions, delivery_id, "workflow_run", "completed", payload)
+    async with engine.connect() as connection:
+        job = await connection.scalar(
+            text("SELECT args FROM procrastinate_jobs WHERE args->>'delivery_id' = :id"),
+            {"id": delivery_id},
+        )
+    assert job == {
+        "installation_id": 91_002,
+        "delivery_id": delivery_id,
+        "workflow_run_id": 3001,
+        "head_sha": "a" * 40,
+        "repo_full_name": "seeded/demo",
+        "workflow_path": ".github/workflows/heimdall-repro.yml",
+    }

@@ -162,7 +162,7 @@ async def test_saved_pull_request_delivery_reaches_triage_state_machine(
             "number": 1,
             "user": {"login": "octocat"},
             "head": {"sha": "head-1"},
-            "base": {"sha": "base-sha"},
+            "base": {"sha": "base-sha", "ref": "main"},
         },
     }
     assert await receive_webhook(sessions, delivery_id, "pull_request", "opened", payload)
@@ -262,9 +262,23 @@ async def test_run_intake_saves_checklist_and_switch_outbox_atomically(
             text("SELECT payload FROM outbox WHERE idempotency_key = :key"),
             {"key": "triage:intake-delivery-1:outbox_thread_and_checklist"},
         )
+        huginn_job = await connection.execute(
+            text(
+                "SELECT args FROM procrastinate_jobs "
+                "WHERE args->>'pr_id' = :pr_id AND args->>'test_cmd' IS NOT NULL"
+            ),
+            {"pr_id": str(pr_id)},
+        )
         assert pr.state == "checking"
         assert len(saved_results.all()) == 6
         assert "Intake checklist" in outbox.scalar_one()["message"]
+    assert huginn_job.scalar_one() == {
+        "installation_id": ctx.installation_id,
+        "pr_id": str(pr_id),
+        "head_sha": "head-1",
+        "test_cmd": "pytest -q",
+        "room_id": "switch-room-1",
+    }
 
 
 async def test_intake_failure_publishes_visible_error_to_switch(

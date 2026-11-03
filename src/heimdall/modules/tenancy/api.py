@@ -12,6 +12,7 @@ from heimdall.modules.tenancy.domain import (
 )
 from heimdall.modules.tenancy.ports import ConfigFileReader
 from heimdall.modules.tenancy.service import (
+    get_repo_full_name_in_transaction,
     get_repo_id,
     get_repo_id_in_transaction,
     get_tenant,
@@ -33,6 +34,7 @@ __all__ = [
     "RepoConfig",
     "RepoSummary",
     "ReviewConfig",
+    "get_repo_full_name_in_transaction",
     "get_repo_id",
     "get_repo_id_in_transaction",
     "get_tenant",

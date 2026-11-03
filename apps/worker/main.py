@@ -5,12 +5,14 @@ import asyncio
 from procrastinate import App
 
 from apps.worker.tasks import (
+    register_actions_result_task,
     register_intake_task,
     register_repro_timeout_task,
     register_triage_task,
 )
 from heimdall.adapters.db.engine import create_engine, make_session_factory
 from heimdall.adapters.db.outbox.sender import ChannelSender, run_outbox_loop
+from heimdall.adapters.github.actions import GitHubActionsResults
 from heimdall.adapters.github.auth import GitHubAppClients, load_private_key
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.adapters.github.sender import GitHubSender
@@ -51,6 +53,7 @@ async def run_worker() -> None:
     register_intake_task(queue_app, sessions, GitHubApiReader(github_clients))
     register_triage_task(queue_app, sessions)
     register_repro_timeout_task(queue_app, sessions)
+    register_actions_result_task(queue_app, sessions, GitHubActionsResults(github_clients))
     stop = asyncio.Event()
     log.info("worker_started", outbox_channels=sorted(senders))
     try:

@@ -24,7 +24,7 @@ Public functions: `receive_webhook`, `handle_webhook_delivery`, `handle_event`, 
 | From | Event | Guard | To | Effects |
 |---|---|---|---|---|
 | none | `pull_request.opened` | repo enabled | `received` | enqueue intake |
-| `received` | `intake.done` | all rules pass | `checking` | outbox thread + checklist; room: ready for repro, ready for review |
+| `received` | `intake.done` | all rules pass | `checking` | outbox thread + checklist; enqueue Huginn with validated repro command; room: ready for review |
 | `received` | `intake.done` | any rule fails | `intake_failed` | outbox failed rules |
 | `checking` | `repro.finished` / `review.finished` | both done | `card_posted` | room: ready for card |
 | `checking` | either finished | only one done | `checking` | none |

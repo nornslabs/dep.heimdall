@@ -1,5 +1,7 @@
 """Transactional use cases for draft approval."""
 
+import hashlib
+import json
 import uuid
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -11,6 +13,7 @@ from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.modules.approval._delivery import get_approved_draft
 from heimdall.modules.approval.domain import ApprovalRef, validate_approval
 from heimdall.modules.approval.models import Approval
+from heimdall.modules.approval.workflow_models import WorkflowDispatchApproval
 from heimdall.modules.desk.api import get_draft_in_transaction, hash_draft
 from heimdall.modules.tenancy.api import (
     ConfigFileReader,
@@ -23,6 +26,79 @@ from heimdall.modules.triage.api import get_pr_snapshot
 from heimdall.shared.context import TenantCtx
 from heimdall.shared.errors import DraftChanged, NotAMaintainer
 from heimdall.shared.github import RepoRef
+
+
+async def queue_repro_workflow_dispatch(
+    session: AsyncSession,
+    ctx: TenantCtx,
+    run_id: uuid.UUID,
+    repo_full_name: str,
+    workflow: str,
+    pr_number: int,
+    head_sha: str,
+    base_sha: str,
+    workflow_ref: str | None,
+    test_cmd: str,
+) -> None:
+    """Authorize and queue the exact reproduction workflow request atomically.
+
+    The reproduction service calls this only after validating the current PR head.
+    The fixed policy identity records why this non-comment GitHub write is allowed.
+    """
+    inputs = {
+        "repro_run_id": str(run_id),
+        "pr_number": str(pr_number),
+        "head_sha": head_sha,
+        "base_sha": base_sha,
+        "test_cmd": test_cmd,
+    }
+    if not workflow_ref:
+        raise ValueError("PR base branch is required for workflow dispatch")
+    request = {
+        "repo_full_name": repo_full_name,
+        "workflow": workflow,
+        "ref": workflow_ref,
+        "inputs": inputs,
+    }
+    request_hash = hashlib.sha256(
+        json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    authorization = WorkflowDispatchApproval(
+        installation_id=ctx.installation_id,
+        repro_run_id=run_id,
+        request_hash=request_hash,
+        approver="policy:repro_dispatch",
+    )
+    session.add(authorization)
+    await session.flush()
+    await write_outbox(
+        session,
+        installation_id=ctx.installation_id,
+        channel="github",
+        kind="github.workflow_dispatch",
+        payload={**request, "approval_id": str(authorization.id), "request_hash": request_hash},
+        idempotency_key=f"github:repro-dispatch:{run_id}",
+    )
+
+
+async def verify_repro_workflow_dispatch(
+    sessions: async_sessionmaker[AsyncSession],
+    ctx: TenantCtx,
+    approval_id: uuid.UUID,
+    run_id: uuid.UUID,
+    request_hash: str,
+) -> bool:
+    """Confirm the tenant scoped policy approval matches a queued request."""
+    async with unit_of_work(sessions) as session:
+        result = await session.exec(
+            select_for_tenant(WorkflowDispatchApproval, ctx.installation_id).where(
+                WorkflowDispatchApproval.id == approval_id,
+                WorkflowDispatchApproval.repro_run_id == run_id,
+                WorkflowDispatchApproval.request_hash == request_hash,
+                WorkflowDispatchApproval.approver == "policy:repro_dispatch",
+            )
+        )
+        return result.first() is not None
 
 
 async def record_approval(
@@ -266,4 +342,11 @@ async def _enqueue_approved_comment(
     )
 
 
-__all__ = ["approve_by_policy", "get_approved_draft", "pause_auto_suggestions", "record_approval"]
+__all__ = [
+    "approve_by_policy",
+    "get_approved_draft",
+    "pause_auto_suggestions",
+    "queue_repro_workflow_dispatch",
+    "record_approval",
+    "verify_repro_workflow_dispatch",
+]

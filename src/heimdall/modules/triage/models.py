@@ -36,6 +36,7 @@ class Pr(TenantScoped, table=True):
     author: str
     head_sha: str
     base_sha: str
+    base_ref: str | None = None
     linked_issue: int | None = None
     state: str
     state_version: int = Field(default=0, sa_column_kwargs={"server_default": "0"})

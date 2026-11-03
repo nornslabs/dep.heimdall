@@ -7,6 +7,7 @@ from sqlmodel import Field
 
 from heimdall.adapters.db.columns import set_on_insert, uuid_pk
 from heimdall.adapters.db.tenant import TenantScoped
+from heimdall.modules.approval.workflow_models import WorkflowDispatchApproval
 
 
 class Approval(TenantScoped, table=True):
@@ -23,3 +24,6 @@ class Approval(TenantScoped, table=True):
     draft_hash: str
     via: str
     approved_at: datetime = set_on_insert()
+
+
+__all__ = ["Approval", "WorkflowDispatchApproval"]
