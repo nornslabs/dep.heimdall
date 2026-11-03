@@ -1,7 +1,8 @@
 # Switch adapter
 
 `RoomPort` is the bridge boundary for opening PR threads, posting thread replies or
-role mentions, reacting, and receiving room posts/reactions. `SwitchSender` implements
+role mentions, reacting, fetching reacted-to posts, resolving reactor usernames, and
+receiving room posts/reactions. `SwitchSender` implements
 it through Mattermost-compatible REST and WebSocket APIs. It also delivers `switch`
 outbox messages; those contain `channel_id` and `message`, with optional `root_id` for
 a thread reply. The worker enables outbox delivery only when `HEIMDALL_SWITCH_URL`

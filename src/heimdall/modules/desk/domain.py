@@ -131,6 +131,21 @@ def hash_draft(body: str) -> str:
     return hashlib.sha256(body.encode("utf-8")).hexdigest()
 
 
+def format_approval_message(
+    body: str,
+    draft_id: UUID,
+    body_hash: str,
+    installation_id: int,
+    repo_full_name: str,
+) -> str:
+    """Append hidden approval metadata while keeping the saved draft body unchanged."""
+    marker = (
+        f"<!-- heimdall-approval draft_id={draft_id} draft_hash={body_hash} "
+        f"installation_id={installation_id} repo={repo_full_name} -->"
+    )
+    return f"{body.rstrip()}\n\n{marker}"
+
+
 def _escape(value: str) -> str:
     """Escape user supplied Markdown punctuation for safe display."""
     return re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", value)
@@ -142,6 +157,7 @@ __all__ = [
     "CommandVerb",
     "DeskCommand",
     "DraftRef",
+    "format_approval_message",
     "hash_draft",
     "parse_command",
     "render_card",

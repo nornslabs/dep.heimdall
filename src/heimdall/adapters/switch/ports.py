@@ -21,6 +21,16 @@ class RoomEvent:
     emoji_name: str = ""
 
 
+@dataclass(frozen=True)
+class RoomPost:
+    """Post fields needed to process a reaction without trusting event text."""
+
+    id: str
+    channel_id: str
+    root_id: str
+    message: str
+
+
 class RoomPort(Protocol):
     """Operations the bridge needs from its shared room service."""
 
@@ -42,6 +52,14 @@ class RoomPort(Protocol):
 
     def listen(self, stop: asyncio.Event) -> AsyncIterator[RoomEvent]:
         """Yield room events and reconnect until ``stop`` is set."""
+        ...
+
+    async def get_post(self, post_id: str) -> RoomPost:
+        """Fetch a post so a reaction can be matched to its approval marker."""
+        ...
+
+    async def get_username(self, user_id: str) -> str:
+        """Resolve a Switch user id to the corresponding GitHub login."""
         ...
 
     async def send(self, message: OutboxMessage) -> None:

@@ -10,7 +10,7 @@ Public functions: `save_card`, `save_draft`, `render_card`, `hash_draft`, `parse
 |---|---|
 | `api.py` | Public interface; the only file other modules import |
 | `service.py` | Transactional use cases |
-| `domain.py` | Pure command parsing, card rendering and draft hashing |
+| `domain.py` | Pure command parsing, card rendering, draft hashing and approval metadata formatting |
 | `ports.py` | Adapter interfaces |
 | `models.py` | Persistence models |
 

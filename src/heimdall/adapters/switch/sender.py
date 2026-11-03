@@ -8,7 +8,7 @@ import httpx
 from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.switch import _websocket
 from heimdall.adapters.switch._rest import MattermostRest
-from heimdall.adapters.switch.ports import RoomEvent
+from heimdall.adapters.switch.ports import RoomEvent, RoomPost
 from heimdall.shared.errors import SwitchRequestFailed
 
 
@@ -49,6 +49,14 @@ class SwitchSender:
         if not post_id or not emoji_name:
             raise SwitchRequestFailed("Switch reaction requires post_id and emoji_name")
         await self._rest.add_reaction(post_id, emoji_name)
+
+    async def get_post(self, post_id: str) -> RoomPost:
+        """Fetch a Switch post by id for reaction handling."""
+        return await self._rest.get_post(post_id)
+
+    async def get_username(self, user_id: str) -> str:
+        """Resolve a Switch user id to its username."""
+        return await self._rest.get_username(user_id)
 
     async def listen(self, stop: asyncio.Event) -> AsyncIterator[RoomEvent]:
         """Yield posts and reactions until stopped, reconnecting after outages."""

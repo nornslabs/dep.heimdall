@@ -1,9 +1,10 @@
 """Mattermost REST operations used by the Switch room adapter."""
 
-from typing import Final
+from typing import Final, cast
 
 import httpx
 
+from heimdall.adapters.switch.ports import RoomPost
 from heimdall.shared.errors import SwitchRequestFailed, SwitchUnavailable
 
 POSTS_PATH: Final = "/api/v4/posts"
@@ -64,6 +65,28 @@ class MattermostRest:
             json={"user_id": "me", "post_id": post_id, "emoji_name": emoji_name},
         )
 
+    async def get_post(self, post_id: str) -> RoomPost:
+        """Fetch one Mattermost post by id."""
+        response = await self._request("GET", f"{POSTS_PATH}/{post_id}")
+        try:
+            payload = response.json()
+            return RoomPost(
+                id=_required_text(payload, "id"),
+                channel_id=_required_text(payload, "channel_id"),
+                root_id=_optional_text(payload, "root_id"),
+                message=_required_text(payload, "message"),
+            )
+        except (ValueError, TypeError, KeyError) as error:
+            raise SwitchRequestFailed("Switch returned invalid post data") from error
+
+    async def get_username(self, user_id: str) -> str:
+        """Resolve a Mattermost user id to its username."""
+        response = await self._request("GET", f"/api/v4/users/{user_id}")
+        try:
+            return _required_text(response.json(), "username")
+        except (ValueError, TypeError, KeyError) as error:
+            raise SwitchRequestFailed("Switch returned invalid user data") from error
+
     async def aclose(self) -> None:
         """Close the pooled HTTP client."""
         await self._client.aclose()
@@ -87,3 +110,25 @@ class MattermostRest:
         if response.status_code >= 500 or response.status_code == 429:
             raise SwitchUnavailable(f"Switch returned {response.status_code}")
         raise SwitchRequestFailed(f"Switch returned {response.status_code}")
+
+
+def _required_text(payload: object, key: str) -> str:
+    """Read a non-empty string field from a Mattermost response."""
+    if not isinstance(payload, dict):
+        raise TypeError("Switch response must be an object")
+    fields = cast(dict[str, object], payload)
+    value = fields.get(key)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"Switch response has invalid {key}")
+    return value
+
+
+def _optional_text(payload: object, key: str) -> str:
+    """Read a string field that Mattermost may leave empty."""
+    if not isinstance(payload, dict):
+        raise TypeError("Switch response must be an object")
+    fields = cast(dict[str, object], payload)
+    value = fields.get(key, "")
+    if not isinstance(value, str):
+        raise ValueError(f"Switch response has invalid {key}")
+    return value

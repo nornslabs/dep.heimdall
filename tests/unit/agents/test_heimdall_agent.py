@@ -81,6 +81,7 @@ async def test_build_review_card_saves_safe_matching_card_and_draft() -> None:
         456,
         uuid.uuid4(),
         7,
+        "owner/repo",
         "*unsafe title*",
         "head-7",
         "All checks pass",
@@ -97,6 +98,8 @@ async def test_build_review_card_saves_safe_matching_card_and_draft() -> None:
     assert tools.draft is not None
     assert r"\*unsafe title\*" in str(tools.draft["body"])
     assert r"src/a\.py:3" in str(tools.draft["body"])
+    assert "draft_id=" + str(result.draft_id) in result.approval_message
+    assert "repo=owner/repo" in result.approval_message
 
 
 async def test_handle_command_dispatches_supported_commands_and_ignores_other_text() -> None:

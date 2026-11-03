@@ -4,7 +4,13 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
-from heimdall.modules.desk.api import CardContent, DeskCommand, parse_command, render_card
+from heimdall.modules.desk.api import (
+    CardContent,
+    DeskCommand,
+    format_approval_message,
+    parse_command,
+    render_card,
+)
 from heimdall.modules.repro.api import ReproStatus, Verdict
 
 
@@ -74,6 +80,7 @@ class CardResult:
     draft_id: UUID
     body_hash: str
     fix_status: str
+    approval_message: str
 
 
 @dataclass(frozen=True)
@@ -89,6 +96,7 @@ async def build_review_card(
     installation_id: int,
     pr_id: UUID,
     number: int,
+    repo_full_name: str,
     title: str,
     head_sha: str,
     rules_summary: str,
@@ -102,6 +110,7 @@ async def build_review_card(
         installation_id: Tenant owning the pull request.
         pr_id: Triage PR row identifier.
         number: GitHub pull request number.
+        repo_full_name: Repository name shown in the approval metadata.
         title: PR title treated as untrusted display data.
         head_sha: Head commit the card must match.
         rules_summary: Intake result summary from trusted stored rule outcomes.
@@ -128,24 +137,35 @@ async def build_review_card(
         gaps,
         suggested_action,
     )
+    draft_body = render_card(
+        CardContent(
+            number,
+            title,
+            head_sha,
+            rules_summary,
+            fix_status,
+            (*gaps, f"Suggested action: {suggested_action}"),
+        )
+    )
     draft = await tools.save_draft(
         installation_id,
         str(pr_id),
         head_sha,
         "switch_card",
-        render_card(
-            CardContent(
-                number,
-                title,
-                head_sha,
-                rules_summary,
-                fix_status,
-                (*gaps, f"Suggested action: {suggested_action}"),
-            )
-        ),
+        draft_body,
     )
     return CardResult(
-        UUID(card["card_id"]), UUID(draft["draft_id"]), draft["body_hash"], fix_status
+        UUID(card["card_id"]),
+        UUID(draft["draft_id"]),
+        draft["body_hash"],
+        fix_status,
+        format_approval_message(
+            draft_body,
+            UUID(draft["draft_id"]),
+            draft["body_hash"],
+            installation_id,
+            repo_full_name,
+        ),
     )
 
 

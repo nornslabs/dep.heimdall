@@ -147,6 +147,46 @@ async def test_room_port_opens_threads_mentions_roles_and_reacts() -> None:
     }
 
 
+async def test_room_port_fetches_reacted_post_and_user() -> None:
+    """Load the approval marker and reactor login through Switch REST."""
+    requests: list[httpx.Request] = []
+
+    async def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.path == "/api/v4/posts/post-1":
+            return httpx.Response(
+                200,
+                json={
+                    "id": "post-1",
+                    "channel_id": "room-1",
+                    "root_id": "root-1",
+                    "message": "draft body",
+                },
+            )
+        return httpx.Response(200, json={"username": "reviewer"})
+
+    sender = SwitchSender(
+        "http://switch.local",
+        "bot-token",
+        transport=httpx.MockTransport(handle),
+    )
+    try:
+        post = await sender.get_post("post-1")
+        username = await sender.get_username("user-1")
+    finally:
+        await sender.aclose()
+
+    assert post.id == "post-1"
+    assert post.channel_id == "room-1"
+    assert post.root_id == "root-1"
+    assert post.message == "draft body"
+    assert username == "reviewer"
+    assert [request.url.path for request in requests] == [
+        "/api/v4/posts/post-1",
+        "/api/v4/users/user-1",
+    ]
+
+
 async def test_room_port_listens_and_reconnects_for_posts_and_reactions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
