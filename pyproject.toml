@@ -38,6 +38,7 @@ dev = [
     "pyright>=1.1.414",
     "pytest>=9.2.0",
     "pytest-asyncio>=1.4.1",
+    "respx>=0.23.1",
     "ruff>=0.17.3",
 ]
 
@@ -63,6 +64,7 @@ convention = "google"
 "migrations/**" = ["D"]
 # Error names follow the domain spec (NotAMaintainer, DraftChanged), not an Error suffix.
 "src/heimdall/shared/errors.py" = ["N818"]
+"src/heimdall/adapters/ai/errors.py" = ["N818"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["heimdall"]

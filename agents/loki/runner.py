@@ -1,44 +1,54 @@
-"""Read-only Codex CLI adapter for Loki's untrusted PR review input."""
+"""Provider-neutral Loki model runner."""
 
-from agents._runtime import run_agent_process
+from __future__ import annotations
 
-CODEX_TIMEOUT_SECONDS = 30 * 60
+from collections.abc import Awaitable, Callable
+
+from agents._runtime import ToolBox, run_tool_loop
+from agents.loki.config import create_ai_adapter
+from heimdall.adapters.ai import AiAdapter, ChatMessage, ChatResponse
 
 
-class CodexRunner:
-    """Invoke Codex without a shell, repository checkout, or write access."""
+class AiReviewRunner:
+    """Run Loki's read-only review prompt through the shared AI adapter."""
 
-    def __init__(self, executable: str = "codex") -> None:
-        """Set the trusted Codex executable name.
-
-        Args:
-            executable: Binary name resolved by the process environment.
-        """
-        self._executable = executable
+    def __init__(
+        self,
+        ai: AiAdapter | None = None,
+        record_usage: Callable[[ChatResponse], Awaitable[None]] | None = None,
+        on_notice: Callable[[str], Awaitable[None]] | None = None,
+    ) -> None:
+        """Bind Loki's configured adapter and optional runtime callbacks."""
+        self._ai = ai or create_ai_adapter()
+        self._record_usage = record_usage
+        self._on_notice = on_notice
 
     async def review(self, prompt: str) -> str:
-        """Run one bounded, read-only review prompt.
+        """Return the model's text response for a trust-marked review prompt.
 
         Args:
-            prompt: System instructions plus PR content explicitly marked as data.
+            prompt: System instructions plus repository content marked as data.
 
         Returns:
-            Codex's final response text.
-
-        Raises:
-            RuntimeError: Codex is missing, times out, or exits unsuccessfully.
+            The model's text response.
         """
-        return await run_agent_process(
-            (
-                self._executable,
-                "exec",
-                "--sandbox",
-                "read-only",
-                "--ask-for-approval",
-                "never",
-                "--skip-git-repo-check",
-                "-",
-            ),
-            prompt,
-            timeout_seconds=CODEX_TIMEOUT_SECONDS,
+        result = await run_tool_loop(
+            self._ai,
+            ToolBox((), {}, frozenset()),
+            (ChatMessage("user", prompt),),
+            record_usage=self._record_usage,
+            on_notice=self._on_notice,
         )
+        return result.text
+
+    async def aclose(self) -> None:
+        """Close the HTTP client owned by this runner's adapter."""
+        await self._ai.aclose()
+
+    async def __aenter__(self) -> AiReviewRunner:
+        """Allow the review flow to scope the provider client to one review."""
+        return self
+
+    async def __aexit__(self, *_exc: object) -> None:
+        """Close provider resources after a review."""
+        await self.aclose()

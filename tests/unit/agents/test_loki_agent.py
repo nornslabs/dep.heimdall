@@ -61,6 +61,21 @@ class FakeRunner:
         )
 
 
+class ChangingHeadTools(FakeTools):
+    """Return a new PR head before Loki persists model findings."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.context_calls = 0
+
+    async def get_pr_context(
+        self, installation_id: int, pr_id: str, repo_full_name: str
+    ) -> dict[str, object]:
+        self.context_calls += 1
+        head_sha = "head-7" if self.context_calls == 1 else "head-8"
+        return {"number": 7, "head_sha": head_sha, "title": "Example", "body": ""}
+
+
 async def test_run_loki_saves_structured_findings_for_observed_head() -> None:
     """Use read context and diff, then submit findings with the same head SHA."""
     tools = FakeTools()
@@ -75,6 +90,15 @@ async def test_run_loki_saves_structured_findings_for_observed_head() -> None:
     assert tools.saved["head_sha"] == "head-7"
     assert "untrusted repository data" in runner.prompt
     assert "diff --git a/src/example.py" in runner.prompt
+
+
+async def test_run_loki_drops_findings_when_pr_head_changes() -> None:
+    """Do not persist findings after the review head changes."""
+    tools = ChangingHeadTools()
+    result = await run_loki(tools, FakeRunner(), 456, uuid.uuid4(), "octo/demo")
+    assert result.stale
+    assert result.saved == 0
+    assert tools.saved is None
 
 
 def test_build_review_prompt_json_escapes_delimiter_characters() -> None:

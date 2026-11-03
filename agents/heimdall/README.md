@@ -8,8 +8,13 @@ reproduction results. Valid slash commands are parsed as data and dispatched to 
 | `agent.py` | Card assembly and command routing |
 | `prompt.md` | Trust boundaries, allowed tools, and output format |
 | `allowed_tools.py` | Heimdall's scoped MCP tool allowlist |
+| `config.py` | Heimdall-specific provider settings with `LLM_DEFAULT_*` fallback |
 
 `build_review_card` returns `approval_message`, which adds hidden draft identity and hash metadata
 for the bridge. The marker is outside the saved draft body, so the approval hash still covers
 only the exact text Gjallarhorn may post. Heimdall's MCP scope includes `create_mechanical_task`,
 which saves a policy-gated task draft and returns its `heimdall-task` block.
+
+Provider settings use `LLM_HEIMDALL_*` with field-by-field fallback to
+`LLM_DEFAULT_*`. The shared MCP toolbox injects the active installation id
+instead of exposing tenant selection to the model.

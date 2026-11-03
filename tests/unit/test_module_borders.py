@@ -89,3 +89,26 @@ def test_real_modules_respect_borders() -> None:
         for v in find_violations(_package_of(path), path.read_text())
     ]
     assert violations == []
+
+
+def test_core_modules_do_not_import_agents_or_provider_specific_ai_clients() -> None:
+    """Keep model calls in agents and provider SDKs out of core modules."""
+    forbidden_prefixes = (
+        "agents",
+        "openai",
+        "anthropic",
+        "heimdall.adapters.ai",
+    )
+    violations: list[str] = []
+    for path in sorted(MODULES_ROOT.rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                target = node.module or ""
+                if target.startswith(forbidden_prefixes):
+                    violations.append(f"{path.relative_to(MODULES_ROOT)}: imports {target}")
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.startswith(forbidden_prefixes):
+                        violations.append(f"{path.relative_to(MODULES_ROOT)}: imports {alias.name}")
+    assert violations == []

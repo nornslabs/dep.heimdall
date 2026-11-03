@@ -1,16 +1,16 @@
 # audit
 
-Urd's Well: the append-only audit log.
+Urd's Well stores append-only audit records and model token usage per tenant.
 
 | File | Role |
 |---|---|
-| `api.py` | Public interface (the only file other modules import) |
-| `service.py` | Use cases |
-| `domain.py` | Pure logic, no I/O |
+| `api.py` | Public interface imported by other modules |
+| `service.py` | Tenant-scoped write use cases |
+| `domain.py` | Pure audit rules |
 | `ports.py` | Adapter interfaces |
 | `models.py` | Persistence models |
 
-Tables (`models.py`): `audit_log` (insert-only: a trigger rejects UPDATE, DELETE and TRUNCATE), `usage` (agent token counts).
+Tables (`models.py`): `audit_log` is insert-only; `usage` stores model token counts.
 
-Public functions: none are exported yet; `api.py` remains empty until the audit use cases are
-implemented. Both tables carry `installation_id` for tenant-scoped reporting.
+Public functions: `record_usage(...)` saves one agent's input and output token
+counts for tenant-scoped reporting.

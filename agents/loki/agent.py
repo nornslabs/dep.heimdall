@@ -1,10 +1,15 @@
 """Loki's read-only PR review flow and finding validation handoff."""
 
+from __future__ import annotations
+
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 from uuid import UUID
+
+from heimdall.adapters.ai.types import ChatResponse
 
 
 class LokiTools(Protocol):
@@ -42,13 +47,17 @@ class ReviewRunner(Protocol):
         ...
 
 
+UsageRecorder = Callable[[ChatResponse], Awaitable[None]]
+
+
 @dataclass(frozen=True)
 class LokiResult:
-    """Saved and rejected finding counts from one review run."""
+    """Saved and rejected finding counts and staleness from one review run."""
 
     saved: int
     rejected: tuple[dict[str, object], ...]
     head_sha: str
+    stale: bool = False
 
 
 def build_review_prompt(context: dict[str, object], diff: str) -> str:
@@ -78,19 +87,22 @@ def build_review_prompt(context: dict[str, object], diff: str) -> str:
 
 async def run_loki(
     tools: LokiTools,
-    runner: ReviewRunner,
+    runner: ReviewRunner | None,
     installation_id: int,
     pr_id: UUID,
     repo_full_name: str,
+    *,
+    record_usage: UsageRecorder | None = None,
 ) -> LokiResult:
-    """Read one PR, run one bounded Codex review, and submit findings for validation.
+    """Read one PR, run one bounded model review, and submit findings for validation.
 
     Args:
         tools: MCP client restricted to Loki's three allowlisted tools.
-        runner: Read-only Codex runner.
+        runner: Optional test or custom runner; defaults to Loki's configured AI adapter.
         installation_id: Tenant owning the PR.
         pr_id: Triage PR row identifier.
         repo_full_name: Repository owner and name.
+        record_usage: Optional callback that records provider token usage.
 
     Returns:
         Counts and rejection reasons returned by the review persistence tool.
@@ -100,7 +112,17 @@ async def run_loki(
     head_sha = _str_field(context, "head_sha")
     diff_result = await tools.get_diff(installation_id, repo_full_name, number)
     diff = _str_field(diff_result, "text")
-    response = await runner.review(build_review_prompt(context, diff))
+    prompt = build_review_prompt(context, diff)
+    if runner is None:
+        from agents.loki.runner import AiReviewRunner
+
+        async with AiReviewRunner(record_usage=record_usage) as selected_runner:
+            response = await selected_runner.review(prompt)
+    else:
+        response = await runner.review(prompt)
+    latest_context = await tools.get_pr_context(installation_id, str(pr_id), repo_full_name)
+    if _str_field(latest_context, "head_sha") != head_sha:
+        return LokiResult(saved=0, rejected=(), head_sha=head_sha, stale=True)
     findings = _parse_findings(response)
     result = await tools.save_findings(
         installation_id,
@@ -121,17 +143,17 @@ async def run_loki(
 
 
 def _parse_findings(response: str) -> list[dict[str, str | int | None]]:
-    """Accept only structurally valid Codex finding objects."""
+    """Accept only structurally valid model finding objects."""
     try:
         value = json.loads(response)
     except json.JSONDecodeError as error:
-        raise ValueError("Codex response was not valid JSON") from error
+        raise ValueError("model response was not valid JSON") from error
     if not isinstance(value, dict) or not isinstance(value.get("findings"), list):
-        raise ValueError("Codex response must contain a findings array")
+        raise ValueError("model response must contain a findings array")
     findings: list[dict[str, str | int | None]] = []
     for item in value["findings"]:
         if not isinstance(item, dict):
-            raise ValueError("Codex finding must be an object")
+            raise ValueError("model finding must be an object")
         file = item.get("file")
         line = item.get("line")
         text = item.get("text")
