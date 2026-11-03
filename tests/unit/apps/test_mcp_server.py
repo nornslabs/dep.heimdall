@@ -5,6 +5,7 @@ import runpy
 from pathlib import Path
 from typing import cast
 
+import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -22,7 +23,40 @@ def test_mcp_server_registers_reproduction_tools() -> None:
     tools = asyncio.run(server.list_tools())
 
     assert {tool.name for tool in tools} == {"start_repro", "get_repro"}
-    assert "installation_id" in tools[0].input_schema["properties"]
+    assert all("installation_id" in tool.input_schema["properties"] for tool in tools)
+
+
+@pytest.mark.parametrize(
+    ("agent_name", "expected_tools"),
+    [
+        ("huginn", {"start_repro", "get_repro"}),
+        ("loki", {"get_pr_context", "get_diff", "save_findings"}),
+        (
+            "heimdall",
+            {
+                "list_findings",
+                "get_repro",
+                "save_card",
+                "save_draft",
+                "create_mechanical_task",
+            },
+        ),
+    ],
+)
+def test_each_agent_mcp_contract_is_tenant_scoped(
+    agent_name: str,
+    expected_tools: set[str],
+) -> None:
+    """Publish only the selected agent's tools with explicit tenant inputs."""
+    sessions = cast(async_sessionmaker[AsyncSession], object())
+    reader = cast(GitHubApiReader, object())
+    server = create_server(sessions, reader, agent_name=agent_name)
+
+    tools = asyncio.run(server.list_tools())
+
+    assert {tool.name for tool in tools} == expected_tools
+    for tool in tools:
+        assert "installation_id" in tool.input_schema["properties"]
 
 
 def test_loki_server_exposes_only_its_allowlisted_tools() -> None:
