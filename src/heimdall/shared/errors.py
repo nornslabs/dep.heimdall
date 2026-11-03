@@ -28,6 +28,10 @@ class RepoLimitReached(HeimdallError):
     """The installation already has the maximum number of repos enabled."""
 
 
+class RepoNotFound(HeimdallError):
+    """The repository is not enabled for this installation (or belongs to another one)."""
+
+
 class StaleHeadSha(HeimdallError):
     """The PR head moved since this work started, so its result is out of date."""
 
