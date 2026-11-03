@@ -11,4 +11,5 @@ reproduction results. Valid slash commands are parsed as data and dispatched to 
 
 `build_review_card` returns `approval_message`, which adds hidden draft identity and hash metadata
 for the bridge. The marker is outside the saved draft body, so the approval hash still covers
-only the exact text Gjallarhorn may post.
+only the exact text Gjallarhorn may post. Heimdall's MCP scope includes `create_mechanical_task`,
+which saves a policy-gated task draft and returns its `heimdall-task` block.

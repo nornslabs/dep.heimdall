@@ -4,13 +4,15 @@ Desk renders Switch summary cards for current PR heads, stores exact text drafts
 approval hashes, and parses supported maintainer slash commands. It never posts to Switch or GitHub;
 external effects remain behind the approval and outbox flows.
 
-Public functions: `save_card`, `save_draft`, `render_card`, `hash_draft`, `parse_command`.
+Public functions: `save_card`, `save_draft`, `create_mechanical_task`, `get_draft`,
+`render_card`, `render_mechanical_task_block`, `format_approval_message`, `hash_draft`,
+and `parse_command`.
 
 | File | Role |
 |---|---|
 | `api.py` | Public interface; the only file other modules import |
 | `service.py` | Transactional use cases |
-| `domain.py` | Pure command parsing, card rendering, draft hashing and approval metadata formatting |
+| `domain.py` | Pure command parsing, card rendering, draft hashing and task block formatting |
 | `ports.py` | Adapter interfaces |
 | `models.py` | Persistence models |
 

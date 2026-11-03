@@ -1,6 +1,7 @@
 """Pure desk cards, draft hashes, and maintainer command parsing."""
 
 import hashlib
+import html
 import re
 from dataclasses import dataclass
 from enum import StrEnum
@@ -58,6 +59,20 @@ class DraftRef:
     body: str
     body_hash: str
     superseded_by: UUID | None = None
+
+
+@dataclass(frozen=True)
+class MechanicalTaskRef:
+    """Persisted task and the draft metadata required for approval."""
+
+    id: str
+    pr_id: UUID
+    finding_id: UUID
+    draft_id: UUID
+    category: str
+    suggestion: str
+    task_block: str
+    body_hash: str
 
 
 def parse_command(message: str) -> DeskCommand | None:
@@ -165,6 +180,37 @@ def format_approval_message(
     return f"{body.rstrip()}\n\n{marker}"
 
 
+def render_mechanical_task_block(
+    task_id: str,
+    finding_id: UUID,
+    file: str,
+    line: int,
+    category: str,
+    suggestion: str,
+) -> str:
+    """Render a hidden task marker and a readable suggestion without trusting finding text.
+
+    Args:
+        task_id: Stable task identifier assigned by the desk service.
+        finding_id: Review finding this task addresses.
+        file: Repository path cited by the finding.
+        line: One-based line cited by the finding.
+        category: Mechanical category from the saved finding.
+        suggestion: Finding text supplied by the review agent.
+
+    Returns:
+        Markdown suggestion followed by the machine-readable task marker.
+    """
+    safe_suggestion = html.escape(" ".join(suggestion.split()), quote=False)
+    safe_file = html.escape(" ".join(file.split()), quote=True).replace("--", "- -")
+    safe_category = html.escape(category, quote=True)
+    marker = (
+        f'<!-- heimdall-task id="{task_id}" finding="{finding_id}" '
+        f'file="{safe_file}" line="{line}" category="{safe_category}" -->'
+    )
+    return f"Suggestion: {safe_suggestion}\n\n{marker}"
+
+
 def _escape(value: str) -> str:
     """Escape user supplied Markdown punctuation for safe display."""
     return re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", value)
@@ -176,8 +222,10 @@ __all__ = [
     "CommandVerb",
     "DeskCommand",
     "DraftRef",
+    "MechanicalTaskRef",
     "format_approval_message",
     "hash_draft",
     "parse_command",
     "render_card",
+    "render_mechanical_task_block",
 ]

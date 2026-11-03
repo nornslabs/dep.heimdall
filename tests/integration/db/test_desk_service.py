@@ -6,13 +6,17 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from heimdall.modules.desk.api import CardContent, save_card, save_draft
+from heimdall.adapters.db.tenant import select_for_tenant
+from heimdall.adapters.db.unit_of_work import unit_of_work
+from heimdall.modules.desk.api import CardContent, create_mechanical_task, save_card, save_draft
+from heimdall.modules.review.models import Finding
 from heimdall.modules.tenancy.api import (
     InstallationEvent,
     InstallationRepo,
     on_installation_event,
 )
 from heimdall.modules.triage.api import EventKind, Facts, PrEvent, handle_event
+from heimdall.modules.triage.models import Pr
 from heimdall.shared.context import TenantCtx
 from heimdall.shared.errors import StaleHeadSha
 from heimdall.shared.ids import InstallationId, RepoId
@@ -53,10 +57,6 @@ async def _open_pr(
             facts=Facts(),
         ),
     )
-    from heimdall.adapters.db.tenant import select_for_tenant
-    from heimdall.adapters.db.unit_of_work import unit_of_work
-    from heimdall.modules.triage.models import Pr
-
     async with unit_of_work(sessions) as session:
         pr = (
             await session.exec(select_for_tenant(Pr, ctx.installation_id).where(Pr.number == 1))
@@ -101,3 +101,36 @@ async def test_save_card_rejects_stale_head(
 
     with pytest.raises(StaleHeadSha):
         await save_card(sessions, ctx, pr_id, content)
+
+
+async def test_create_mechanical_task_saves_idempotent_draft_block(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """Create one tenant-scoped task, suggestion block and exact approval draft."""
+    ctx, pr_id = await _open_pr(sessions)
+    finding_id = uuid.uuid4()
+    async with unit_of_work(sessions) as session:
+        session.add(
+            Finding(
+                id=finding_id,
+                installation_id=ctx.installation_id,
+                pr_id=pr_id,
+                head_sha="head-1",
+                file="src/one.py",
+                line=3,
+                text="Use a bounded retry for this request.",
+                severity="low",
+                mechanical_category="lint",
+            )
+        )
+
+    task = await create_mechanical_task(sessions, ctx, pr_id, "head-1", finding_id)
+    repeated = await create_mechanical_task(sessions, ctx, pr_id, "head-1", finding_id)
+
+    assert task == repeated
+    assert task.id == "HT-1-1"
+    assert task.draft_id
+    assert task.category == "lint"
+    assert "Suggestion: Use a bounded retry" in task.task_block
+    assert 'heimdall-task id="HT-1-1"' in task.task_block
+    assert len(task.body_hash) == 64

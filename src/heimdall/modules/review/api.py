@@ -8,7 +8,11 @@ from heimdall.modules.review.domain import (
     validate_findings,
 )
 from heimdall.modules.review.ports import ReviewReader
-from heimdall.modules.review.service import list_findings, save_findings
+from heimdall.modules.review.service import (
+    get_finding_in_transaction,
+    list_findings,
+    save_findings,
+)
 
 __all__ = [
     "FindingBatch",
@@ -16,6 +20,7 @@ __all__ = [
     "FindingRef",
     "RejectedFinding",
     "ReviewReader",
+    "get_finding_in_transaction",
     "list_findings",
     "save_findings",
     "validate_findings",

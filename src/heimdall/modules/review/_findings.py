@@ -1,4 +1,4 @@
-"""Read current-head findings for agent context."""
+"""Read current-head findings for agents and other module use cases."""
 
 import uuid
 
@@ -16,7 +16,7 @@ from heimdall.shared.context import TenantCtx
 async def list_findings(
     sessions: async_sessionmaker[AsyncSession], ctx: TenantCtx, pr_id: uuid.UUID
 ) -> tuple[FindingRef, ...]:
-    """List review findings for this tenant's current PR head.
+    """List review findings for a tenant's current PR head.
 
     Args:
         sessions: Tenant database session factory.
@@ -47,3 +47,43 @@ async def list_findings(
             )
             for finding in result
         )
+
+
+async def get_finding_in_transaction(
+    session: AsyncSession,
+    ctx: TenantCtx,
+    pr_id: uuid.UUID,
+    finding_id: uuid.UUID,
+) -> FindingRef | None:
+    """Read one finding only when it belongs to the tenant's current PR head.
+
+    Args:
+        session: Session inside the caller's transaction.
+        ctx: Tenant and request context.
+        pr_id: Pull request that owns the finding.
+        finding_id: Finding to retrieve.
+
+    Returns:
+        The current-head finding, or ``None`` when it is not available.
+    """
+    snapshot = await get_pr_snapshot(session, ctx, pr_id)
+    if snapshot is None:
+        return None
+    result = await session.exec(
+        select_for_tenant(Finding, ctx.installation_id).where(
+            Finding.id == finding_id,
+            Finding.pr_id == pr_id,
+            Finding.head_sha == snapshot.head_sha,
+        )
+    )
+    finding = result.first()
+    if finding is None:
+        return None
+    return FindingRef(
+        finding.id,
+        finding.file,
+        finding.line,
+        finding.text,
+        finding.severity,
+        finding.mechanical_category,
+    )

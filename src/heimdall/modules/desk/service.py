@@ -12,10 +12,13 @@ from heimdall.modules.desk.domain import (
     CardContent,
     CardRef,
     DraftRef,
+    MechanicalTaskRef,
     hash_draft,
     render_card,
+    render_mechanical_task_block,
 )
-from heimdall.modules.desk.models import Card, Draft
+from heimdall.modules.desk.models import AgentTask, Card, Draft
+from heimdall.modules.review.api import FindingRef, get_finding_in_transaction
 from heimdall.modules.triage.api import get_pr_snapshot
 from heimdall.shared.context import TenantCtx
 from heimdall.shared.errors import StaleHeadSha
@@ -129,7 +132,123 @@ async def save_draft(
         return DraftRef(draft.id, pr_id, kind, body, body_hash)
 
 
-__all__ = ["get_draft", "get_draft_in_transaction", "save_card", "save_draft"]
+async def create_mechanical_task(
+    sessions: async_sessionmaker[AsyncSession],
+    ctx: TenantCtx,
+    pr_id: uuid.UUID,
+    head_sha: str,
+    finding_id: uuid.UUID,
+) -> MechanicalTaskRef:
+    """Create an approval-bound handoff for a current mechanical review finding.
+
+    Args:
+        sessions: Tenant database session factory.
+        ctx: Tenant and request context.
+        pr_id: Pull request receiving the task suggestion.
+        head_sha: Exact PR head evaluated by the finding.
+        finding_id: Saved finding to turn into a mechanical task.
+
+    Returns:
+        Existing or newly persisted task, suggestion block and draft hash.
+
+    Raises:
+        StaleHeadSha: PR head changed before task creation.
+        ValueError: Finding is absent, belongs to another PR or is not mechanical.
+    """
+    async with unit_of_work(sessions) as session:
+        snapshot = await get_pr_snapshot(session, ctx, pr_id)
+        if snapshot is None or snapshot.head_sha != head_sha:
+            raise StaleHeadSha("pull request head changed before mechanical task creation")
+        finding = await get_finding_in_transaction(session, ctx, pr_id, finding_id)
+        if finding is None or finding.mechanical_category is None:
+            raise ValueError("finding is not a current mechanical finding for this pull request")
+        return await _create_task_in_transaction(session, ctx, pr_id, snapshot.number, finding)
+
+
+async def _create_task_in_transaction(
+    session: AsyncSession,
+    ctx: TenantCtx,
+    pr_id: uuid.UUID,
+    pr_number: int,
+    finding: FindingRef,
+) -> MechanicalTaskRef:
+    """Save or return one task and its approval-bound draft atomically."""
+    existing_result = await session.exec(
+        select_for_tenant(AgentTask, ctx.installation_id).where(AgentTask.finding_id == finding.id)
+    )
+    existing = existing_result.first()
+    if existing is not None:
+        draft = await get_draft_in_transaction(session, ctx, existing.draft_id)
+        task_block = _task_block(existing.id, finding)
+        return _mechanical_task_ref(existing, finding, task_block, draft.body_hash)
+    task_id = await _next_task_id(session, ctx, pr_id, pr_number)
+    task_block = _task_block(task_id, finding)
+    draft = Draft(
+        id=uuid.uuid4(),
+        installation_id=ctx.installation_id,
+        pr_id=pr_id,
+        kind=f"mechanical_task:{task_id}",
+        body=task_block,
+        body_hash=hash_draft(task_block),
+    )
+    session.add(draft)
+    await session.flush()
+    task = AgentTask(
+        id=task_id,
+        installation_id=ctx.installation_id,
+        pr_id=pr_id,
+        finding_id=finding.id,
+        draft_id=draft.id,
+        status="suggested",
+    )
+    session.add(task)
+    await session.flush()
+    return _mechanical_task_ref(task, finding, task_block, draft.body_hash)
+
+
+async def _next_task_id(
+    session: AsyncSession, ctx: TenantCtx, pr_id: uuid.UUID, pr_number: int
+) -> str:
+    """Assign the next readable task number within one pull request."""
+    result = await session.exec(
+        select_for_tenant(AgentTask, ctx.installation_id).where(AgentTask.pr_id == pr_id)
+    )
+    return f"HT-{pr_number}-{len(result.all()) + 1}"
+
+
+def _task_block(task_id: str, finding: FindingRef) -> str:
+    """Render the exact body stored for an approval-bound mechanical task."""
+    category = finding.mechanical_category
+    if category is None:
+        raise ValueError("finding is not marked as mechanical")
+    return render_mechanical_task_block(
+        task_id, finding.id, finding.file, finding.line, category, finding.text
+    )
+
+
+def _mechanical_task_ref(
+    task: AgentTask, finding: FindingRef, task_block: str, body_hash: str
+) -> MechanicalTaskRef:
+    """Build the public task value from its row and validated current finding."""
+    return MechanicalTaskRef(
+        id=task.id,
+        pr_id=task.pr_id,
+        finding_id=task.finding_id,
+        draft_id=task.draft_id,
+        category=finding.mechanical_category or "",
+        suggestion=finding.text,
+        task_block=task_block,
+        body_hash=body_hash,
+    )
+
+
+__all__ = [
+    "create_mechanical_task",
+    "get_draft",
+    "get_draft_in_transaction",
+    "save_card",
+    "save_draft",
+]
 
 
 async def get_draft(

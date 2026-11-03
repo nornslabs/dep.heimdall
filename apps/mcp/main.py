@@ -10,10 +10,13 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.github.reader import GitHubApiReader
+from heimdall.modules.approval.api import approve_by_policy
+from heimdall.modules.desk.api import CardContent, create_mechanical_task, save_card, save_draft
 from heimdall.modules.repro.api import get_run, start_run
-from heimdall.modules.review.api import FindingInput
+from heimdall.modules.review.api import FindingInput, list_findings
 from heimdall.modules.triage.api import PrSnapshot, get_pr_snapshot
 from heimdall.shared.context import TenantCtx, new_request_id
+from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId
 
 
@@ -35,7 +38,13 @@ def create_server(
     allowed_tools = {
         "huginn": {"start_repro", "get_repro"},
         "loki": {"get_pr_context", "get_diff", "save_findings"},
-        "heimdall": {"list_findings", "get_repro", "save_card", "save_draft"},
+        "heimdall": {
+            "list_findings",
+            "get_repro",
+            "save_card",
+            "save_draft",
+            "create_mechanical_task",
+        },
     }
     if agent_name not in allowed_tools:
         raise ValueError(f"unknown MCP agent scope: {agent_name}")
@@ -94,7 +103,6 @@ def create_server(
     if reader is not None:
         from heimdall.modules.review.api import save_findings
         from heimdall.modules.tenancy.api import load_config
-        from heimdall.shared.github import RepoRef
 
         github_reader = reader
 
@@ -189,8 +197,8 @@ def create_server(
             }
 
     if agent_name == "heimdall":
-        from heimdall.modules.desk.api import CardContent, save_card, save_draft
-        from heimdall.modules.review.api import list_findings
+        if reader is None:
+            raise ValueError("Heimdall MCP server requires a GitHub reader for task policy")
 
         @server.tool(
             name="list_findings",
@@ -273,6 +281,50 @@ def create_server(
             return {"draft_id": str(draft.id), "body_hash": draft.body_hash}
 
         registered_tools.update({"list_findings", "save_card", "save_draft"})
+
+    @server.tool(
+        name="create_mechanical_task",
+        description="Create a policy-gated mechanical-fix suggestion and heimdall-task block.",
+        structured_output=True,
+    )
+    async def create_mechanical_task_tool(
+        installation_id: int,
+        pr_id: str,
+        repo_full_name: str,
+        head_sha: str,
+        finding_id: str,
+    ) -> dict[str, object]:
+        """Save the task draft and approve it only when repository policy permits it."""
+        ctx = TenantCtx(
+            installation_id=InstallationId(installation_id),
+            request_id=new_request_id(),
+        )
+        task = await create_mechanical_task(sessions, ctx, UUID(pr_id), head_sha, UUID(finding_id))
+        if reader is None:
+            raise ValueError("Heimdall MCP server requires a GitHub reader for task policy")
+        try:
+            await approve_by_policy(
+                sessions,
+                reader,
+                ctx,
+                RepoRef(ctx.installation_id, repo_full_name),
+                task.draft_id,
+                task.category,
+            )
+        except ValueError:
+            policy_approved = False
+        else:
+            policy_approved = True
+        return {
+            "task_id": task.id,
+            "suggestion": task.suggestion,
+            "task_block": task.task_block,
+            "draft_id": str(task.draft_id),
+            "body_hash": task.body_hash,
+            "policy_approved": policy_approved,
+        }
+
+    registered_tools.add("create_mechanical_task")
 
     if reader is not None:
         registered_tools.update({"get_pr_context", "get_diff", "save_findings"})
