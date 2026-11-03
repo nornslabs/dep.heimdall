@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from agents.huginn.agent import run_huginn
+from agents.huginn.config import load_ai_config
+from heimdall.adapters.ai import AiAdapter
 from heimdall.adapters.db.engine import create_engine, make_session_factory
 from heimdall.adapters.db.outbox.writer import write_outbox
 from heimdall.adapters.db.unit_of_work import unit_of_work
@@ -99,6 +101,8 @@ async def run_worker() -> None:
 
     settings = get_settings()
     configure_logging(settings.log_level)
+    # Built at startup so a bad LLM_HUGINN_* / LLM_DEFAULT_* config fails before any job runs.
+    ai = AiAdapter(load_ai_config())
     database_url = settings.database_url.get_secret_value()
     engine = create_engine(database_url)
     queue_app = create_queue_app(database_url)
@@ -108,6 +112,7 @@ async def run_worker() -> None:
             await queue_app.run_worker_async()
     finally:
         await engine.dispose()
+        await ai.aclose()
 
 
 def main() -> None:

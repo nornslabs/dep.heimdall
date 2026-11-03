@@ -36,7 +36,7 @@ Run `ruff`, `pyright` and `pytest tests/unit` before you say a change is done.
 apps/            entry points only: api, worker, mcp, bridge. No business logic.
 src/heimdall/
   modules/       one folder per feature: tenancy, triage, intake, repro, review, desk, approval, audit
-  adapters/      the outside world: github, actions, switch, db
+  adapters/      the outside world: github, actions, switch, db, ai
   shared/        settings, ids, errors, events, logging
 agents/          huginn, loki, heimdall: prompt.md, agent.py, allowed_tools.py
 migrations/      alembic
@@ -144,6 +144,10 @@ def record_approval(ctx: TenantCtx, draft_id: DraftId, approver: GitHubLogin, dr
 - Loop limits are constants: `MAX_REPRO_RUNS = 3`, `MAX_FINDINGS = 5`, `MAX_TURNS` per agent.
 - Every finding cites `file:line`. The tool server rejects findings without one.
 - Agents describe code, never people. No guesses about how the code was written.
+- Agents never import a vendor LLM SDK or CLI (anthropic, openai, claude-agent-sdk, codex). Each
+  agent builds its own `AiAdapter` from `agents/<name>/config.py` (`LLM_<AGENT>_*`, falling back
+  to `LLM_DEFAULT_*`) and calls `ai.chat(...)`. Core modules never call a model. Switching
+  provider is a config change, never a code change.
 
 ## Tests
 

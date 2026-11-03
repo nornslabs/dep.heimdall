@@ -78,3 +78,31 @@ class SwitchUnavailable(HeimdallError):
 
 class SwitchRequestFailed(HeimdallError):
     """Switch rejected a request that cannot succeed unchanged."""
+
+
+class AiUnavailable(HeimdallError):
+    """The model provider timed out, was unreachable, rate-limited us or had a server error.
+
+    Attributes:
+        retry_after: Seconds the provider asked us to wait, when it said so.
+    """
+
+    retryable = True
+
+    def __init__(self, message: str, *, retry_after: float | None = None) -> None:
+        """Keep the provider's requested wait alongside the message.
+
+        Args:
+            message: Safe description with no prompt text or key.
+            retry_after: Seconds from a ``Retry-After`` header, if one was sent.
+        """
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
+class AiBadResponse(HeimdallError):
+    """The model provider answered with JSON or tool arguments the adapter cannot use."""
+
+
+class AiRequestFailed(HeimdallError):
+    """The model provider rejected the request (a 4xx other than 429), so retrying cannot help."""

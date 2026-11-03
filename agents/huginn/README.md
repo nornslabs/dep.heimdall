@@ -10,3 +10,7 @@ command, reads saved outcomes, and queues one aggregate verdict message through 
 | `runner.py` | Queue consumer and tenant-scoped repro tool adapter |
 | `prompt.md` | Role, untrusted-data rules, and output format |
 | `allowed_tools.py` | Huginn's `start_repro` and `get_repro` MCP allowlist |
+| `config.py` | `AGENT_NAME`, `MAX_TURNS = 12`, `MAX_REPRO_RUNS`, `load_ai_config()` (`LLM_HUGINN_*`) |
+
+The verdict flow is deterministic. The worker builds Huginn's `AiAdapter` at startup, so a bad
+model setting fails before any job runs. Polling is bounded by `MAX_POLLS` in `agent.py`.
