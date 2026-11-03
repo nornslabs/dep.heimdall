@@ -4,6 +4,11 @@ Installations, repos and each repo's effective `heimdall.yml` config.
 
 Repository auto-suggest pauses are tenant-scoped and persist until policy is re-enabled.
 
+Public functions: `parse_installation_event`, `on_installation_event`, `get_tenant`,
+`get_repo_id`, `get_repo_id_in_transaction`, `load_config`, `load_config_in_transaction`,
+`repo_is_enabled`, `repo_switch_room_id`, `repo_auto_suggest_paused`,
+`set_auto_suggest_paused`, and `set_auto_suggest_paused_in_transaction`.
+
 | File | Role |
 |---|---|
 | `api.py` | `on_installation_event`, `get_tenant`, `load_config`, `InstallationEvent`, and `RepoConfig` |
@@ -19,6 +24,8 @@ Installation events upsert tenant and repo records. Removed repositories are dis
 suspension blocks the tenant, and deletion disables its repos. `get_tenant` rejects
 unknown or suspended installations. `load_config` reads `.github/heimdall.yml` and then
 `heimdall.yml` at the PR head SHA and caches the merged config by `config_sha`.
+
+Tables: `installations` and `repos`; both are scoped by `installation_id`.
 
 `load_config` reads `.github/heimdall.yml` then `heimdall.yml` at the PR head SHA,
 validates their merged values, and caches the result in the tenant's repo row keyed by

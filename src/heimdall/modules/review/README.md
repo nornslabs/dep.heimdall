@@ -2,6 +2,9 @@
 
 Loki's review findings: save and validate.
 
+Public functions: `validate_findings`, `save_findings`, `list_findings`, and
+`get_finding_in_transaction`.
+
 | File | Role |
 |---|---|
 | `api.py` | Public interface (the only file other modules import) |

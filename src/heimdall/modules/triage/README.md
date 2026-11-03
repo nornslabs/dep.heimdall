@@ -3,6 +3,10 @@
 The PR triage state machine. Only this module changes `prs.state`, and only through
 `domain.next_state` (AGENTS.md rule 8).
 
+Public functions: `receive_webhook`, `handle_webhook_delivery`, `handle_event`, `on_step_done`,
+`on_step_done_in_transaction`, and `get_pr_snapshot`. `domain.py` exposes the pure
+`next_state` transition function and its event, fact, state, and outcome types.
+
 | File | Role |
 |---|---|
 | `api.py` | Public interface (`handle_event`, `on_step_done`, `receive_webhook`) |

@@ -11,3 +11,6 @@ Urd's Well: the append-only audit log.
 | `models.py` | Persistence models |
 
 Tables (`models.py`): `audit_log` (insert-only: a trigger rejects UPDATE, DELETE and TRUNCATE), `usage` (agent token counts).
+
+Public functions: none are exported yet; `api.py` remains empty until the audit use cases are
+implemented. Both tables carry `installation_id` for tenant-scoped reporting.

@@ -5,6 +5,7 @@ approval hashes, and parses supported maintainer slash commands. It never posts 
 external effects remain behind the approval and outbox flows.
 
 Public functions: `save_card`, `save_draft`, `create_mechanical_task`, `get_draft`,
+`get_draft_in_transaction`,
 `render_card`, `render_mechanical_task_block`, `format_approval_message`, `hash_draft`,
 and `parse_command`.
 
