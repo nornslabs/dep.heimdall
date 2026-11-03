@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Awaitable, Callable
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
@@ -149,11 +148,16 @@ def _parse_findings(response: str) -> list[dict[str, str | int | None]]:
         value = json.loads(response)
     except json.JSONDecodeError as error:
         raise ValueError("model response was not valid JSON") from error
-    if not isinstance(value, dict) or not isinstance(value.get("findings"), list):
+    if not isinstance(value, dict):
+        raise ValueError("model response must contain a findings array")
+    payload = cast(dict[str, object], value)
+    findings_value = payload.get("findings")
+    if not isinstance(findings_value, list):
         raise ValueError("model response must contain a findings array")
     findings: list[dict[str, str | int | None]] = []
-    for item in value["findings"]:
-        if not isinstance(item, dict):
+    for raw_item in cast(list[object], findings_value):
+        item = _json_object(raw_item)
+        if item is None:
             raise ValueError("model finding must be an object")
         file = item.get("file")
         line = item.get("line")

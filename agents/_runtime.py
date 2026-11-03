@@ -6,7 +6,7 @@ import asyncio
 import json
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -76,7 +76,7 @@ class ToolBox:
             raise AiBadResponse("MCP server returned an invalid tool list")
         definitions: list[ToolDefinition] = []
         handlers: dict[str, ToolHandler] = {}
-        for tool in response_tools:
+        for tool in cast(list[object] | tuple[object, ...], response_tools):
             name = getattr(tool, "name", None)
             if not isinstance(name, str) or name not in allowed_tools:
                 continue
@@ -84,9 +84,15 @@ class ToolBox:
             schema = getattr(tool, "inputSchema", None)
             if not isinstance(description, str) or not isinstance(schema, dict):
                 raise AiBadResponse("MCP server returned an invalid tool definition")
-            definitions.append(ToolDefinition(name, description, _tenant_hidden_schema(schema)))
+            definitions.append(
+                ToolDefinition(
+                    name,
+                    description,
+                    _tenant_hidden_schema(cast(dict[str, object], schema)),
+                )
+            )
             handlers[name] = _mcp_handler(session, name, installation_id)
-        if {item.name for item in definitions} != allowed_tools:
+        if {item.name for item in definitions} != set(allowed_tools):
             raise AiBadResponse("MCP session does not expose the full agent allowlist")
         return cls(definitions, handlers, allowed_tools)
 
@@ -109,11 +115,17 @@ def _tenant_hidden_schema(schema: dict[str, object]) -> dict[str, object]:
     properties = visible.get("properties")
     if isinstance(properties, dict):
         visible["properties"] = {
-            key: value for key, value in properties.items() if key != "installation_id"
+            key: value
+            for key, value in cast(dict[str, object], properties).items()
+            if key != "installation_id"
         }
     required = visible.get("required")
     if isinstance(required, list):
-        visible["required"] = [name for name in required if name != "installation_id"]
+        visible["required"] = [
+            required_name
+            for required_name in cast(list[object], required)
+            if isinstance(required_name, str) and required_name != "installation_id"
+        ]
     return visible
 
 
@@ -131,15 +143,15 @@ def _mcp_handler(session: McpSession, name: str, installation_id: int) -> ToolHa
             raise AiBadResponse(f"MCP tool {name} returned an error")
         structured = getattr(result, "structuredContent", None)
         if isinstance(structured, dict):
-            return structured
+            return cast(dict[str, object], structured)
         content = getattr(result, "content", None)
         if not isinstance(content, list | tuple):
             raise AiBadResponse(f"MCP tool {name} returned no result")
-        text_items = [
-            getattr(item, "text", None)
-            for item in content
-            if isinstance(getattr(item, "text", None), str)
-        ]
+        text_items: list[str] = []
+        for item in cast(list[object] | tuple[object, ...], content):
+            text = getattr(item, "text", None)
+            if isinstance(text, str):
+                text_items.append(text)
         if not text_items:
             raise AiBadResponse(f"MCP tool {name} returned no text result")
         if len(text_items) == 1:
