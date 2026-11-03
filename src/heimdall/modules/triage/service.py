@@ -12,7 +12,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from heimdall.adapters.db.outbox.writer import write_outbox
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
-from heimdall.adapters.queue.enqueue import enqueue
+from heimdall.adapters.queue.enqueue import HUGINN_QUEUE, enqueue
 from heimdall.modules.tenancy.api import repo_is_enabled
 from heimdall.modules.triage._webhook_event import pull_request_event
 from heimdall.modules.triage.domain import (
@@ -413,6 +413,7 @@ async def _apply_effects(
                 "test_cmd": event.repro_test_cmd,
                 "room_id": event.room_id,
             },
+            queue=HUGINN_QUEUE,
             lock=f"huginn:{ctx.installation_id}:{pr_id}:{event.head_sha}",
         )
     if Effect.MARK_OLDER_RUNS_STALE in effects:

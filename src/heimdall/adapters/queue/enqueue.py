@@ -13,6 +13,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from heimdall.adapters.db.columns import JsonObject
 
 DEFAULT_QUEUE = "default"
+# Huginn's process registers only its own task, so its jobs live on their own queue and
+# the main worker never claims them (nor Huginn the main worker's).
+HUGINN_QUEUE = "huginn"
 DEFAULT_PRIORITY = 0
 
 DEFER_JOB = text(

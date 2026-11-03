@@ -19,6 +19,10 @@ async with unit_of_work(sessions) as session:
   `procrastinate_defer_jobs_v1` SQL function through our session instead.
 - **The worker** runs jobs through procrastinate's psycopg connector, which needs
   `psycopg[binary]` for libpq.
+- **Queues:** `DEFAULT_QUEUE` holds every job the main worker (`apps/worker`) runs.
+  `HUGINN_QUEUE` holds only `huginn.run_repro`, which the `huginn` service runs. Each process
+  consumes only its own queue, because a worker that claims a task it never registered fails the
+  job and nobody retries it.
 - **Job args** are JSON and always include `installation_id`. procrastinate's own tables are the
   one exception to the "every table has `installation_id`" rule, as the LLD notes.
 - **Upgrading procrastinate** means a new alembic revision that runs its migration files.
