@@ -4,14 +4,34 @@ Installations, repos and each repo's effective `heimdall.yml` config.
 
 | File | Role |
 |---|---|
-| `api.py` | Public interface: `load_config`, `TenancyDeps`, `RepoConfig` |
-| `service.py` | `load_config(deps, ctx, repo_id, sha) -> RepoConfig` |
+| `api.py` | Public interface: `on_installation_event`, `get_tenant`, `load_config`, `parse_installation_event`, `TenancyDeps`, `RepoConfig`, `InstallationEvent` |
+| `service.py` | `on_installation_event(deps, event)`, `get_tenant(deps, installation_id, request_id=None)`, `load_config(deps, ctx, repo_id, sha)` |
+| `_installation_events.py` | `parse_installation_event(kind, payload)`: webhook to `InstallationEvent` (pure) |
+| `_installation_store.py` | Idempotent upserts for installation events |
 | `domain.py` | `parse_layer(text, source)`, `build_config(layers)`, `merge_layers(base, override)`, `config_sha(files)`, `RepoConfig` and its sections. Pure, no I/O |
 | `_config_model.py` | The schema: sections, defaults, the `test_cmd` rule |
 | `_config_merge.py` | `ConfigLayer` and the deep merge |
 | `_config_errors.py` | Turns pydantic errors into the exact lines maintainers see |
 | `ports.py` | `ConfigFileReader` (implemented by `adapters/github`) |
-| `models.py` | `installations`, `repos` |
+| `models.py` | `installations`, `repos` (with `enabled`) |
+
+## Tenants
+
+GitHub's installation webhooks create and update tenants. Every write is an upsert, so a
+redelivered webhook changes nothing.
+
+| Webhook | Effect |
+|---|---|
+| `installation.created` | Installation created (not suspended); its repos created and enabled |
+| `installation.deleted`, `installation.suspend` | `suspended = true`. Deleted installations are kept, because PRs and the insert-only audit log reference them |
+| `installation.unsuspend` | `suspended = false` |
+| `installation.new_permissions_accepted` | Account login and type refreshed |
+| `installation_repositories.added` | Repos created, or re-enabled with their current name |
+| `installation_repositories.removed` | Repos set `enabled = false` (rows kept, because PRs reference them) |
+
+Every event also upserts the installation from its `account`, so a repositories event for a
+missed installation still works. `get_tenant(installation_id)` starts every job: it returns a
+`TenantCtx`, or raises `InstallationNotFound` / `InstallationSuspended`.
 
 ## heimdall.yml
 

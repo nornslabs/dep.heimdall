@@ -1,4 +1,4 @@
-"""Tenancy use cases: each repo's effective heimdall.yml, cached on its ``repos`` row."""
+"""Tenancy use cases: tenants from installation webhooks, and each repo's effective config."""
 
 from dataclasses import dataclass
 
@@ -9,21 +9,23 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
+from heimdall.modules.tenancy._installation_store import apply_installation_event
 from heimdall.modules.tenancy.domain import (
     CONFIG_PATH,
     ORG_CONFIG_REPO,
     ConfigFile,
+    InstallationEvent,
     RepoConfig,
     build_config,
     config_sha,
     parse_layer,
 )
-from heimdall.modules.tenancy.models import Repo
+from heimdall.modules.tenancy.models import Installation, Repo
 from heimdall.modules.tenancy.ports import ConfigFileReader
-from heimdall.shared.context import TenantCtx
-from heimdall.shared.errors import RepoNotFound
+from heimdall.shared.context import TenantCtx, new_request_id
+from heimdall.shared.errors import InstallationNotFound, InstallationSuspended, RepoNotFound
 from heimdall.shared.github import RepoRef
-from heimdall.shared.ids import RepoId
+from heimdall.shared.ids import InstallationId, RepoId
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,46 @@ class TenancyDeps:
 
     sessions: async_sessionmaker[AsyncSession]
     files: ConfigFileReader
+
+
+async def on_installation_event(deps: TenancyDeps, event: InstallationEvent) -> None:
+    """Create, update or suspend a tenant and its repos from a GitHub installation webhook.
+
+    Safe to repeat: GitHub redelivers webhooks, and applying the same event twice leaves the
+    rows as they were after the first time.
+
+    Args:
+        deps: Database access.
+        event: From ``parse_installation_event``.
+    """
+    async with unit_of_work(deps.sessions) as session:
+        await apply_installation_event(session, event)
+
+
+async def get_tenant(
+    deps: TenancyDeps, installation_id: InstallationId, request_id: str | None = None
+) -> TenantCtx:
+    """Start work for an installation: the context every use case takes.
+
+    Args:
+        deps: Database access.
+        installation_id: The installation a webhook or job belongs to.
+        request_id: Correlation id, such as the webhook delivery id; a new one if omitted.
+
+    Returns:
+        The tenant context.
+
+    Raises:
+        InstallationNotFound: Heimdall has never seen this installation.
+        InstallationSuspended: it is suspended or uninstalled, so no work is done for it.
+    """
+    async with unit_of_work(deps.sessions) as session:
+        installation = await session.get(Installation, installation_id)
+    if installation is None:
+        raise InstallationNotFound(f"installation {installation_id} is not known")
+    if installation.suspended:
+        raise InstallationSuspended(f"installation {installation_id} is suspended")
+    return TenantCtx(installation_id=installation_id, request_id=request_id or new_request_id())
 
 
 async def load_config(deps: TenancyDeps, ctx: TenantCtx, repo_id: RepoId, sha: str) -> RepoConfig:
