@@ -137,6 +137,25 @@ async def test_count_open_prs_by_author_uses_search_total(
     assert query == "repo:octo-org/demo is:pr is:open author:ravi"
 
 
+async def test_get_issue_assignees_returns_all_assignees(
+    reader: GitHubApiReader, fake_github: FakeGitHub
+) -> None:
+    """Read linked issue assignee for the intake assignment rule."""
+    path = "/repos/octo-org/demo/issues/7"
+    fake_github.on_json("GET", path, {"number": 7, "assignees": [{"login": "ravi"}]})
+
+    assert await reader.get_issue_assignees(REPO, 7) == ("ravi",)
+
+
+async def test_get_issue_assignees_returns_empty_tuple_when_unassigned(
+    reader: GitHubApiReader, fake_github: FakeGitHub
+) -> None:
+    """Return no assignee when the linked issue has none."""
+    fake_github.on_json("GET", "/repos/octo-org/demo/issues/7", {"number": 7})
+
+    assert await reader.get_issue_assignees(REPO, 7) == ()
+
+
 # --- CI state -------------------------------------------------------------------------
 
 

@@ -5,6 +5,7 @@ HEI-65) writes to GitHub; this adapter never does.
 
 | File | Public names |
 |---|---|
+| `sender.py` | Gjallarhorn writer: rechecks approved draft hash and posts exact text as a PR comment |
 | `auth.py` | `load_private_key(path)`; `GitHubAppClients(app_id, private_key)` with `.for_installation(id)` |
 | `reader.py` | `GitHubApiReader(clients)` and `MAX_DIFF_BYTES` |
 | `_http.py`, `_wire.py`, `_errors.py`, `_ci.py` | Private: the typed GET, the response fields we read, error mapping, CI combining |
@@ -21,6 +22,7 @@ Value types live in `shared/github.py` (`RepoRef`, `PullRequestInfo`, `ChangedFi
 | `list_changed_files(repo, number)` | Every changed file, following pages (up to GitHub's 3000) |
 | `get_diff(repo, number)` | Unified diff cut at 200 KB on a character boundary, with `truncated` |
 | `count_open_prs_by_author(repo, author)` | One search call, using `total_count` |
+| `get_issue_assignees(repo, issue_number)` | All assignee logins for the linked issue |
 | `get_ci_state(repo, sha)` | Statuses and check runs combined: any failure, then anything running, then success; `none` if nothing reported |
 
 PR titles, bodies and diffs are untrusted data: returned as values, never logged.

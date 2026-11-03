@@ -142,6 +142,21 @@ class GitHubApiReader:
             )
             return _wire.SearchTotalWire.model_validate(reply.payload).total_count
 
+    async def get_issue_assignees(self, repo: RepoRef, issue_number: int) -> tuple[str, ...]:
+        """Read all assignees of a linked issue.
+
+        Args:
+            repo: Repository and installation that owns the issue.
+            issue_number: Linked issue number.
+
+        Returns:
+            Assignee logins, or an empty tuple when the issue has none.
+        """
+        async with github_errors("get issue assignee"):
+            reply = await get(self._client(repo), f"/repos/{repo.full_name}/issues/{issue_number}")
+        issue = _wire.IssueWire.model_validate(reply.payload)
+        return tuple(assignee.login for assignee in issue.assignees)
+
     async def get_ci_state(self, repo: RepoRef, sha: str) -> CiState:
         """Combine a commit's statuses and check runs into one CI state.
 

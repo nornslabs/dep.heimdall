@@ -35,6 +35,12 @@ class PullRequestWire(_Wire):
     assignees: list[Login] = []
 
 
+class IssueWire(_Wire):
+    """Issue fields needed by intake assignment checks."""
+
+    assignees: list[Login] = []
+
+
 class ChangedFileWire(_Wire):
     filename: str
     status: str
