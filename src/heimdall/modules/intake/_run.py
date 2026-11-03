@@ -77,7 +77,15 @@ async def run_intake(
     facts = await collect_intake_facts(reader, repo, pull_request, config.intake)
     results = evaluate_rules(facts, config.intake)
     await _save_results_and_transition(
-        sessions, ctx, repo_id, pr_id, event_id, head_sha, facts, results
+        sessions,
+        ctx,
+        repo_id,
+        pr_id,
+        event_id,
+        head_sha,
+        facts,
+        results,
+        config.repro.test_cmd,
     )
     return results
 
@@ -91,6 +99,7 @@ async def _save_results_and_transition(
     head_sha: str,
     facts: IntakeFacts,
     results: tuple[RuleResult, ...],
+    repro_test_cmd: str,
 ) -> None:
     """Commit result rows and the matching state transition together."""
     async with unit_of_work(sessions) as session:
@@ -116,6 +125,7 @@ async def _save_results_and_transition(
             room_id=room_id,
             room_message=message,
             linked_issue=linked_issue_number(facts.body),
+            repro_test_cmd=repro_test_cmd,
         )
         if isinstance(transition, Rejected):
             await session.refresh(pr)

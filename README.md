@@ -27,6 +27,8 @@ Configuration is read from `.env`. The GitHub App private key is mounted read-on
 `secrets/github-app.pem` at `/run/secrets/github-app.pem`; it is not copied into the image.
 The `secrets/` directory and `.env` are git-ignored. The Smee channel URL is required for
 webhook forwarding; without it the tunnel container exits with a setup message.
+The GitHub App must subscribe to `workflow_run` events and have Actions read access so Heimdall can
+ingest paired reproduction results after a workflow completes.
 
 ## Development checks
 

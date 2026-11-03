@@ -6,11 +6,13 @@ from procrastinate import App
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from heimdall.adapters.db.unit_of_work import unit_of_work
+from heimdall.adapters.github.actions import GitHubActionsResults
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.modules.intake.api import run_intake
-from heimdall.modules.repro.api import timeout_run
-from heimdall.modules.tenancy.api import get_tenant
-from heimdall.modules.triage.api import handle_webhook_delivery
+from heimdall.modules.repro.api import RunOutcome, get_run, record_result, timeout_run
+from heimdall.modules.tenancy.api import get_repo_full_name_in_transaction, get_tenant
+from heimdall.modules.triage.api import get_pr_snapshot, handle_webhook_delivery
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId, RepoId
@@ -92,6 +94,63 @@ def register_repro_timeout_task(
         """Finish the reproduction step if its paired run has not returned."""
         ctx = await get_tenant(sessions, InstallationId(installation_id))
         await timeout_run(sessions, ctx, UUID(run_id))
+
+
+def register_actions_result_task(
+    queue_app: App,
+    sessions: async_sessionmaker[AsyncSession],
+    results: GitHubActionsResults,
+) -> None:
+    """Register authenticated GitHub Actions artifact ingestion.
+
+    Args:
+        queue_app: Procrastinate app used by the worker.
+        sessions: Tenant-scoped database sessions.
+        results: Adapter that downloads and validates workflow artifacts.
+    """
+
+    @queue_app.task(name="actions.process_workflow_run")
+    async def process_workflow_run_task(
+        installation_id: int,
+        delivery_id: str,
+        workflow_run_id: int,
+        head_sha: str,
+        repo_full_name: str,
+        workflow_path: str,
+    ) -> None:
+        """Save paired outcomes only for the matching tenant, repo, and head."""
+        ctx = await get_tenant(sessions, InstallationId(installation_id))
+        await handle_webhook_delivery(sessions, ctx, delivery_id)
+        if workflow_path != ".github/workflows/heimdall-repro.yml":
+            return
+        repo = RepoRef(ctx.installation_id, repo_full_name)
+        artifact = await results.get_paired_artifact(repo, workflow_run_id)
+        run_id = UUID(artifact.run_id)
+        run = await get_run(sessions, ctx, run_id)
+        if run.head_sha != head_sha:
+            return
+        async with unit_of_work(sessions) as session:
+            pr = await get_pr_snapshot(session, ctx, run.pr_id)
+            if pr is None:
+                return
+            expected_repo = await get_repo_full_name_in_transaction(session, ctx, pr.repo_id)
+            if expected_repo != repo_full_name:
+                return
+        await record_result(
+            sessions,
+            ctx,
+            run_id,
+            RunOutcome(
+                passed=artifact.with_fix.passed,
+                failures=artifact.with_fix.failures,
+                duration_seconds=artifact.with_fix.duration_seconds,
+            ),
+            RunOutcome(
+                passed=artifact.without_fix.passed,
+                failures=artifact.without_fix.failures,
+                duration_seconds=artifact.without_fix.duration_seconds,
+            ),
+        )
 
     @queue_app.task(name="tenancy.on_installation_event")
     async def installation_event_task(installation_id: int, delivery_id: str) -> None:
