@@ -31,7 +31,6 @@ def upgrade() -> None:
             server_default=sa.func.now(),
             nullable=False,
         ),
-        sa.ForeignKeyConstraint(["installation_id"], ["installations.installation_id"]),
         sa.ForeignKeyConstraint(["repro_run_id"], ["repro_runs.id"]),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("repro_run_id"),
