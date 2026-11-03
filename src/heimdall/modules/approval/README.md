@@ -5,6 +5,10 @@ comment in the same transaction. Gjallarhorn rechecks the approval row and all d
 posting. Reproduction dispatches use a separate tenant-scoped policy approval row whose hash covers
 the repository, workflow, ref, and all inputs; the GitHub sender checks it before dispatching.
 
+Each new approval, auto-suggest pause and repro dispatch authorization appends an `audit` entry
+(`draft.approved`, `auto_suggest.paused`, `repro.dispatch_authorized`) in the same transaction,
+under the PR's subject. Repeating an existing approval does not add a second entry.
+
 Public functions: `record_approval`, `approve_by_policy`, `pause_auto_suggestions`,
 `queue_repro_workflow_dispatch`, `verify_repro_workflow_dispatch`, `get_approved_draft`,
 `validate_approval`, and `validate_posting_hash`.
