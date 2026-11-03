@@ -1,0 +1,95 @@
+name: Heimdall reproduction
+
+on:
+  workflow_dispatch:
+    inputs:
+      repro_run_id:
+        description: Heimdall reproduction run UUID
+        required: true
+        type: string
+      pr_number:
+        description: Pull request number
+        required: true
+        type: string
+      head_sha:
+        description: Pull request commit to test
+        required: true
+        type: string
+      base_sha:
+        description: Base commit to compare against
+        required: true
+        type: string
+      test_cmd:
+        description: Validated test command from repository configuration
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: heimdall-repro-${{ inputs.repro_run_id }}
+  cancel-in-progress: false
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Validate inputs
+        env:
+          REPRO_RUN_ID: ${{ inputs.repro_run_id }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          HEAD_SHA: ${{ inputs.head_sha }}
+          BASE_SHA: ${{ inputs.base_sha }}
+        run: |
+          [[ "$REPRO_RUN_ID" =~ ^[0-9a-fA-F-]{36}$ ]]
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-fA-F]{40,64}$ ]]
+          [[ "$BASE_SHA" =~ ^[0-9a-fA-F]{40,64}$ ]]
+
+      - name: Preserve the trusted runner
+        run: cp "$GITHUB_WORKSPACE/.github/scripts/run-repro.py" "$RUNNER_TEMP/run-repro.py"
+
+      - name: Check out pull request commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.head_sha }}
+          persist-credentials: false
+
+      - name: Run tests with fix
+        id: with-fix
+        env:
+          TEST_COMMAND: ${{ inputs.test_cmd }}
+        run: |
+          python "$RUNNER_TEMP/run-repro.py" with-fix
+
+      - name: Check out base commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.base_sha }}
+          clean: true
+          persist-credentials: false
+
+      - name: Run tests without fix
+        env:
+          TEST_COMMAND: ${{ inputs.test_cmd }}
+        run: |
+          python "$RUNNER_TEMP/run-repro.py" without-fix
+
+      - name: Build paired result artifact
+        if: always()
+        env:
+          REPRO_RUN_ID: ${{ inputs.repro_run_id }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/heimdall-repro"
+          printf '%s' "$REPRO_RUN_ID" > "$RUNNER_TEMP/heimdall-repro/run-id"
+
+      - name: Upload paired result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: heimdall-repro-${{ inputs.repro_run_id }}
+          path: ${{ runner.temp }}/heimdall-repro/
+          if-no-files-found: error
+          retention-days: 1
