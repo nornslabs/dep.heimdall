@@ -9,6 +9,7 @@ from heimdall.adapters.ai.providers._wire import (
     as_list,
     as_object,
     post_json,
+    raise_if_truncated,
     reply_model,
     token_count,
 )
@@ -69,6 +70,7 @@ class AnthropicNative:
                 "anthropic-version": ANTHROPIC_VERSION,
             },
             _request_body(config, messages, tools, tool_choice),
+            config.timeout_s,
         )
         return _parse_reply(payload, config.model)
 
@@ -146,6 +148,7 @@ def _wire_tool(tool: ToolSpec) -> dict[str, object]:
 
 def _parse_reply(payload: dict[str, object], requested_model: str) -> ChatResponse:
     """Join text blocks and collect tool_use blocks."""
+    raise_if_truncated(payload.get("stop_reason"), "max_tokens")
     texts: list[str] = []
     calls: list[ToolCall] = []
     for raw in as_list(payload.get("content")):

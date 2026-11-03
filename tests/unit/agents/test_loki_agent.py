@@ -5,7 +5,13 @@ import uuid
 
 import pytest
 
-from agents.loki.agent import build_review_messages, build_review_prompt, run_loki
+from agents._runtime import RunUsage
+from agents.loki.agent import (
+    LokiReplyInvalidError,
+    build_review_messages,
+    build_review_prompt,
+    run_loki,
+)
 from agents.loki.config import MAX_FINDINGS
 from heimdall.adapters.ai import Usage
 from tests.unit.agents.scripted_ai import ScriptedAi, text_reply
@@ -113,11 +119,14 @@ async def test_run_loki_accepts_a_fenced_json_reply() -> None:
     assert result.saved == 1
 
 
-async def test_run_loki_rejects_a_reply_that_is_not_json() -> None:
-    with pytest.raises(ValueError, match="model response was not valid JSON"):
-        await run_loki(
-            FakeTools(), ScriptedAi([text_reply("looks fine")]), 456, uuid.uuid4(), "o/d"
-        )
+async def test_run_loki_rejects_a_reply_that_is_not_json_but_keeps_its_usage() -> None:
+    ai = ScriptedAi([text_reply("looks fine", model="provider/loki-1", usage=Usage(30, 4))])
+
+    with pytest.raises(LokiReplyInvalidError, match="model response was not valid JSON") as raised:
+        await run_loki(FakeTools(), ai, 456, uuid.uuid4(), "o/d")
+
+    assert raised.value.usage == RunUsage(Usage(30, 4), "provider/loki-1")
+    assert isinstance(raised.value, ValueError)
 
 
 def test_build_review_prompt_json_escapes_delimiter_characters() -> None:

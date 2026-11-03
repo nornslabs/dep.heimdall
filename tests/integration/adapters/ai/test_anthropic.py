@@ -9,6 +9,7 @@ import respx
 from pydantic import SecretStr
 
 from heimdall.adapters.ai import AiAdapter, AiConfig, ChatMessage, ToolCall, ToolSpec, Usage
+from heimdall.shared.errors import AiBadResponse
 
 BASE_URL = "https://anthropic.test"
 MESSAGES = f"{BASE_URL}/v1/messages"
@@ -119,3 +120,16 @@ async def test_tool_result_round_trip_uses_content_blocks(ai: AiAdapter) -> None
             {"type": "tool_result", "tool_use_id": "tu_2", "content": "more text"},
         ],
     }
+
+
+@respx.mock
+async def test_reply_stopped_at_max_tokens_raises_bad_response(ai: AiAdapter) -> None:
+    respx.post(MESSAGES).mock(
+        return_value=httpx.Response(
+            200,
+            json={"content": [{"type": "text", "text": "{"}], "stop_reason": "max_tokens"},
+        )
+    )
+
+    with pytest.raises(AiBadResponse, match="truncated"):
+        await ai.chat([ChatMessage("user", "hello")])

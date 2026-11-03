@@ -207,3 +207,56 @@ async def test_invalid_json_body_raises_bad_response(ai: AiAdapter) -> None:
 
     with pytest.raises(AiBadResponse):
         await ai.chat([ChatMessage("user", "hello")])
+
+
+@respx.mock
+async def test_reply_cut_off_at_the_token_limit_raises_bad_response(ai: AiAdapter) -> None:
+    respx.post(COMPLETIONS).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": '{"findings": ['}, "finish_reason": "length"}]
+            },
+        )
+    )
+
+    with pytest.raises(AiBadResponse, match="truncated"):
+        await ai.chat([ChatMessage("user", "hello")])
+
+
+@respx.mock
+async def test_non_numeric_retry_after_falls_back_to_backoff() -> None:
+    waits: list[float] = []
+
+    async def record(seconds: float) -> None:
+        waits.append(seconds)
+
+    respx.post(COMPLETIONS).mock(
+        side_effect=[httpx.Response(429, headers={"Retry-After": "nan"}), _reply({"content": "ok"})]
+    )
+    config = AiConfig(base_url=BASE_URL, api_key=SecretStr("k"), model="m")
+    adapter = AiAdapter(config, sleep=record)
+
+    reply = await adapter.chat([ChatMessage("user", "hello")])
+    await adapter.aclose()
+
+    assert reply.text == "ok"
+    assert waits == [2.0]
+
+
+@respx.mock
+async def test_non_utf8_body_raises_bad_response(ai: AiAdapter) -> None:
+    respx.post(COMPLETIONS).mock(return_value=httpx.Response(200, content=b"\xff\xfe\xfa"))
+
+    with pytest.raises(AiBadResponse):
+        await ai.chat([ChatMessage("user", "hello")])
+
+
+@respx.mock
+async def test_injected_client_still_gets_the_configured_timeout() -> None:
+    route = respx.post(COMPLETIONS).mock(return_value=_reply({"content": "ok"}))
+    config = AiConfig(base_url=BASE_URL, api_key=SecretStr("k"), model="m", timeout_s=7)
+    async with httpx.AsyncClient() as http:
+        await AiAdapter(config, http=http).chat([ChatMessage("user", "hi")])
+
+    assert route.calls.last.request.extensions["timeout"]["read"] == 7

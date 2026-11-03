@@ -1,6 +1,6 @@
 """HTTP and JSON helpers shared by providers: status mapping and safe JSON narrowing."""
 
-import json
+import math
 from collections.abc import Mapping
 from typing import cast
 
@@ -18,6 +18,7 @@ async def post_json(
     url: str,
     headers: Mapping[str, str],
     body: Mapping[str, object],
+    timeout_s: float,
 ) -> dict[str, object]:
     """POST a JSON body and return the decoded JSON object, mapping failures to AI errors.
 
@@ -26,6 +27,7 @@ async def post_json(
         url: Full endpoint URL.
         headers: Auth and version headers; never logged.
         body: Request payload.
+        timeout_s: Per-request timeout, applied even to a client the caller injected.
 
     Returns:
         The response body as a JSON object.
@@ -36,13 +38,13 @@ async def post_json(
         AiBadResponse: the body is not a JSON object.
     """
     try:
-        response = await http.post(url, headers=dict(headers), json=body)
+        response = await http.post(url, headers=dict(headers), json=body, timeout=timeout_s)
     except httpx.TransportError as error:
         raise AiUnavailable(f"model provider unreachable: {type(error).__name__}") from error
     _raise_for_status(response)
     try:
         decoded: object = response.json()
-    except json.JSONDecodeError as error:
+    except ValueError as error:  # JSONDecodeError and UnicodeDecodeError are both ValueErrors
         raise AiBadResponse("model provider returned invalid JSON") from error
     payload = as_object(decoded)
     if payload is None:
@@ -67,9 +69,10 @@ def _retry_after(header: str | None) -> float | None:
     if header is None:
         return None
     try:
-        return float(header)
+        seconds = float(header)
     except ValueError:
         return None
+    return seconds if math.isfinite(seconds) else None
 
 
 def as_object(value: object) -> dict[str, object] | None:
@@ -94,6 +97,20 @@ def token_count(usage: Mapping[str, object] | None, name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         return 0
     return value
+
+
+def raise_if_truncated(stop_reason: object, truncated_value: str) -> None:
+    """Refuse a reply the provider cut off at the token limit; its JSON would be half-written.
+
+    Args:
+        stop_reason: The provider's ``finish_reason`` or ``stop_reason`` value.
+        truncated_value: The value that provider uses for "hit max tokens".
+
+    Raises:
+        AiBadResponse: the reply was truncated.
+    """
+    if stop_reason == truncated_value:
+        raise AiBadResponse("model reply was truncated at max_output_tokens")
 
 
 def reply_model(payload: Mapping[str, object], requested: str) -> str:

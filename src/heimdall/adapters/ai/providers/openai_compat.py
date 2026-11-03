@@ -10,6 +10,7 @@ from heimdall.adapters.ai.providers._wire import (
     as_list,
     as_object,
     post_json,
+    raise_if_truncated,
     reply_model,
     token_count,
 )
@@ -60,6 +61,7 @@ class OpenAiCompat:
             f"{config.base_url.rstrip('/')}/chat/completions",
             {"Authorization": f"Bearer {config.api_key.get_secret_value()}"},
             _request_body(config, messages, tools, tool_choice),
+            config.timeout_s,
         )
         return _parse_reply(payload, config.model)
 
@@ -121,8 +123,9 @@ def _parse_reply(payload: dict[str, object], requested_model: str) -> ChatRespon
     choices = as_list(payload.get("choices"))
     choice = as_object(choices[0]) if choices else None
     message = as_object(choice.get("message")) if choice is not None else None
-    if message is None:
+    if choice is None or message is None:
         raise AiBadResponse("model reply has no message")
+    raise_if_truncated(choice.get("finish_reason"), "length")
     content = message.get("content")
     text = content if isinstance(content, str) and content else None
     calls = tuple(_parse_tool_call(raw) for raw in as_list(message.get("tool_calls")))

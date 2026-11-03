@@ -75,8 +75,9 @@ class ToolBox:
             arguments: Parsed arguments from the model.
 
         Returns:
-            JSON text of the result, or ``error: ...``. Error text names only the tool or
-            the exception type, so untrusted content is never echoed back.
+            JSON text of the result, or ``error: ...``. Error text names only the tool the
+            model asked for or the exception type, never the exception message, which may
+            carry untrusted content.
         """
         tool = self._tools.get(name)
         if tool is None:

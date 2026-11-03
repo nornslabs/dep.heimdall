@@ -23,6 +23,24 @@ UNTRUSTED_NOTICE = (
 )
 
 
+class LokiReplyInvalidError(ValueError):
+    """Loki's model answered with something that is not a findings object.
+
+    Attributes:
+        usage: Tokens the failed call spent, so the caller can still record them.
+    """
+
+    def __init__(self, message: str, usage: RunUsage) -> None:
+        """Keep the spent usage with the parse error.
+
+        Args:
+            message: Why the reply was rejected; never contains the reply text.
+            usage: Tokens and model of the rejected call.
+        """
+        super().__init__(message)
+        self.usage = usage
+
+
 class LokiTools(Protocol):
     """MCP operations Loki may use for review context and findings."""
 
@@ -125,7 +143,8 @@ async def run_loki(
         Counts and rejection reasons from the review module, plus usage.
 
     Raises:
-        ValueError: an MCP response or the model reply is malformed.
+        LokiReplyInvalidError: the model reply is not a findings object; carries the usage spent.
+        ValueError: an MCP response is malformed.
     """
     context = await tools.get_pr_context(installation_id, str(pr_id), repo_full_name)
     head_sha = _str_field(context, "head_sha")
@@ -136,7 +155,10 @@ async def run_loki(
         build_review_messages(context, _str_field(diff_result, "text")), tool_choice="none"
     )
     usage = RunUsage().add(reply)
-    findings = parse_findings(reply.text or "", MAX_FINDINGS)
+    try:
+        findings = parse_findings(reply.text or "", MAX_FINDINGS)
+    except ValueError as error:
+        raise LokiReplyInvalidError(str(error), usage) from error
 
     async def current_head() -> str:
         latest = await tools.get_pr_context(installation_id, str(pr_id), repo_full_name)
