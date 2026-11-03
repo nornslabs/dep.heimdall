@@ -28,6 +28,18 @@ class RepoLimitReached(HeimdallError):
     """The installation already has the maximum number of repos enabled."""
 
 
+class InstallationNotFound(HeimdallError):
+    """Heimdall has no record of this GitHub App installation."""
+
+
+class InstallationSuspended(HeimdallError):
+    """The installation is suspended or uninstalled, so Heimdall does no work for it."""
+
+
+class WebhookPayloadInvalid(HeimdallError):
+    """A signed GitHub webhook is missing a field Heimdall needs."""
+
+
 class RepoNotFound(HeimdallError):
     """The repository is not enabled for this installation (or belongs to another one)."""
 

@@ -24,6 +24,12 @@ from heimdall.modules.tenancy._config_model import (
     ReviewConfig,
     RoomConfig,
 )
+from heimdall.modules.tenancy._installation_events import (
+    InstallationAction,
+    InstallationEvent,
+    RepoSummary,
+    parse_installation_event,
+)
 from heimdall.shared.errors import ConfigInvalid
 
 __all__ = [
@@ -33,14 +39,18 @@ __all__ = [
     "AutoSuggestConfig",
     "ConfigFile",
     "ConfigLayer",
+    "InstallationAction",
+    "InstallationEvent",
     "IntakeConfig",
     "RepoConfig",
+    "RepoSummary",
     "ReproConfig",
     "ReviewConfig",
     "RoomConfig",
     "build_config",
     "config_sha",
     "merge_layers",
+    "parse_installation_event",
     "parse_layer",
 ]
 
