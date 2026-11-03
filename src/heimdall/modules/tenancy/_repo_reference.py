@@ -53,3 +53,16 @@ async def get_repo_id_in_transaction(
     if repo is None:
         raise ValueError(f"repository {full_name} is not registered for this installation")
     return RepoId(repo.repo_id)
+
+
+async def get_repo_full_name_in_transaction(
+    session: AsyncSession, ctx: TenantCtx, repo_id: RepoId
+) -> str:
+    """Resolve a repository name from its tenant scoped GitHub id."""
+    result = await session.exec(
+        select_for_tenant(Repo, ctx.installation_id).where(Repo.repo_id == repo_id)
+    )
+    repo = result.first()
+    if repo is None:
+        raise ValueError("repository is not registered for this installation")
+    return repo.full_name

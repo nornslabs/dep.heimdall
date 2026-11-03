@@ -1,4 +1,4 @@
-"""The table models match the LLD: 14 tables, tenant column everywhere, LLD indexes."""
+"""The table models match the LLD: 15 tables, tenant column everywhere, LLD indexes."""
 
 import pytest
 from sqlalchemy import BigInteger, Table, UniqueConstraint
@@ -17,6 +17,7 @@ LLD_TABLES = {
     "drafts",
     "agent_tasks",
     "approvals",
+    "workflow_dispatch_approvals",
     "outbox",
     "audit_log",
     "usage",
