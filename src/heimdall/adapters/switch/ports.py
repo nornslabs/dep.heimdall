@@ -23,7 +23,14 @@ class RoomEvent:
 
 @dataclass(frozen=True)
 class RoomPost:
-    """Post fields needed to process a reaction without trusting event text."""
+    """Post fields needed to process a reaction without trusting event text.
+
+    Attributes:
+        id: Mattermost post identifier.
+        channel_id: Room containing the post.
+        root_id: Thread root identifier, or an empty string for a root post.
+        message: Untrusted post text, parsed only for the strict approval marker.
+    """
 
     id: str
     channel_id: str
