@@ -8,11 +8,11 @@ case "$role" in
     exec alembic upgrade head ;;
   api|worker|mcp|bridge)
     exec python "apps/$role/main.py" ;;
-  huginn|loki|heimdall)
-if [ "$role" = huginn ]; then
-exec python agents/huginn/runner.py
-fi
-exec python "agents/$role/agent.py" ;;
+  # Run agents as modules so `agents.*` imports resolve from /app.
+  huginn)
+    exec python -m agents.huginn.runner ;;
+  loki|heimdall)
+    exec python -m "agents.$role.agent" ;;
   *)
     echo "usage: entrypoint.sh {migrate|api|worker|mcp|bridge|huginn|loki|heimdall}" >&2
     exit 64 ;;

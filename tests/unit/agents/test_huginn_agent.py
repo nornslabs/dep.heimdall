@@ -10,7 +10,7 @@ from heimdall.modules.repro.api import MAX_REPRO_RUNS, ReproStatus, Verdict
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 HUGINN = runpy.run_path(str(REPOSITORY_ROOT / "agents/huginn/agent.py"))
-MAX_TURNS = HUGINN["MAX_TURNS"]
+MAX_POLLS = HUGINN["MAX_POLLS"]
 run_huginn = HUGINN["run_huginn"]
 
 
@@ -129,7 +129,7 @@ async def test_huginn_stops_after_bounded_polling() -> None:
     assert result.status is ReproStatus.RUNNING
     assert result.verdict is None
     assert tools.start_count == MAX_REPRO_RUNS
-    assert all(count == MAX_TURNS for count in tools.polls_by_run.values())
+    assert all(count == MAX_POLLS for count in tools.polls_by_run.values())
     assert "still running" in result.message
 
 

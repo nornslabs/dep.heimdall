@@ -14,7 +14,7 @@ from heimdall.modules.repro.api import MAX_REPRO_RUNS, ReproStatus, Verdict
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 FIXTURE_DIR = REPOSITORY_ROOT / "tests/fixtures/huginn"
 HUGINN = runpy.run_path(str(REPOSITORY_ROOT / "agents/huginn/agent.py"))
-MAX_TURNS: int = HUGINN["MAX_TURNS"]
+MAX_POLLS: int = HUGINN["MAX_POLLS"]
 run_huginn = HUGINN["run_huginn"]
 
 
@@ -85,7 +85,7 @@ async def test_huginn_replays_recorded_pr_fixtures(fixture_path: Path) -> None:
     assert result.verdict == expected
     assert f"Paired attempts: {3 if expected is not None else 0}/3 completed." in result.message
     assert tools.start_count == MAX_REPRO_RUNS
-    assert tools.result_count == MAX_REPRO_RUNS <= MAX_REPRO_RUNS * MAX_TURNS
+    assert tools.result_count == MAX_REPRO_RUNS <= MAX_REPRO_RUNS * MAX_POLLS
     assert tools.start_arguments
     assert all(
         arguments == (123, str(pr_id), str(run["head_sha"]), configured_command)

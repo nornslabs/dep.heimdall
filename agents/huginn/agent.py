@@ -16,7 +16,7 @@ from heimdall.modules.repro.api import (
 )
 
 POLL_INTERVAL_SECONDS = 5
-MAX_TURNS = REPRO_TIMEOUT_SECONDS // POLL_INTERVAL_SECONDS
+MAX_POLLS = REPRO_TIMEOUT_SECONDS // POLL_INTERVAL_SECONDS
 MAX_FAILURE_DETAILS = 5
 MAX_FAILURE_LENGTH = 300
 
@@ -69,7 +69,7 @@ async def run_huginn(
     """
     run_ids = await _start_attempts(tools, installation_id, pr_id, head_sha, test_cmd)
     current: dict[UUID, ReproRunDetails | None] = {run_id: None for run_id in run_ids}
-    for turn in range(MAX_TURNS):
+    for turn in range(MAX_POLLS):
         for run_id in run_ids:
             latest = current[run_id]
             if latest is not None and latest.status in _TERMINAL_STATUSES:
@@ -80,7 +80,7 @@ async def run_huginn(
             current[run_id] = details
         if all(run is not None and run.status in _TERMINAL_STATUSES for run in current.values()):
             break
-        if turn + 1 < MAX_TURNS:
+        if turn + 1 < MAX_POLLS:
             await sleep(POLL_INTERVAL_SECONDS)
 
     saved_runs = tuple(run for run in current.values() if run is not None)
