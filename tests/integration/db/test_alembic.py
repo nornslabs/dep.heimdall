@@ -4,7 +4,7 @@ from alembic.runtime.migration import MigrationContext
 from sqlalchemy import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from heimdall.adapters.db.metadata import import_all_models, metadata
+from heimdall.adapters.db.metadata import import_all_models, include_in_migrations, metadata
 
 pytestmark = pytest.mark.integration
 
@@ -18,7 +18,9 @@ def _is_test_table(diff: object) -> bool:
 
 def _schema_drift(connection: Connection) -> list[object]:
     import_all_models()
-    context = MigrationContext.configure(connection, opts={"compare_type": True})
+    context = MigrationContext.configure(
+        connection, opts={"compare_type": True, "include_name": include_in_migrations}
+    )
     return [diff for diff in compare_metadata(context, metadata) if not _is_test_table(diff)]
 
 
@@ -34,3 +36,10 @@ async def test_migrations_record_their_version(engine: AsyncEngine) -> None:
         version = await conn.exec_driver_sql("SELECT version_num FROM alembic_version")
 
         assert version.scalar_one()
+
+
+async def test_migrations_install_the_job_queue(engine: AsyncEngine) -> None:
+    async with engine.connect() as conn:
+        result = await conn.exec_driver_sql("SELECT to_regclass('procrastinate_jobs') IS NOT NULL")
+
+        assert result.scalar_one() is True
