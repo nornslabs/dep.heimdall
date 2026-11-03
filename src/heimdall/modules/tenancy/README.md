@@ -4,7 +4,7 @@ Installations, repos and each repo's effective `heimdall.yml` config.
 
 | File | Role |
 |---|---|
-| `api.py` | Public interface; `load_config(ctx, repo, sha)` lands here in HEI-46 |
+| `api.py` | `on_installation_event`, `get_tenant`, `load_config`, `InstallationEvent`, and `RepoConfig` |
 | `service.py` | Use cases |
 | `domain.py` | `parse_layer(text, source)`, `build_config(layers)`, `merge_layers(base, override)`, `RepoConfig` and its sections. Pure, no I/O |
 | `_config_model.py` | The schema: sections, defaults, the `test_cmd` rule |
@@ -12,6 +12,15 @@ Installations, repos and each repo's effective `heimdall.yml` config.
 | `_config_errors.py` | Turns pydantic errors into the exact lines maintainers see |
 | `ports.py` | Adapter interfaces |
 | `models.py` | `installations`, `repos` |
+
+Installation events upsert tenant and repo records. Removed repositories are disabled;
+suspension blocks the tenant, and deletion disables its repos. `get_tenant` rejects
+unknown or suspended installations. `load_config` reads `.github/heimdall.yml` and then
+`heimdall.yml` at the PR head SHA and caches the merged config by `config_sha`.
+
+`load_config` reads `.github/heimdall.yml` then `heimdall.yml` at the PR head SHA,
+validates their merged values, and caches the result in the tenant's repo row keyed by
+`config_sha`.
 
 ## heimdall.yml
 

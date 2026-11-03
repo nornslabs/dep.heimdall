@@ -28,8 +28,24 @@ class RepoLimitReached(HeimdallError):
     """The installation already has the maximum number of repos enabled."""
 
 
+class RepoNotEnabled(HeimdallError):
+    """The repository is not enabled for the requesting installation."""
+
+
+class InstallationNotFound(HeimdallError):
+    """The GitHub installation is not registered."""
+
+
+class InstallationSuspended(HeimdallError):
+    """The GitHub installation is suspended or deleted."""
+
+
 class StaleHeadSha(HeimdallError):
     """The PR head moved since this work started, so its result is out of date."""
+
+
+class ReproLimitReached(HeimdallError):
+    """The PR has already used its allowed reproduction attempts for this head."""
 
 
 class ToolNotAllowed(HeimdallError):
@@ -50,3 +66,7 @@ class SwitchUnavailable(HeimdallError):
     """Switch returned a server error or timed out."""
 
     retryable = True
+
+
+class SwitchRequestFailed(HeimdallError):
+    """Switch rejected a request that cannot succeed unchanged."""

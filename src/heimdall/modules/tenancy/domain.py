@@ -1,6 +1,8 @@
-"""Pure tenancy rules: parse heimdall.yml layers and build a repo's validated config (no I/O)."""
+"""Pure tenancy rules and installation event values."""
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Literal, cast
 
 import yaml
 from pydantic import ValidationError
@@ -38,6 +40,95 @@ __all__ = [
 ]
 
 NOT_A_MAPPING = "must be a mapping of keys to values"
+
+
+@dataclass(frozen=True)
+class InstallationRepo:
+    """A GitHub repository present in an installation event."""
+
+    repo_id: int
+    full_name: str
+
+
+@dataclass(frozen=True)
+class InstallationEvent:
+    """Validated installation lifecycle data needed by the tenancy service."""
+
+    installation_id: int
+    account_login: str
+    account_type: str
+    event: Literal["installation", "installation_repositories"]
+    action: str
+    repositories: tuple[InstallationRepo, ...] = ()
+    removed_repo_ids: tuple[int, ...] = ()
+
+
+def parse_installation_event(
+    payload: Mapping[str, object],
+    event_name: str,
+    action: str | None,
+) -> InstallationEvent:
+    """Validate GitHub installation lifecycle data before tenancy updates.
+
+    Args:
+        payload: Parsed GitHub request body, treated as untrusted data.
+        event_name: Value from ``X-GitHub-Event``.
+        action: Optional GitHub lifecycle action.
+
+    Returns:
+        Typed installation changes for the tenancy service.
+
+    Raises:
+        ValueError: Required account, installation, or repository fields are malformed.
+    """
+    installation = payload.get("installation")
+    if not isinstance(installation, Mapping):
+        raise ValueError("installation event is missing its account identity")
+    installation_values = cast(Mapping[str, object], installation)
+    account = installation_values.get("account")
+    if not isinstance(account, Mapping):
+        raise ValueError("installation event is missing its account identity")
+    account_values = cast(Mapping[str, object], account)
+    installation_id = installation_values.get("id")
+    login = account_values.get("login")
+    account_type = account_values.get("type")
+    if not isinstance(installation_id, int) or not isinstance(login, str):
+        raise ValueError("installation event is missing its account identity")
+    if not isinstance(account_type, str) or event_name not in {
+        "installation",
+        "installation_repositories",
+    }:
+        raise ValueError("installation event has an unsupported type")
+    if action is None:
+        raise ValueError("installation event is missing its action")
+    added = _installation_repos(payload.get("repositories_added", ()))
+    removed = _installation_repos(payload.get("repositories_removed", ()))
+    return InstallationEvent(
+        installation_id=installation_id,
+        account_login=login,
+        account_type=account_type,
+        event=cast(Literal["installation", "installation_repositories"], event_name),
+        action=action,
+        repositories=added,
+        removed_repo_ids=tuple(repo.repo_id for repo in removed),
+    )
+
+
+def _installation_repos(value: object) -> tuple[InstallationRepo, ...]:
+    """Read repository ids and names from an untrusted webhook list."""
+    if not isinstance(value, (list, tuple)):
+        return ()
+    repositories: list[InstallationRepo] = []
+    for raw_item in cast(Sequence[object], value):
+        item = raw_item
+        if not isinstance(item, Mapping):
+            continue
+        repository = cast(Mapping[str, object], item)
+        repo_id = repository.get("id")
+        full_name = repository.get("full_name")
+        if isinstance(repo_id, int) and isinstance(full_name, str):
+            repositories.append(InstallationRepo(repo_id, full_name))
+    return tuple(repositories)
 
 
 def parse_layer(text: str, source: str) -> ConfigLayer:

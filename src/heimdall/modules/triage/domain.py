@@ -1,5 +1,8 @@
 """The PR triage state machine: a pure function over the LLD transition table (no I/O)."""
 
+import uuid
+from dataclasses import dataclass
+
 from heimdall.modules.triage._guards import Guard
 from heimdall.modules.triage._states import (
     RESULT_EVENTS,
@@ -12,12 +15,15 @@ from heimdall.modules.triage._states import (
     Transition,
 )
 from heimdall.modules.triage._transitions import TRANSITIONS, Rule
+from heimdall.shared.ids import RepoId
 
 __all__ = [
     "TRANSITIONS",
     "Effect",
     "EventKind",
     "Facts",
+    "PrEvent",
+    "PrSnapshot",
     "PrState",
     "RejectReason",
     "Rejected",
@@ -25,6 +31,54 @@ __all__ = [
     "Transition",
     "next_state",
 ]
+
+
+@dataclass(frozen=True)
+class PrEvent:
+    """Validated event facts needed to advance one pull request.
+
+    Attributes:
+        event_id: Stable delivery or step idempotency key.
+        repo_id: GitHub repository that owns the pull request.
+        number: Pull request number in that repository.
+        author: Pull request author login.
+        head_sha: Head commit associated with this event.
+        base_sha: Base commit associated with this event.
+        kind: State machine event to apply.
+        facts: Guard facts already gathered from trusted adapters and stored results.
+        linked_issue: Optional issue linked from intake.
+        room_id: Optional Switch channel for room effects.
+        room_message: Optional rendered checklist or failure details.
+        repo_full_name: GitHub owner and repository name for queued intake.
+    """
+
+    event_id: str
+    repo_id: RepoId
+    number: int
+    author: str
+    head_sha: str
+    base_sha: str
+    kind: EventKind
+    facts: Facts
+    linked_issue: int | None = None
+    room_id: str | None = None
+    room_message: str | None = None
+    repo_full_name: str = ""
+
+
+@dataclass(frozen=True)
+class PrSnapshot:
+    """Read-only PR state exposed across the triage module boundary."""
+
+    id: uuid.UUID
+    repo_id: RepoId
+    number: int
+    author: str
+    head_sha: str
+    base_sha: str
+    linked_issue: int | None
+    state: PrState
+    state_version: int
 
 
 def next_state(state: PrState | None, event: EventKind, facts: Facts) -> Transition | Rejected:
