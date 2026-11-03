@@ -17,8 +17,11 @@ from heimdall.modules.tenancy.service import (
     load_config,
     load_config_in_transaction,
     on_installation_event,
+    repo_auto_suggest_paused,
     repo_is_enabled,
     repo_switch_room_id,
+    set_auto_suggest_paused,
+    set_auto_suggest_paused_in_transaction,
 )
 
 __all__ = [
@@ -35,6 +38,9 @@ __all__ = [
     "load_config_in_transaction",
     "on_installation_event",
     "parse_installation_event",
+    "repo_auto_suggest_paused",
     "repo_is_enabled",
     "repo_switch_room_id",
+    "set_auto_suggest_paused",
+    "set_auto_suggest_paused_in_transaction",
 ]

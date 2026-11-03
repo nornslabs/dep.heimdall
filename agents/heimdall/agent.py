@@ -71,6 +71,10 @@ class CommandHandlers(Protocol):
         """Retry the current PR's reproduction attempt."""
         ...
 
+    async def pause_auto(self, command: DeskCommand) -> str:
+        """Pause automatic mechanical suggestions for the current repository."""
+        ...
+
 
 @dataclass(frozen=True)
 class CardResult:
@@ -187,6 +191,7 @@ async def handle_command(message: str, handlers: CommandHandlers) -> CommandResu
         "revise": handlers.revise,
         "fix": handlers.fix,
         "retry": handlers.retry,
+        "pause_auto": handlers.pause_auto,
     }[command.verb.value]
     return CommandResult(command, await action(command))
 

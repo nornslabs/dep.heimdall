@@ -4,13 +4,19 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from apps.bridge.approval import NON_MAINTAINER_REPLY, ApprovalReactionHandler
+from apps.bridge.approval import (
+    AUTO_PAUSED_REPLY,
+    NON_MAINTAINER_REPLY,
+    ApprovalReactionHandler,
+)
 from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.switch.ports import RoomEvent, RoomPost
+from heimdall.modules.approval.api import approve_by_policy
 from heimdall.modules.approval.models import Approval
-from heimdall.modules.desk.api import format_approval_message, get_draft
+from heimdall.modules.desk.api import format_approval_message, get_draft, save_draft
+from heimdall.modules.tenancy.models import Repo
 from tests.integration.db.test_approval_service import (
     MaintainerConfigReader,
     _draft_context,
@@ -110,3 +116,44 @@ async def test_switch_reaction_ignores_unmarked_posts(
     await handler.handle(event)
 
     assert room.replies == []
+
+
+async def test_policy_approval_and_maintainer_pause_are_tenant_scoped(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """Approve allowed fixes by policy, then stop future approvals on maintainer request."""
+    ctx, repo, pr_id, draft_id = await _draft_context(sessions)
+    reader = MaintainerConfigReader()
+    approval = await approve_by_policy(sessions, reader, ctx, repo, draft_id, "lint")
+    assert approval.approver == "policy:auto_suggest"
+
+    paused_draft = await save_draft(sessions, ctx, pr_id, "head-1", "summary", "Next fix")
+    message = format_approval_message(
+        paused_draft.body,
+        paused_draft.id,
+        paused_draft.body_hash,
+        int(ctx.installation_id),
+        repo.full_name,
+    )
+    room = FakeSwitch(message, "reviewer")
+    handler = ApprovalReactionHandler(sessions, reader, room)  # type: ignore[arg-type]
+    event = RoomEvent(
+        "posted",
+        "channel-1",
+        "command-1",
+        "user-1",
+        root_id="post-1",
+        message="@heimdall pause auto",
+    )
+
+    await handler.handle(event)
+
+    assert room.replies == [("channel-1", "post-1", AUTO_PAUSED_REPLY)]
+    async with unit_of_work(sessions) as session:
+        repo_result = await session.exec(
+            select_for_tenant(Repo, ctx.installation_id).where(Repo.full_name == repo.full_name)
+        )
+        stored_repo = repo_result.one()
+    assert stored_repo.auto_suggest_paused
+    with pytest.raises(ValueError, match="disabled by repository policy"):
+        await approve_by_policy(sessions, reader, ctx, repo, paused_draft.id, "lint")

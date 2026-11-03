@@ -2,6 +2,8 @@
 
 Installations, repos and each repo's effective `heimdall.yml` config.
 
+Repository auto-suggest pauses are tenant-scoped and persist until policy is re-enabled.
+
 | File | Role |
 |---|---|
 | `api.py` | `on_installation_event`, `get_tenant`, `load_config`, `InstallationEvent`, and `RepoConfig` |

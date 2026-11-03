@@ -72,6 +72,10 @@ class FakeHandlers:
         self.actions.append("retry")
         return "reproduction queued"
 
+    async def pause_auto(self, command: object) -> str:
+        self.actions.append("pause_auto")
+        return "automatic suggestions paused"
+
 
 async def test_build_review_card_saves_safe_matching_card_and_draft() -> None:
     """Store a current-head card and an approval-bound rendering of the same content."""
@@ -114,4 +118,5 @@ async def test_handle_command_dispatches_supported_commands_and_ignores_other_te
     await handle_command(f"/heimdall fix {finding_id}", handlers)
     await handle_command("/heimdall retry", handlers)
 
-    assert handlers.actions == ["approve", "revise", "fix", "retry"]
+    await handle_command("@heimdall pause auto", handlers)
+    assert handlers.actions == ["approve", "revise", "fix", "retry", "pause_auto"]

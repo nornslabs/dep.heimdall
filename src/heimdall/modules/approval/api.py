@@ -6,12 +6,19 @@ from heimdall.modules.approval.domain import (
     validate_approval,
     validate_posting_hash,
 )
-from heimdall.modules.approval.service import get_approved_draft, record_approval
+from heimdall.modules.approval.service import (
+    approve_by_policy,
+    get_approved_draft,
+    pause_auto_suggestions,
+    record_approval,
+)
 
 __all__ = [
     "ApprovalRef",
     "ApprovedDraft",
+    "approve_by_policy",
     "get_approved_draft",
+    "pause_auto_suggestions",
     "record_approval",
     "validate_approval",
     "validate_posting_hash",

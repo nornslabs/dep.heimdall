@@ -30,5 +30,6 @@ class Repo(TenantScoped, table=True):
     full_name: str
     switch_room_id: str | None = None
     enabled: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
+    auto_suggest_paused: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})
     config_sha: str | None = None
     config: JsonObject = jsonb()

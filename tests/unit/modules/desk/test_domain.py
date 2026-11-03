@@ -22,6 +22,8 @@ def test_parse_command_requires_supported_shape() -> None:
         CommandVerb.REVISE, target, "use a clearer title"
     )
     assert parse_command("/heimdall retry") == DeskCommand(CommandVerb.RETRY)
+    assert parse_command("@heimdall pause auto") == DeskCommand(CommandVerb.PAUSE_AUTO)
+    assert parse_command("/heimdall pause auto") == DeskCommand(CommandVerb.PAUSE_AUTO)
     assert parse_command("/heimdall approve nope") is None
     assert parse_command("/heimdall retry now") is None
     assert parse_command("hello") is None

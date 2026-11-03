@@ -5,8 +5,8 @@ policy from the repository's effective config, verifies the draft hash and activ
 one tenant-scoped approval and idempotent GitHub outbox message in one transaction. Gjallarhorn
 rechecks the approval row, stored draft hash, outbox hash, and recomputed body hash before posting.
 
-Public functions: `record_approval`, `get_approved_draft`, `validate_approval`, and
-`validate_posting_hash`.
+Public functions: `record_approval`, `approve_by_policy`, `pause_auto_suggestions`,
+`get_approved_draft`, `validate_approval`, and `validate_posting_hash`.
 
 | File | Role |
 |---|---|

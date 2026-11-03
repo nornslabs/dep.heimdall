@@ -14,6 +14,7 @@ class CommandVerb(StrEnum):
     REVISE = "revise"
     FIX = "fix"
     RETRY = "retry"
+    PAUSE_AUTO = "pause_auto"
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,13 @@ def parse_command(message: str) -> DeskCommand | None:
         Parsed command, or None when it is not a valid Heimdall command.
     """
     parts = message.strip().split(maxsplit=3)
+    if (
+        len(parts) == 3
+        and parts[0].casefold() in {"@heimdall", "/heimdall"}
+        and parts[1].casefold() == "pause"
+        and parts[2].casefold() == "auto"
+    ):
+        return DeskCommand(CommandVerb.PAUSE_AUTO)
     if len(parts) < 2 or parts[0].casefold() != "/heimdall":
         return None
     try:
@@ -138,7 +146,18 @@ def format_approval_message(
     installation_id: int,
     repo_full_name: str,
 ) -> str:
-    """Append hidden approval metadata while keeping the saved draft body unchanged."""
+    """Append hidden approval metadata while keeping the saved draft body unchanged.
+
+    Args:
+        body: Exact saved draft body whose hash is approved.
+        draft_id: Identity returned by the desk module.
+        body_hash: Hash of the exact saved draft body.
+        installation_id: Tenant owning the draft.
+        repo_full_name: Repository that owns the draft's pull request.
+
+    Returns:
+        A Switch post body with a hidden marker after the unchanged draft text.
+    """
     marker = (
         f"<!-- heimdall-approval draft_id={draft_id} draft_hash={body_hash} "
         f"installation_id={installation_id} repo={repo_full_name} -->"
