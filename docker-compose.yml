@@ -1,10 +1,8 @@
-# Local stack. `docker compose up` starts Postgres and Mattermost (Switch).
-# Add `--profile app` for the Heimdall processes and `--profile tunnel` for GitHub webhooks.
+# Local stack. `docker compose up` starts the complete system, including the webhook tunnel.
 
 x-heimdall: &heimdall
   build: .
   image: heimdall:dev
-  profiles: ["app"]
   env_file:
     - path: .env
       required: false
@@ -105,11 +103,10 @@ services:
 
   tunnel:
     image: node:22-alpine
-    profiles: ["tunnel"]
     env_file:
       - path: .env
         required: false
-    # $$ defers expansion to the container, so plain `docker compose up` doesn't need SMEE_URL.
+    # $$ defers expansion to the container; configure SMEE_URL in .env before starting the stack.
     command:
       - sh
       - -c
