@@ -35,7 +35,7 @@ UPDATE_PR_STATE = text(
     """
     UPDATE prs
     SET state = :state, state_version = state_version + 1,
-        head_sha = :head_sha, base_sha = :base_sha, author = :author,
+        head_sha = :head_sha, base_sha = :base_sha, base_ref = :base_ref, author = :author,
         linked_issue = :linked_issue, updated_at = now()
     WHERE id = :pr_id AND installation_id = :installation_id
         AND state_version = :state_version
@@ -85,6 +85,7 @@ async def handle_event(
             transition,
             head_sha=event.head_sha,
             base_sha=event.base_sha,
+            base_ref=event.base_ref,
             author=event.author,
             linked_issue=event.linked_issue,
         )
@@ -165,6 +166,7 @@ async def on_step_done(
     *,
     room_id: str | None = None,
     room_message: str | None = None,
+    repro_test_cmd: str | None = None,
 ) -> Transition | Rejected:
     """Apply a completed intake, reproduction, or review step to its PR.
 
@@ -178,6 +180,7 @@ async def on_step_done(
         facts: Current rule and agent build results.
         room_id: Optional Switch room for result messages.
         room_message: Rendered checklist or failure explanation.
+        repro_test_cmd: Validated repository test command queued for Huginn.
 
     Returns:
         The transition, or the reason the result was rejected.
@@ -193,6 +196,7 @@ async def on_step_done(
             facts,
             room_id=room_id,
             room_message=room_message,
+            repro_test_cmd=repro_test_cmd,
         )
 
 
@@ -208,6 +212,7 @@ async def on_step_done_in_transaction(
     room_id: str | None = None,
     room_message: str | None = None,
     linked_issue: int | None = None,
+    repro_test_cmd: str | None = None,
 ) -> Transition | Rejected:
     """Apply step completion within an existing feature transaction.
 
@@ -222,6 +227,7 @@ async def on_step_done_in_transaction(
         room_id: Optional Switch room for resulting outbox messages.
         room_message: Rendered checklist or failure explanation.
         linked_issue: Issue number found during intake, when present.
+        repro_test_cmd: Validated repository test command queued for Huginn.
 
     Returns:
         The transition, or the reason the result was rejected.
@@ -237,11 +243,13 @@ async def on_step_done_in_transaction(
         author=pr.author,
         head_sha=head_sha,
         base_sha=pr.base_sha,
+        base_ref=pr.base_ref,
         kind=kind,
         facts=replace(facts, repo_enabled=True),
         linked_issue=linked_issue if linked_issue is not None else pr.linked_issue,
         room_id=room_id,
         room_message=room_message,
+        repro_test_cmd=repro_test_cmd,
     )
     return await _apply_existing_event(session, ctx, pr, event)
 
@@ -272,6 +280,7 @@ async def get_pr_snapshot(
         author=pr.author,
         head_sha=pr.head_sha,
         base_sha=pr.base_sha,
+        base_ref=pr.base_ref,
         linked_issue=pr.linked_issue,
         state=PrState(pr.state),
         state_version=pr.state_version,
@@ -297,6 +306,7 @@ async def _create_pr(
         author=event.author,
         head_sha=event.head_sha,
         base_sha=event.base_sha,
+        base_ref=event.base_ref,
         linked_issue=event.linked_issue,
         state=transition.to.value,
         state_version=1,
@@ -328,6 +338,7 @@ async def _apply_existing_event(
         transition,
         head_sha=event.head_sha,
         base_sha=event.base_sha,
+        base_ref=event.base_ref,
         author=event.author,
         linked_issue=event.linked_issue,
     )
@@ -345,6 +356,7 @@ async def _update_pr_state(
     *,
     head_sha: str,
     base_sha: str,
+    base_ref: str | None,
     author: str,
     linked_issue: int | None,
 ) -> bool:
@@ -356,6 +368,7 @@ async def _update_pr_state(
             "state": transition.to.value,
             "head_sha": head_sha,
             "base_sha": base_sha,
+            "base_ref": base_ref,
             "author": author,
             "linked_issue": linked_issue,
             "pr_id": pr.id,
@@ -388,6 +401,19 @@ async def _apply_effects(
                 "event_id": event.event_id,
             },
             lock=f"intake:{ctx.installation_id}:{pr_id}:{event.head_sha}",
+        )
+    if Effect.ROOM_READY_FOR_REPRO in effects and event.repro_test_cmd:
+        await enqueue(
+            session,
+            "huginn.run_repro",
+            {
+                "installation_id": ctx.installation_id,
+                "pr_id": str(pr_id),
+                "head_sha": event.head_sha,
+                "test_cmd": event.repro_test_cmd,
+                "room_id": event.room_id,
+            },
+            lock=f"huginn:{ctx.installation_id}:{pr_id}:{event.head_sha}",
         )
     if Effect.MARK_OLDER_RUNS_STALE in effects:
         from heimdall.modules.intake.api import mark_results_stale

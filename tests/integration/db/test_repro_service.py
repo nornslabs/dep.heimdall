@@ -53,6 +53,7 @@ async def _checking_pr(sessions: async_sessionmaker[AsyncSession]) -> tuple[Tena
             author="octocat",
             head_sha="head-1",
             base_sha="base-1",
+            base_ref="main",
             kind=EventKind.PR_OPENED,
             facts=Facts(),
         ),
@@ -66,6 +67,7 @@ async def _checking_pr(sessions: async_sessionmaker[AsyncSession]) -> tuple[Tena
                 )
             )
         ).one()
+        assert pr.base_ref == "main"
         pr_id = pr.id
     await on_step_done(
         sessions,
@@ -83,7 +85,7 @@ async def test_start_run_queues_execution_and_timeout_together(
     engine: AsyncEngine,
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    """Persist a queued attempt and both jobs in the same transaction."""
+    """Persist a queued attempt, authorized dispatch, and deadline job together."""
     ctx, pr_id = await _checking_pr(sessions)
     run = await start_run(sessions, ctx, pr_id, "head-1", "pytest -q")
 
@@ -94,7 +96,7 @@ async def test_start_run_queues_execution_and_timeout_together(
             text("SELECT count(*) FROM procrastinate_jobs WHERE args->>'run_id' = :run_id"),
             {"run_id": str(run.id)},
         )
-    assert jobs == 2
+    assert jobs == 1
     async with unit_of_work(sessions) as session:
         dispatch = (
             await session.exec(
@@ -112,6 +114,8 @@ async def test_start_run_queues_execution_and_timeout_together(
         ).one()
         assert dispatch.payload["approval_id"] == str(approval.id)
         assert dispatch.payload["request_hash"] == approval.request_hash
+        assert dispatch.payload["ref"] == "main"
+        assert dispatch.payload["inputs"]["base_sha"] == "base-1"
         assert approval.approver == "policy:repro_dispatch"
 
 

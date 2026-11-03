@@ -56,7 +56,13 @@ def pull_request_event(
     base_values = cast(Mapping[str, object], base)
     head_sha = head_values.get("sha")
     base_sha = base_values.get("sha")
-    if not isinstance(head_sha, str) or not isinstance(base_sha, str):
+    base_ref = base_values.get("ref")
+    if (
+        not isinstance(head_sha, str)
+        or not isinstance(base_sha, str)
+        or not isinstance(base_ref, str)
+        or not base_ref
+    ):
         return None
     return PrEvent(
         event_id=delivery_id,
@@ -66,6 +72,7 @@ def pull_request_event(
         author=author,
         head_sha=head_sha,
         base_sha=base_sha,
+        base_ref=base_ref,
         kind=_ACTIONS[action],
         facts=Facts(),
     )

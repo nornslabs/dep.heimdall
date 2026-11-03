@@ -8,6 +8,7 @@ HEI-65) writes to GitHub; this adapter never does.
 | `sender.py` | Gjallarhorn writer: rechecks approved draft hash and posts exact text as a PR comment |
 | `auth.py` | `load_private_key(path)`; `GitHubAppClients(app_id, private_key)` with `.for_installation(id)` |
 | `reader.py` | `GitHubApiReader(clients)` and `MAX_DIFF_BYTES` |
+| `actions.py` | `GitHubActionsResults(clients)` downloads bounded paired run artifacts |
 | `_http.py`, `_wire.py`, `_errors.py`, `_ci.py` | Private: the typed GET, the response fields we read, error mapping, CI combining |
 
 Value types live in `shared/github.py` (`RepoRef`, `PullRequestInfo`, `ChangedFile`, `PrDiff`,
@@ -32,6 +33,8 @@ PR titles, bodies and diffs are untrusted data: returned as values, never logged
 githubkit signs the app JWT and swaps it for an installation token on first use. Each
 `GitHubAppClients` keeps its own token cache, and one client per installation. githubkit's
 automatic retries are off, because our jobs and outbox already retry with backoff.
+The App needs Actions read permission and the `workflow_run` webhook event enabled to retrieve
+completed reproduction artifacts.
 
 ## Errors
 

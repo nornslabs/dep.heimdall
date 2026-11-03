@@ -92,9 +92,10 @@ async def start_run(
             pr.number,
             run.head_sha,
             pr.base_sha,
+            pr.base_ref,
             run.test_cmd,
         )
-        await _enqueue_run_jobs(session, ctx, pr, run)
+        await _enqueue_run_jobs(session, ctx, run)
         return ReproRunRef(run.id, attempt, head_sha, ReproStatus.QUEUED)
 
 
@@ -238,17 +239,9 @@ async def _load_run(
 async def _enqueue_run_jobs(
     session: AsyncSession,
     ctx: TenantCtx,
-    pr: PrSnapshot,
     run: ReproRun,
 ) -> None:
-    """Queue execution and deadline jobs with the run row in one commit."""
-    args = {
-        "installation_id": ctx.installation_id,
-        "pr_id": str(pr.id),
-        "run_id": str(run.id),
-        "head_sha": run.head_sha,
-    }
-    await enqueue(session, "repro.execute", args, lock=f"repro:{run.id}")
+    """Queue a deadline job with the run and dispatch row in one commit."""
     await enqueue(
         session,
         "repro.timeout",

@@ -37,6 +37,7 @@ async def queue_repro_workflow_dispatch(
     pr_number: int,
     head_sha: str,
     base_sha: str,
+    workflow_ref: str | None,
     test_cmd: str,
 ) -> None:
     """Authorize and queue the exact reproduction workflow request atomically.
@@ -51,10 +52,12 @@ async def queue_repro_workflow_dispatch(
         "base_sha": base_sha,
         "test_cmd": test_cmd,
     }
+    if not workflow_ref:
+        raise ValueError("PR base branch is required for workflow dispatch")
     request = {
         "repo_full_name": repo_full_name,
         "workflow": workflow,
-        "ref": base_sha,
+        "ref": workflow_ref,
         "inputs": inputs,
     }
     request_hash = hashlib.sha256(

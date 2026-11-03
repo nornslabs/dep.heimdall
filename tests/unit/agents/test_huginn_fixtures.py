@@ -26,17 +26,20 @@ class RecordedHuginnTools:
         self._run = run
         self.start_count = 0
         self.result_count = 0
-        self.start_arguments: tuple[int, str, str, str] | None = None
+        self._run_ids: list[uuid.UUID] = []
+        self.start_arguments: list[tuple[int, str, str, str]] = []
 
     async def start_repro(
         self, installation_id: int, pr_id: str, head_sha: str, test_cmd: str
     ) -> dict[str, str | int]:
         """Return the fixture's run id as if the scoped MCP tool queued it."""
         self.start_count += 1
-        self.start_arguments = (installation_id, pr_id, head_sha, test_cmd)
+        self.start_arguments.append((installation_id, pr_id, head_sha, test_cmd))
+        run_id = uuid.UUID(int=self.start_count)
+        self._run_ids.append(run_id)
         return {
-            "run_id": str(self._run["run_id"]),
-            "attempt": int(str(self._run["attempt"])),
+            "run_id": str(run_id),
+            "attempt": self.start_count,
             "head_sha": head_sha,
             "status": "queued",
         }
@@ -44,7 +47,10 @@ class RecordedHuginnTools:
     async def get_repro(self, installation_id: int, run_id: str) -> dict[str, object]:
         """Return the single persisted result recorded in the fixture."""
         self.result_count += 1
-        return self._run
+        result = self._run.copy()
+        result["run_id"] = run_id
+        result["attempt"] = self._run_ids.index(uuid.UUID(run_id)) + 1
+        return result
 
 
 @pytest.mark.parametrize(
@@ -73,9 +79,18 @@ async def test_huginn_replays_recorded_pr_fixtures(fixture_path: Path) -> None:
     expected = Verdict(str(expected_verdict)) if expected_verdict is not None else None
     assert result.status == ReproStatus(str(run["status"]))
     assert result.verdict == expected
-    assert tools.start_count == 1 <= MAX_REPRO_RUNS
-    assert tools.result_count == 1 <= MAX_TURNS
-    assert tools.start_arguments is not None
-    assert tools.start_arguments == (123, str(pr_id), str(run["head_sha"]), configured_command)
+    assert f"Paired attempts: {3 if expected is not None else 0}/3 completed." in result.message
+    assert tools.start_count == MAX_REPRO_RUNS
+    assert tools.result_count == MAX_REPRO_RUNS <= MAX_REPRO_RUNS * MAX_TURNS
+    assert tools.start_arguments
+    assert all(
+        arguments == (123, str(pr_id), str(run["head_sha"]), configured_command)
+        for arguments in tools.start_arguments
+    )
     assert configured_command == "pytest -q"
-    assert str(fixture["pr_body"]) not in " ".join(map(str, tools.start_arguments))
+    assert str(fixture["pr_body"]) not in " ".join(
+        str(argument) for arguments in tools.start_arguments for argument in arguments
+    )
+    expected_failure = fixture.get("expected_failure")
+    if expected_failure is not None:
+        assert str(expected_failure) in result.message

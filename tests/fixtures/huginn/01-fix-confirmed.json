@@ -1,17 +1,1 @@
-{
-  "name": "fix-confirmed",
-  "pr_title": "Handle empty response safely",
-  "pr_body": "This change guards the empty response case.",
-  "configured_test_cmd": "pytest -q",
-  "run": {
-    "run_id": "10000000-0000-0000-0000-000000000001",
-    "pr_id": "20000000-0000-0000-0000-000000000001",
-    "head_sha": "head-confirmed",
-    "attempt": 1,
-    "status": "finished",
-    "with_fix": {"passed": true},
-    "without_fix": {"passed": false},
-    "verdict": "fix_confirmed"
-  },
-  "expected_verdict": "fix_confirmed"
-}
+{"name":"fix-confirmed","pr_title":"Handle empty response safely","pr_body":"This change guards the empty response case.","configured_test_cmd":"pytest -q","run":{"run_id":"10000000-0000-0000-0000-000000000001","pr_id":"20000000-0000-0000-0000-000000000001","head_sha":"head-confirmed","attempt":1,"status":"finished","with_fix":{"passed":true,"failures":[]},"without_fix":{"passed":false,"failures":["tests/test_empty.py::test_empty_response: assert response.status == 204"]},"verdict":"fix_confirmed"},"expected_verdict":"fix_confirmed","expected_failure":"assert response.status == 204"}

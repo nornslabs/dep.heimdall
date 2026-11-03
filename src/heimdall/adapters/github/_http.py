@@ -44,3 +44,22 @@ async def get(
     if accept is not None:
         return Reply(payload=None, text=response.text)
     return Reply(payload=response.json(), text=response.text)
+
+
+async def get_bytes(
+    client: GitHub[AppInstallationAuthStrategy],
+    url: str,
+) -> bytes:
+    """GET one bounded binary response through the authenticated GitHub client.
+
+    Args:
+        client: Installation-scoped GitHub client.
+        url: GitHub API path to fetch.
+
+    Returns:
+        Response body bytes.
+    """
+    response = await client.arequest(  # pyright: ignore[reportUnknownMemberType]
+        "GET", url, response_model=bytes
+    )
+    return response.content

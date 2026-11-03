@@ -1,19 +1,28 @@
-"""Huginn's bounded reproduction tool loop and verdict message."""
+"""Huginn's bounded reproduction loop and deterministic verdict message."""
 
 import asyncio
+from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
-from heimdall.modules.repro.api import ReproRunDetails, ReproStatus, Verdict
+from heimdall.modules.repro.api import (
+    MAX_REPRO_RUNS,
+    REPRO_TIMEOUT_SECONDS,
+    ReproRunDetails,
+    ReproStatus,
+    Verdict,
+)
 
-MAX_TURNS = 20
 POLL_INTERVAL_SECONDS = 5
+MAX_TURNS = REPRO_TIMEOUT_SECONDS // POLL_INTERVAL_SECONDS
+MAX_FAILURE_DETAILS = 5
+MAX_FAILURE_LENGTH = 300
 
 
 class HuginnTools(Protocol):
-    """MCP calls Huginn is allowed to make."""
+    """Tenant-scoped reproduction operations Huginn may call."""
 
     async def start_repro(
         self, installation_id: int, pr_id: str, head_sha: str, test_cmd: str
@@ -22,15 +31,15 @@ class HuginnTools(Protocol):
         ...
 
     async def get_repro(self, installation_id: int, run_id: str) -> dict[str, object]:
-        """Read current status and paired outcomes for an attempt."""
+        """Read a persisted attempt and its paired test results."""
         ...
 
 
 @dataclass(frozen=True)
 class HuginnResult:
-    """Final state and maintainer-readable reproduction message."""
+    """Bounded reproduction attempts and their maintainer-readable verdict."""
 
-    run_id: UUID
+    run_ids: tuple[UUID, ...]
     status: ReproStatus
     verdict: Verdict | None
     message: str
@@ -45,73 +54,167 @@ async def run_huginn(
     *,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> HuginnResult:
-    """Start and monitor one reproduction attempt without exceeding the turn cap.
+    """Start up to three paired runs, poll saved results, and report one verdict.
 
     Args:
-        tools: Scoped MCP client exposing only Huginn's tools.
-        installation_id: Tenant owning the PR.
-        pr_id: PR row id being reproduced.
+        tools: Tenant-scoped reproduction tool client.
+        installation_id: Tenant owning the pull request.
+        pr_id: Triage pull request identifier.
         head_sha: Exact PR commit under test.
-        test_cmd: Test command resolved from trusted repository configuration.
-        sleep: Injectable delay between pending status checks.
+        test_cmd: Test command from validated repository configuration.
+        sleep: Injectable delay for bounded status polling.
 
     Returns:
-        Terminal verdict or a bounded still-running result.
+        All started run ids, aggregate status, majority verdict, and one report.
     """
-    started = await tools.start_repro(installation_id, str(pr_id), head_sha, test_cmd)
-    run_id = UUID(str(started["run_id"]))
+    run_ids = await _start_attempts(tools, installation_id, pr_id, head_sha, test_cmd)
+    current: dict[UUID, ReproRunDetails | None] = {run_id: None for run_id in run_ids}
     for turn in range(MAX_TURNS):
-        details = _parse_run(await tools.get_repro(installation_id, str(run_id)))
-        if details.status in {
-            ReproStatus.FINISHED,
-            ReproStatus.TIMED_OUT,
-            ReproStatus.STALE,
-        }:
-            return HuginnResult(
-                run_id,
-                details.status,
-                details.verdict,
-                format_verdict_message(details),
-            )
+        for run_id in run_ids:
+            latest = current[run_id]
+            if latest is not None and latest.status in _TERMINAL_STATUSES:
+                continue
+            details = _parse_run(await tools.get_repro(installation_id, str(run_id)))
+            if details.id != run_id or details.pr_id != pr_id or details.head_sha != head_sha:
+                raise ValueError("MCP get_repro returned a run for a different PR head")
+            current[run_id] = details
+        if all(run is not None and run.status in _TERMINAL_STATUSES for run in current.values()):
+            break
         if turn + 1 < MAX_TURNS:
             await sleep(POLL_INTERVAL_SECONDS)
-    pending = details.status
-    return HuginnResult(
-        run_id,
-        pending,
-        None,
-        f"Reproduction run {run_id} is still {pending.value} after {MAX_TURNS} checks.",
-    )
+
+    saved_runs = tuple(run for run in current.values() if run is not None)
+    status = _aggregate_status(saved_runs, len(run_ids))
+    verdict = _majority_verdict(saved_runs) if status is ReproStatus.FINISHED else None
+    message = format_verdict_message(saved_runs, status, verdict, len(run_ids))
+    return HuginnResult(run_ids, status, verdict, message)
 
 
-def format_verdict_message(run: ReproRunDetails) -> str:
-    """Format a concise report that matches the stored paired test outcomes.
+_TERMINAL_STATUSES = frozenset({ReproStatus.FINISHED, ReproStatus.TIMED_OUT, ReproStatus.STALE})
+
+
+async def _start_attempts(
+    tools: HuginnTools,
+    installation_id: int,
+    pr_id: UUID,
+    head_sha: str,
+    test_cmd: str,
+) -> tuple[UUID, ...]:
+    """Queue the maximum bounded sample before polling any run."""
+    run_ids: list[UUID] = []
+    for attempt in range(1, MAX_REPRO_RUNS + 1):
+        started = await tools.start_repro(installation_id, str(pr_id), head_sha, test_cmd)
+        run_id = _required_uuid(started.get("run_id"))
+        if started.get("attempt") != attempt or started.get("head_sha") != head_sha:
+            raise ValueError("MCP start_repro returned an unexpected attempt")
+        if run_id in run_ids:
+            raise ValueError("MCP start_repro returned a duplicate run id")
+        run_ids.append(run_id)
+    return tuple(run_ids)
+
+
+def format_verdict_message(
+    runs: tuple[ReproRunDetails, ...],
+    status: ReproStatus,
+    verdict: Verdict | None,
+    requested_runs: int,
+) -> str:
+    """Format the persisted attempt counts and failure evidence once.
 
     Args:
-        run: Terminal reproduction state.
+        runs: Saved attempt records returned by tenant-scoped tools.
+        status: Aggregate lifecycle status.
+        verdict: Majority verdict when all attempts finished consistently enough.
+        requested_runs: Number of attempts started.
 
     Returns:
-        Verdict message suitable for a Switch room draft.
+        A concise room message grounded in saved test outcomes.
     """
-    if run.status is ReproStatus.STALE:
-        return f"Reproduction run {run.id} is stale because the PR head changed."
-    if run.status is ReproStatus.TIMED_OUT:
-        return f"Reproduction run {run.id} timed out; no verdict is available."
-    if run.status is not ReproStatus.FINISHED or run.verdict is None:
-        return f"Reproduction run {run.id} has no completed verdict yet."
+    completed = tuple(run for run in runs if run.status is ReproStatus.FINISHED)
+    with_fix_passed = sum(_passed(run.with_fix) for run in completed)
+    without_fix_passed = sum(_passed(run.without_fix) for run in completed)
+    header = _verdict_label(status, verdict)
+    lines = [
+        f"Huginn: {header}",
+        f"Paired attempts: {len(completed)}/{requested_runs} completed.",
+        f"Passed with fix: {with_fix_passed}/{len(completed)}; "
+        f"passed without fix: {without_fix_passed}/{len(completed)}.",
+    ]
+    failures = _failure_details(completed)
+    if failures:
+        lines.append("Failing assertions or test errors:")
+        lines.extend(f"- {failure}" for failure in failures)
+    return "\n".join(lines)
+
+
+def _verdict_label(status: ReproStatus, verdict: Verdict | None) -> str:
+    """Describe aggregate state without converting missing data into a verdict."""
+    if status is ReproStatus.STALE:
+        return "stale; the PR head changed during reproduction."
+    if status is ReproStatus.TIMED_OUT:
+        return "timed out before all attempts completed."
+    if status is not ReproStatus.FINISHED:
+        return "still running; no final verdict is available."
+    if verdict is None:
+        return "mixed results; no majority verdict."
     return {
-        Verdict.FIX_CONFIRMED: (
-            f"Fix confirmed for {run.id}: tests passed with the fix and failed without it."
-        ),
-        Verdict.FIX_FAILED: (f"Fix failed for {run.id}: tests did not pass with the proposed fix."),
-        Verdict.NOT_REPRODUCED: (
-            f"Issue not reproduced for {run.id}: tests passed both with and without the fix."
-        ),
-    }[run.verdict]
+        Verdict.FIX_CONFIRMED: "fix confirmed by paired test results.",
+        Verdict.FIX_FAILED: "fix failed the configured tests.",
+        Verdict.NOT_REPRODUCED: "issue not reproduced by the configured tests.",
+    }[verdict]
+
+
+def _aggregate_status(runs: tuple[ReproRunDetails, ...], expected: int) -> ReproStatus:
+    """Choose the most cautious aggregate lifecycle state."""
+    if any(run.status is ReproStatus.STALE for run in runs):
+        return ReproStatus.STALE
+    if len(runs) < expected or any(run.status not in _TERMINAL_STATUSES for run in runs):
+        return ReproStatus.RUNNING
+    if any(run.status is ReproStatus.TIMED_OUT for run in runs):
+        return ReproStatus.TIMED_OUT
+    return ReproStatus.FINISHED
+
+
+def _majority_verdict(runs: tuple[ReproRunDetails, ...]) -> Verdict | None:
+    """Return a verdict only when completed runs give one strict majority."""
+    counts = Counter(run.verdict for run in runs if run.status is ReproStatus.FINISHED)
+    counts.pop(None, None)
+    if not counts:
+        return None
+    winner, count = counts.most_common(1)[0]
+    if count <= len(runs) // 2:
+        return None
+    return winner
+
+
+def _failure_details(runs: tuple[ReproRunDetails, ...]) -> tuple[str, ...]:
+    """Collect unique persisted failure lines without copying full test output."""
+    failures: list[str] = []
+    for run in runs:
+        for outcome in (run.with_fix, run.without_fix):
+            if outcome is None:
+                continue
+            raw_failures = outcome.get("failures")
+            if not isinstance(raw_failures, list | tuple):
+                continue
+            for raw_failure in raw_failures:
+                if not isinstance(raw_failure, str):
+                    continue
+                failure = raw_failure.strip()[:MAX_FAILURE_LENGTH]
+                if failure and failure not in failures:
+                    failures.append(failure)
+                if len(failures) == MAX_FAILURE_DETAILS:
+                    return tuple(failures)
+    return tuple(failures)
+
+
+def _passed(outcome: dict[str, object] | None) -> bool:
+    """Read the paired result's saved pass flag."""
+    return outcome is not None and outcome.get("passed") is True
 
 
 def _parse_run(value: dict[str, object]) -> ReproRunDetails:
-    """Validate a structured MCP response before using it as a verdict."""
+    """Validate a structured MCP response before judging its result."""
     try:
         verdict_value = value.get("verdict")
         verdict = Verdict(str(verdict_value)) if verdict_value is not None else None
@@ -136,3 +239,13 @@ def _outcome(value: object) -> dict[str, object] | None:
     if not isinstance(value, dict):
         raise ValueError("repro outcome must be an object")
     return {str(key): item for key, item in value.items()}
+
+
+def _required_uuid(value: object) -> UUID:
+    """Parse an attempt id from the reproduction tool response."""
+    try:
+        if not isinstance(value, str):
+            raise ValueError
+        return UUID(value)
+    except ValueError as error:
+        raise ValueError("MCP start_repro returned an invalid run id") from error
