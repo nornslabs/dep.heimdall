@@ -25,6 +25,8 @@ dependencies = [
     "sqlmodel>=0.0.48",
     "structlog>=26.1.0",
     "unidiff>=1.0.1",
+    "uvicorn>=0.34.0,<1.0",
+    "websockets>=15.0.1,<18.0",
 ]
 
 [build-system]
