@@ -32,7 +32,6 @@ class RepoNotEnabled(HeimdallError):
     """The repository is not enabled for the requesting installation."""
 
 
-
 class InstallationNotFound(HeimdallError):
     """Heimdall has no record of this GitHub App installation."""
 

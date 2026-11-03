@@ -11,8 +11,6 @@ from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.modules.review.api import FindingInput, list_findings, save_findings
 from heimdall.modules.review.models import Finding
 from heimdall.modules.tenancy.api import (
-    InstallationEvent,
-    InstallationRepo,
     ReviewConfig,
     on_installation_event,
 )
@@ -21,6 +19,7 @@ from heimdall.modules.triage.models import Pr
 from heimdall.shared.context import TenantCtx
 from heimdall.shared.github import ChangedFile, RepoRef
 from heimdall.shared.ids import InstallationId, RepoId
+from tests.integration.db.installation_helpers import created_installation
 
 pytestmark = pytest.mark.integration
 
@@ -42,14 +41,7 @@ async def test_save_findings_persists_only_valid_current_head_results(
     ctx = TenantCtx(installation_id=InstallationId(installation_id), request_id="review-test")
     await on_installation_event(
         sessions,
-        InstallationEvent(
-            installation_id=installation_id,
-            account_login="review-test",
-            account_type="Organization",
-            event="installation",
-            action="created",
-            repositories=(InstallationRepo(repo_id=repo_id, full_name="review-test/demo"),),
-        ),
+        created_installation(installation_id, "review-test", repo_id, "review-test/demo"),
     )
     await handle_event(
         sessions,

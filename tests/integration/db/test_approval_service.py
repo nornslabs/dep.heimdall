@@ -11,17 +11,14 @@ from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.modules.approval.api import get_approved_draft, record_approval
 from heimdall.modules.desk.api import get_draft, save_draft
-from heimdall.modules.tenancy.api import (
-    InstallationEvent,
-    InstallationRepo,
-    on_installation_event,
-)
+from heimdall.modules.tenancy.api import on_installation_event
 from heimdall.modules.triage.api import EventKind, Facts, PrEvent, handle_event
 from heimdall.modules.triage.models import Pr
 from heimdall.shared.context import TenantCtx
 from heimdall.shared.errors import DraftChanged, NotAMaintainer
 from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId, RepoId
+from tests.integration.db.installation_helpers import created_installation
 
 pytestmark = pytest.mark.integration
 
@@ -29,7 +26,7 @@ pytestmark = pytest.mark.integration
 class MaintainerConfigReader:
     """Provide a repository config with one maintainer for approval tests."""
 
-    async def get_file(self, repo: RepoRef, path: str, ref: str) -> str | None:
+    async def get_file(self, repo: RepoRef, path: str, ref: str | None) -> str | None:
         """Return test config only at the repository config path."""
         if path == "heimdall.yml":
             return "maintainers:\n  - reviewer\n"
@@ -46,14 +43,7 @@ async def _draft_context(
     repo = RepoRef(ctx.installation_id, "approval-test/demo")
     await on_installation_event(
         sessions,
-        InstallationEvent(
-            installation_id=installation_id,
-            account_login="approval-test",
-            account_type="Organization",
-            event="installation",
-            action="created",
-            repositories=(InstallationRepo(repo_id=repo_id, full_name=repo.full_name),),
-        ),
+        created_installation(installation_id, "approval-test", repo_id, repo.full_name),
     )
     await handle_event(
         sessions,

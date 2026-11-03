@@ -10,16 +10,13 @@ from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.modules.desk.api import CardContent, create_mechanical_task, save_card, save_draft
 from heimdall.modules.review.models import Finding
-from heimdall.modules.tenancy.api import (
-    InstallationEvent,
-    InstallationRepo,
-    on_installation_event,
-)
+from heimdall.modules.tenancy.api import on_installation_event
 from heimdall.modules.triage.api import EventKind, Facts, PrEvent, handle_event
 from heimdall.modules.triage.models import Pr
 from heimdall.shared.context import TenantCtx
 from heimdall.shared.errors import StaleHeadSha
 from heimdall.shared.ids import InstallationId, RepoId
+from tests.integration.db.installation_helpers import created_installation
 
 pytestmark = pytest.mark.integration
 
@@ -33,14 +30,7 @@ async def _open_pr(
     ctx = TenantCtx(installation_id=InstallationId(installation_id), request_id="desk-test")
     await on_installation_event(
         sessions,
-        InstallationEvent(
-            installation_id=installation_id,
-            account_login="desk-test",
-            account_type="Organization",
-            event="installation",
-            action="created",
-            repositories=(InstallationRepo(repo_id=repo_id, full_name="desk-test/demo"),),
-        ),
+        created_installation(installation_id, "desk-test", repo_id, "desk-test/demo"),
     )
     await handle_event(
         sessions,

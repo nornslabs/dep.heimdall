@@ -13,12 +13,7 @@ from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.modules.intake.api import run_intake
 from heimdall.modules.intake.models import IntakeResult
 from heimdall.modules.repro.models import ReproRun
-from heimdall.modules.tenancy.api import (
-    InstallationEvent,
-    InstallationRepo,
-    get_tenant,
-    on_installation_event,
-)
+from heimdall.modules.tenancy.api import get_tenant, on_installation_event
 from heimdall.modules.tenancy.models import Repo
 from heimdall.modules.triage._webhooks import receive_webhook
 from heimdall.modules.triage.api import (
@@ -35,6 +30,7 @@ from heimdall.modules.triage.models import Pr
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.github import CiState, PullRequestInfo, RepoRef
 from heimdall.shared.ids import InstallationId, RepoId
+from tests.integration.db.installation_helpers import created_installation
 
 pytestmark = pytest.mark.integration
 
@@ -42,7 +38,7 @@ pytestmark = pytest.mark.integration
 class IntakeGitHubReader:
     """Supply deterministic GitHub facts for the intake use case."""
 
-    async def get_file(self, repo: RepoRef, path: str, ref: str) -> str | None:
+    async def get_file(self, repo: RepoRef, path: str, ref: str | None) -> str | None:
         """No repo config files means use validated defaults."""
         return None
 
@@ -82,14 +78,7 @@ async def _create_enabled_repo(
     repo_id = RepoId(installation_id + 1)
     await on_installation_event(
         sessions,
-        InstallationEvent(
-            installation_id=installation_id,
-            account_login="triage-test",
-            account_type="Organization",
-            event="installation",
-            action="created",
-            repositories=(InstallationRepo(repo_id=repo_id, full_name="triage-test/demo"),),
-        ),
+        created_installation(installation_id, "triage-test", repo_id, "triage-test/demo"),
     )
     ctx = TenantCtx(installation_id=InstallationId(installation_id), request_id="triage-test")
     return ctx, repo_id

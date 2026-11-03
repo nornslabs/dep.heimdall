@@ -20,12 +20,13 @@ from heimdall.modules.repro.api import (
     timeout_run,
 )
 from heimdall.modules.repro.models import ReproRun
-from heimdall.modules.tenancy.api import InstallationEvent, InstallationRepo, on_installation_event
+from heimdall.modules.tenancy.api import on_installation_event
 from heimdall.modules.triage.api import EventKind, Facts, PrEvent, handle_event, on_step_done
 from heimdall.modules.triage.models import Pr
 from heimdall.shared.context import TenantCtx
 from heimdall.shared.errors import ReproLimitReached
 from heimdall.shared.ids import InstallationId, RepoId
+from tests.integration.db.installation_helpers import created_installation
 
 pytestmark = pytest.mark.integration
 
@@ -37,14 +38,7 @@ async def _checking_pr(sessions: async_sessionmaker[AsyncSession]) -> tuple[Tena
     ctx = TenantCtx(installation_id=InstallationId(installation_id), request_id="repro-test")
     await on_installation_event(
         sessions,
-        InstallationEvent(
-            installation_id=installation_id,
-            account_login="repro-test",
-            account_type="Organization",
-            event="installation",
-            action="created",
-            repositories=(InstallationRepo(repo_id=repo_id, full_name="repro-test/demo"),),
-        ),
+        created_installation(installation_id, "repro-test", repo_id, "repro-test/demo"),
     )
     await handle_event(
         sessions,

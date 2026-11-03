@@ -125,8 +125,9 @@ async def handle_webhook_delivery(
             parse_installation_event,
         )
 
-        installation_event = parse_installation_event(payload, event_name, action)
-        await on_installation_event(sessions, installation_event)
+        installation_event = parse_installation_event(event_name, payload)
+        if installation_event is not None:
+            await on_installation_event(sessions, installation_event)
         await _mark_delivery_handled(sessions, ctx, delivery_id)
         return None
     event = pull_request_event(delivery_id, event_name, action, payload)

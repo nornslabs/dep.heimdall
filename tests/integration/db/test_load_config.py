@@ -18,14 +18,14 @@ class RecordingConfigReader:
     """Return configured GitHub files and record requested paths."""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, str, str | None]] = []
 
-    async def get_file(self, repo: RepoRef, path: str, ref: str) -> str | None:
-        self.calls.append((path, ref))
+    async def get_file(self, repo: RepoRef, path: str, ref: str | None) -> str | None:
+        self.calls.append((repo.full_name, path, ref))
         return {
-            ".github/heimdall.yml": "intake:\n  require_cla: true\n",
-            "heimdall.yml": "intake:\n  required_labels: [bug]\n",
-        }.get(path)
+            ("octo-org/.github", "heimdall.yml", None): "intake:\n  require_cla: true\n",
+            ("octo-org/demo", "heimdall.yml", "head-sha"): "intake:\n  required_labels: [bug]\n",
+        }.get((repo.full_name, path, ref))
 
 
 async def test_load_config_merges_layers_and_reuses_cached_sha(
@@ -60,6 +60,6 @@ async def test_load_config_merges_layers_and_reuses_cached_sha(
     assert config.intake.required_labels == ("bug",)
     assert cached == config
     assert reader.calls == [
-        (".github/heimdall.yml", "head-sha"),
-        ("heimdall.yml", "head-sha"),
+        ("octo-org/.github", "heimdall.yml", None),
+        ("octo-org/demo", "heimdall.yml", "head-sha"),
     ]

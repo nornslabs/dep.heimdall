@@ -5,8 +5,9 @@ Other modules may import only from this file.
 
 from heimdall.modules.tenancy._config_model import IntakeConfig, RepoConfig, ReviewConfig
 from heimdall.modules.tenancy.domain import (
+    InstallationAction,
     InstallationEvent,
-    InstallationRepo,
+    RepoSummary,
     parse_installation_event,
 )
 from heimdall.modules.tenancy.ports import ConfigFileReader
@@ -26,10 +27,11 @@ from heimdall.modules.tenancy.service import (
 
 __all__ = [
     "ConfigFileReader",
+    "InstallationAction",
     "InstallationEvent",
-    "InstallationRepo",
     "IntakeConfig",
     "RepoConfig",
+    "RepoSummary",
     "ReviewConfig",
     "get_repo_id",
     "get_repo_id_in_transaction",
