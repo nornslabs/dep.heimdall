@@ -55,6 +55,20 @@ token. Configure the App with `metadata: read`, `contents: read`, `pull requests
    `HEIMDALL_SWITCH_TOKEN`, and `SMEE_URL`. Create a Smee channel and use its URL as the GitHub
    App webhook URL. Keep the webhook secret the same in GitHub and `.env`.
 
+   Point the agents at a model. One `LLM_DEFAULT_*` block serves all three agents, and any
+   provider with an OpenAI-compatible API works:
+
+   ```bash
+   LLM_DEFAULT_PROVIDER=openai_compat        # openai_compat | anthropic
+   LLM_DEFAULT_BASE_URL=https://openrouter.ai/api/v1
+   LLM_DEFAULT_API_KEY=...
+   LLM_DEFAULT_MODEL=...
+   ```
+
+   To override one agent, set `LLM_<AGENT>_*`. For example, `LLM_LOKI_BASE_URL` and
+   `LLM_LOKI_MODEL` move only Loki to a different model family, so its review stays independent.
+   See `src/heimdall/adapters/ai/README.md`.
+
 2. Put the downloaded GitHub App private key at `secrets/github-app.pem`. The Compose stack mounts
    it read-only at `/run/secrets/github-app.pem`. Never commit `.env` or `secrets/`.
 

@@ -8,6 +8,10 @@ reproduction results. Valid slash commands are parsed as data and dispatched to 
 | `agent.py` | Card assembly and command routing |
 | `prompt.md` | Trust boundaries, allowed tools, and output format |
 | `allowed_tools.py` | Heimdall's scoped MCP tool allowlist |
+| `config.py` | `AGENT_NAME`, `MAX_TURNS = 8`, `load_ai_config()` (`LLM_HEIMDALL_*`) |
+
+The card and command flows are deterministic today. `main()` builds Heimdall's `AiAdapter` from
+its own config, so a bad model setting fails at startup.
 
 `build_review_card` returns `approval_message`, which adds hidden draft identity and hash metadata
 for the bridge. The marker is outside the saved draft body, so the approval hash still covers

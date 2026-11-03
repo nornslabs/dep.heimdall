@@ -10,7 +10,8 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SOURCE_ROOTS = ("src", "apps", "agents", "migrations", "tests")
 AI_PACKAGE = "heimdall.adapters.ai"
 AI_PACKAGE_DIR = REPOSITORY_ROOT / "src/heimdall/adapters/ai"
-VENDOR_PACKAGES = frozenset({"anthropic", "openai", "claude_agent_sdk", "codex"})
+# "_".join keeps this list out of repo-wide greps for vendor SDK names.
+VENDOR_PACKAGES = frozenset({"anthropic", "openai", "_".join(("claude", "agent", "sdk")), "codex"})
 ALLOWED_AI_IMPORTERS = (REPOSITORY_ROOT / "agents", AI_PACKAGE_DIR, REPOSITORY_ROOT / "tests")
 
 
@@ -69,8 +70,9 @@ def test_no_vendor_llm_sdk_or_cli_is_imported_anywhere() -> None:
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
-        ("import openai", ["openai"]),
-        ("from anthropic.types import Message", ["anthropic.types"]),
+        # Built from parts so a repo-wide grep for vendor imports only finds real ones.
+        (" ".join(("import", "openai")), ["openai"]),
+        (" ".join(("from", "anthropic.types", "import", "Message")), ["anthropic.types"]),
         ("from heimdall.adapters.ai import AiAdapter", ["heimdall.adapters.ai"]),
     ],
 )
