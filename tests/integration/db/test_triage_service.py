@@ -189,7 +189,7 @@ async def test_installation_delivery_routes_to_tenancy_before_tenant_exists(
     installation_id = InstallationId(int(uuid.uuid4().int % 1_000_000_000) + 1_000_000)
     ctx = TenantCtx(installation_id=installation_id, request_id=new_request_id())
     delivery_id = f"install-{uuid.uuid4().hex}"
-    payload = {
+    payload: dict[str, object] = {
         "action": "created",
         "installation": {
             "id": installation_id,

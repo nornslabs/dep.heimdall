@@ -67,7 +67,7 @@ class GitHubActionsResults:
             )
         if len(archive) > MAX_ARTIFACT_BYTES:
             raise ValueError("reproduction artifact exceeds the size limit")
-        return _parse_artifact(archive, expected_repro_run_id)
+        return parse_artifact(archive, expected_repro_run_id)
 
     async def _find_artifact_id(
         self,
@@ -104,7 +104,7 @@ class GitHubActionsResults:
         raise ValueError("matching reproduction artifact was not found")
 
 
-def _parse_artifact(archive: bytes, expected_run_id: str) -> PairedArtifact:
+def parse_artifact(archive: bytes, expected_run_id: str) -> PairedArtifact:
     """Read only the three expected files from a bounded archive."""
     try:
         with zipfile.ZipFile(io.BytesIO(archive)) as zipped:

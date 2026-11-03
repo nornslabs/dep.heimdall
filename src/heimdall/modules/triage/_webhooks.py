@@ -77,12 +77,12 @@ async def receive_webhook(
             "delivery_id": delivery_id,
         }
         if task_name == "actions.process_workflow_run":
-            task_args.update(_workflow_run_args(payload_values))
+            task_args.update(workflow_run_args(payload_values))
         await enqueue(session, task_name, task_args)
         return True
 
 
-def _workflow_run_args(payload: dict[str, object]) -> dict[str, int | str]:
+def workflow_run_args(payload: dict[str, object]) -> dict[str, int | str]:
     """Extract bounded routing metadata from an authenticated workflow webhook."""
     raw_run = payload.get("workflow_run")
     raw_repo = payload.get("repository")

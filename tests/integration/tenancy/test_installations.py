@@ -51,12 +51,16 @@ async def _apply(
 async def _installation(engine: AsyncEngine, installation_id: int) -> dict[str, object] | None:
     async with engine.connect() as conn:
         row = (
-            await conn.execute(
-                text("SELECT * FROM installations WHERE installation_id = :id"),
-                {"id": installation_id},
+            (
+                await conn.execute(
+                    text("SELECT * FROM installations WHERE installation_id = :id"),
+                    {"id": installation_id},
+                )
             )
-        ).first()
-    return dict(row._mapping) if row is not None else None
+            .mappings()
+            .first()
+        )
+    return dict(row) if row is not None else None
 
 
 async def _repos(engine: AsyncEngine, installation_id: int) -> dict[int, tuple[str, bool]]:

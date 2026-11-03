@@ -13,6 +13,11 @@ from heimdall.shared.ids import InstallationId
 
 pytestmark = pytest.mark.integration
 
+STORED_FILES: dict[tuple[str, str, str | None], str] = {
+    ("octo-org/.github", "heimdall.yml", None): "intake:\n  require_cla: true\n",
+    ("octo-org/demo", "heimdall.yml", "head-sha"): "intake:\n  required_labels: [bug]\n",
+}
+
 
 class RecordingConfigReader:
     """Return configured GitHub files and record requested paths."""
@@ -22,10 +27,7 @@ class RecordingConfigReader:
 
     async def get_file(self, repo: RepoRef, path: str, ref: str | None) -> str | None:
         self.calls.append((repo.full_name, path, ref))
-        return {
-            ("octo-org/.github", "heimdall.yml", None): "intake:\n  require_cla: true\n",
-            ("octo-org/demo", "heimdall.yml", "head-sha"): "intake:\n  required_labels: [bug]\n",
-        }.get((repo.full_name, path, ref))
+        return STORED_FILES.get((repo.full_name, path, ref))
 
 
 async def test_load_config_merges_layers_and_reuses_cached_sha(
