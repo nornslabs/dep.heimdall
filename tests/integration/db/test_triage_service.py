@@ -278,6 +278,52 @@ async def test_run_intake_saves_checklist_and_switch_outbox_atomically(
         assert "Intake checklist" in outbox.scalar_one()["message"]
 
 
+async def test_intake_failure_publishes_visible_error_to_switch(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """Show failed intake rules in the PR's Switch room through the outbox."""
+    ctx, repo_id = await _create_enabled_repo(sessions)
+    await handle_event(
+        sessions,
+        ctx,
+        _pr_event(repo_id, EventKind.PR_OPENED, "head-1", "open-failed-intake"),
+    )
+    async with unit_of_work(sessions) as session:
+        pr = (
+            await session.exec(
+                select_for_tenant(Pr, ctx.installation_id).where(
+                    Pr.repo_id == repo_id,
+                    Pr.number == 1,
+                )
+            )
+        ).one()
+        pr_id = pr.id
+
+    result = await on_step_done(
+        sessions,
+        ctx,
+        pr_id,
+        "failed-intake-result",
+        EventKind.INTAKE_DONE,
+        "head-1",
+        Facts(intake_passed=False),
+        room_id="switch-room-1",
+        room_message="Intake failed: required label is missing.",
+    )
+
+    assert isinstance(result, Transition)
+    assert result.to.value == "intake_failed"
+    async with unit_of_work(sessions) as session:
+        connection = await session.connection()
+        outbox = await connection.execute(
+            text("SELECT payload FROM outbox WHERE idempotency_key = :key"),
+            {"key": "triage:failed-intake-result:outbox_failed_rules"},
+        )
+        message = outbox.scalar_one()["message"]
+        assert "Intake failed" in message
+        assert "required label is missing" in message
+
+
 async def test_stale_step_result_does_not_change_pr_state(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
