@@ -1,0 +1,17 @@
+{
+  "name": "not-reproduced",
+  "pr_title": "Refresh parser documentation",
+  "pr_body": "The reported issue could not be reproduced.",
+  "configured_test_cmd": "pytest -q",
+  "run": {
+    "run_id": "10000000-0000-0000-0000-000000000003",
+    "pr_id": "20000000-0000-0000-0000-000000000003",
+    "head_sha": "head-unreproduced",
+    "attempt": 1,
+    "status": "finished",
+    "with_fix": {"passed": true},
+    "without_fix": {"passed": true},
+    "verdict": "not_reproduced"
+  },
+  "expected_verdict": "not_reproduced"
+}

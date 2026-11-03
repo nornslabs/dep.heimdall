@@ -1,0 +1,17 @@
+{
+  "name": "fix-failed",
+  "pr_title": "Correct range boundary",
+  "pr_body": "The patch updates the range check.",
+  "configured_test_cmd": "pytest -q",
+  "run": {
+    "run_id": "10000000-0000-0000-0000-000000000002",
+    "pr_id": "20000000-0000-0000-0000-000000000002",
+    "head_sha": "head-failed",
+    "attempt": 1,
+    "status": "finished",
+    "with_fix": {"passed": false},
+    "without_fix": {"passed": false},
+    "verdict": "fix_failed"
+  },
+  "expected_verdict": "fix_failed"
+}
