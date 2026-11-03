@@ -150,6 +150,8 @@ def record_approval(ctx: TenantCtx, draft_id: DraftId, approver: GitHubLogin, dr
 - Every `domain.py` function has unit tests. No DB, no network, no mocks needed.
 - Every service has at least one integration test against real Postgres (docker compose).
 - Adapters are tested with `respx` for HTTP. Never call real GitHub or a real model in tests.
+  The GitHub adapter is the exception: githubkit uses `httpx2`, which `respx` can't intercept,
+  so its tests pass an `httpx2.MockTransport` instead (see `adapters/github/README.md`).
 - Name tests after behaviour: `test_post_is_blocked_when_draft_hash_changed`.
 - A bug fix comes with a test that fails before the fix.
 
