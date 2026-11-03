@@ -6,9 +6,10 @@ role="${1:-}"
 case "$role" in
   migrate)
     exec alembic upgrade head ;;
+  # Run as modules so /app (not the script's folder) is on sys.path and
+  # `apps.*` / `agents.*` imports resolve.
   api|worker|mcp|bridge)
-    exec python "apps/$role/main.py" ;;
-  # Run agents as modules so `agents.*` imports resolve from /app.
+    exec python -m "apps.$role.main" ;;
   huginn)
     exec python -m agents.huginn.runner ;;
   loki|heimdall)
