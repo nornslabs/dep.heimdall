@@ -1,4 +1,4 @@
-"""Pure tenancy rules: parse heimdall.yml layers and build a repo's validated config (no I/O)."""
+"""Pure tenancy rules and installation event values."""
 
 import hashlib
 import json

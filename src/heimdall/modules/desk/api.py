@@ -1,4 +1,41 @@
-"""Public interface of the desk module.
+"""Public interface for desk functionality."""
 
-Other modules may import only from this file.
-"""
+from heimdall.modules.desk.domain import (
+    CardContent,
+    CardRef,
+    CommandVerb,
+    DeskCommand,
+    DraftRef,
+    MechanicalTaskRef,
+    format_approval_message,
+    hash_draft,
+    parse_command,
+    render_card,
+    render_mechanical_task_block,
+)
+from heimdall.modules.desk.service import (
+    create_mechanical_task,
+    get_draft,
+    get_draft_in_transaction,
+    save_card,
+    save_draft,
+)
+
+__all__ = [
+    "CardContent",
+    "CardRef",
+    "CommandVerb",
+    "DeskCommand",
+    "DraftRef",
+    "MechanicalTaskRef",
+    "create_mechanical_task",
+    "format_approval_message",
+    "get_draft",
+    "get_draft_in_transaction",
+    "hash_draft",
+    "parse_command",
+    "render_card",
+    "render_mechanical_task_block",
+    "save_card",
+    "save_draft",
+]

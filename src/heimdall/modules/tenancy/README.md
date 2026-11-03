@@ -2,13 +2,18 @@
 
 Installations, repos and each repo's effective `heimdall.yml` config.
 
+Repository auto-suggest pauses are tenant-scoped and persist until policy is re-enabled.
+
+Public functions: `parse_installation_event`, `on_installation_event`, `get_tenant`,
+`get_repo_id`, `get_repo_id_in_transaction`, `load_config`, `load_config_in_transaction`,
+`repo_is_enabled`, `repo_switch_room_id`, `repo_auto_suggest_paused`,
+`set_auto_suggest_paused`, and `set_auto_suggest_paused_in_transaction`.
+
 | File | Role |
 |---|---|
-| `api.py` | Public interface: `on_installation_event`, `get_tenant`, `load_config`, `parse_installation_event`, `TenancyDeps`, `RepoConfig`, `InstallationEvent` |
-| `service.py` | `on_installation_event(deps, event)`, `get_tenant(deps, installation_id, request_id=None)`, `load_config(deps, ctx, repo_id, sha)` |
-| `_installation_events.py` | `parse_installation_event(kind, payload)`: webhook to `InstallationEvent` (pure) |
-| `_installation_store.py` | Idempotent upserts for installation events |
-| `domain.py` | `parse_layer(text, source)`, `build_config(layers)`, `merge_layers(base, override)`, `config_sha(files)`, `RepoConfig` and its sections. Pure, no I/O |
+| `api.py` | `on_installation_event`, `get_tenant`, `load_config`, `InstallationEvent`, and `RepoConfig` |
+| `service.py` | Use cases |
+| `domain.py` | `parse_layer(text, source)`, `build_config(layers)`, `merge_layers(base, override)`, `RepoConfig` and its sections. Pure, no I/O |
 | `_config_model.py` | The schema: sections, defaults, the `test_cmd` rule |
 | `_config_merge.py` | `ConfigLayer` and the deep merge |
 | `_config_errors.py` | Turns pydantic errors into the exact lines maintainers see |
@@ -32,6 +37,17 @@ redelivered webhook changes nothing.
 Every event also upserts the installation from its `account`, so a repositories event for a
 missed installation still works. `get_tenant(installation_id)` starts every job: it returns a
 `TenantCtx`, or raises `InstallationNotFound` / `InstallationSuspended`.
+
+Installation events upsert tenant and repo records. Removed repositories are disabled;
+suspension blocks the tenant, and deletion disables its repos. `get_tenant` rejects
+unknown or suspended installations. `load_config` reads `.github/heimdall.yml` and then
+`heimdall.yml` at the PR head SHA and caches the merged config by `config_sha`.
+
+Tables: `installations` and `repos`; both are scoped by `installation_id`.
+
+`load_config` reads `.github/heimdall.yml` then `heimdall.yml` at the PR head SHA,
+validates their merged values, and caches the result in the tenant's repo row keyed by
+`config_sha`.
 
 ## heimdall.yml
 

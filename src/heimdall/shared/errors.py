@@ -28,6 +28,10 @@ class RepoLimitReached(HeimdallError):
     """The installation already has the maximum number of repos enabled."""
 
 
+class RepoNotEnabled(HeimdallError):
+    """The repository is not enabled for the requesting installation."""
+
+
 class InstallationNotFound(HeimdallError):
     """Heimdall has no record of this GitHub App installation."""
 
@@ -48,6 +52,10 @@ class StaleHeadSha(HeimdallError):
     """The PR head moved since this work started, so its result is out of date."""
 
 
+class ReproLimitReached(HeimdallError):
+    """The PR has already used its allowed reproduction attempts for this head."""
+
+
 class ToolNotAllowed(HeimdallError):
     """An agent called an MCP tool that is not on its allowed list."""
 
@@ -66,3 +74,7 @@ class SwitchUnavailable(HeimdallError):
     """Switch returned a server error or timed out."""
 
     retryable = True
+
+
+class SwitchRequestFailed(HeimdallError):
+    """Switch rejected a request that cannot succeed unchanged."""

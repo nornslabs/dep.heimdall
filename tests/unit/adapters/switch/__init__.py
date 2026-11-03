@@ -1,0 +1,1 @@
+"""Switch adapter tests."""

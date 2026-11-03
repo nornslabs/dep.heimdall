@@ -1,0 +1,17 @@
+{
+  "name": "timed-out",
+  "pr_title": "Update generated file",
+  "pr_body": "The reproduction job exceeded its time limit.",
+  "configured_test_cmd": "pytest -q",
+  "run": {
+    "run_id": "10000000-0000-0000-0000-000000000004",
+    "pr_id": "20000000-0000-0000-0000-000000000004",
+    "head_sha": "head-timeout",
+    "attempt": 1,
+    "status": "timed_out",
+    "with_fix": null,
+    "without_fix": null,
+    "verdict": null
+  },
+  "expected_verdict": null
+}

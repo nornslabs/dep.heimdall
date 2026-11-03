@@ -1,9 +1,10 @@
-# huginn
+# Huginn
 
-Huginn, the Reproducer: runs the PR's repro and reports a verdict.
+Huginn starts and monitors one bounded reproduction attempt, then formats the stored verdict for a
+Switch room draft. The configured repository test command is supplied by trusted application code.
 
 | File | Role |
 |---|---|
-| `prompt.md` | Role, rules, output format |
-| `agent.py` | Loop and limits |
-| `allowed_tools.py` | MCP tools this agent may call |
+| `agent.py` | Bounded polling loop and deterministic verdict message |
+| `prompt.md` | Role, untrusted-data rules, and output format |
+| `allowed_tools.py` | Huginn's `start_repro` and `get_repro` MCP allowlist |
