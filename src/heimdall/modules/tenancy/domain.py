@@ -1,5 +1,7 @@
 """Pure tenancy rules and installation event values."""
 
+import hashlib
+import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, cast
@@ -23,23 +25,72 @@ from heimdall.modules.tenancy._config_model import (
     ReviewConfig,
     RoomConfig,
 )
+from heimdall.modules.tenancy._installation_events import (
+    InstallationAction,
+    InstallationEvent,
+    RepoSummary,
+    parse_installation_event,
+)
 from heimdall.shared.errors import ConfigInvalid
 
 __all__ = [
+    "CONFIG_PATH",
     "MAX_FINDINGS",
+    "ORG_CONFIG_REPO",
     "AutoSuggestConfig",
+    "ConfigFile",
     "ConfigLayer",
+    "InstallationAction",
+    "InstallationEvent",
     "IntakeConfig",
     "RepoConfig",
+    "RepoSummary",
     "ReproConfig",
     "ReviewConfig",
     "RoomConfig",
     "build_config",
+    "config_sha",
     "merge_layers",
+    "parse_installation_event",
     "parse_layer",
 ]
 
 NOT_A_MAPPING = "must be a mapping of keys to values"
+
+CONFIG_PATH = "heimdall.yml"
+"""Where heimdall.yml lives, both in a repo and in the org's ``.github`` repo."""
+
+ORG_CONFIG_REPO = ".github"
+"""The org-wide repository whose heimdall.yml sits between the defaults and each repo."""
+
+
+@dataclass(frozen=True)
+class ConfigFile:
+    """One heimdall.yml as fetched, before parsing.
+
+    Attributes:
+        source: Shown in errors, for example ``heimdall.yml``.
+        text: The file's raw contents.
+    """
+
+    source: str
+    text: str
+
+
+def config_sha(files: Sequence[ConfigFile]) -> str:
+    """Fingerprint the files a config is built from, to cache the built config.
+
+    The same files in the same order always give the same value, whatever commit they were
+    read at, so a cached config is reused until a file actually changes.
+
+    Args:
+        files: The fetched files, lowest precedence first.
+
+    Returns:
+        A 64-character hex SHA-256.
+    """
+    encoded = json.dumps([[file.source, file.text] for file in files], ensure_ascii=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)

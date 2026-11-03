@@ -32,12 +32,21 @@ class RepoNotEnabled(HeimdallError):
     """The repository is not enabled for the requesting installation."""
 
 
+
 class InstallationNotFound(HeimdallError):
-    """The GitHub installation is not registered."""
+    """Heimdall has no record of this GitHub App installation."""
 
 
 class InstallationSuspended(HeimdallError):
-    """The GitHub installation is suspended or deleted."""
+    """The installation is suspended or uninstalled, so Heimdall does no work for it."""
+
+
+class WebhookPayloadInvalid(HeimdallError):
+    """A signed GitHub webhook is missing a field Heimdall needs."""
+
+
+class RepoNotFound(HeimdallError):
+    """The repository is not enabled for this installation (or belongs to another one)."""
 
 
 class StaleHeadSha(HeimdallError):

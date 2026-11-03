@@ -21,13 +21,18 @@ class Installation(TenantScoped, table=True):
 
 
 class Repo(TenantScoped, table=True):
-    """A repository Heimdall triages, with its effective heimdall.yml config."""
+    """A repository Heimdall triages, with its effective heimdall.yml config.
+
+    ``enabled`` is false once the repo is removed from the installation; the row stays
+    because pull requests reference it.
+    """
 
     __tablename__ = "repos"  # pyright: ignore[reportAssignmentType]
 
     repo_id: int = bigint_pk()
     installation_id: int = bigint(foreign_key="installations.installation_id")
     full_name: str
+    enabled: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
     switch_room_id: str | None = None
     enabled: bool = Field(default=True, sa_column_kwargs={"server_default": "true"})
     auto_suggest_paused: bool = Field(default=False, sa_column_kwargs={"server_default": "false"})

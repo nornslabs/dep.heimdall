@@ -252,3 +252,13 @@ async def test_malformed_response_raises_non_retryable_error(
 
     with pytest.raises(GitHubRequestFailed):
         await reader.get_pull_request(REPO, 42)
+
+
+async def test_get_file_without_ref_reads_the_default_branch(
+    reader: GitHubApiReader, fake_github: FakeGitHub
+) -> None:
+    path = "/repos/octo-org/demo/contents/heimdall.yml"
+    fake_github.on_json("GET", path, file_content("version: 1\n"))
+
+    assert await reader.get_file(REPO, "heimdall.yml", None) == "version: 1\n"
+    assert "ref" not in fake_github.requests_to(path)[0].url.params
