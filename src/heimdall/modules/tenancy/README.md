@@ -12,8 +12,26 @@ Repository auto-suggest pauses are tenant-scoped and persist until policy is re-
 | `_config_model.py` | The schema: sections, defaults, the `test_cmd` rule |
 | `_config_merge.py` | `ConfigLayer` and the deep merge |
 | `_config_errors.py` | Turns pydantic errors into the exact lines maintainers see |
-| `ports.py` | Adapter interfaces |
-| `models.py` | `installations`, `repos` |
+| `ports.py` | `ConfigFileReader` (implemented by `adapters/github`) |
+| `models.py` | `installations`, `repos` (with `enabled`) |
+
+## Tenants
+
+GitHub's installation webhooks create and update tenants. Every write is an upsert, so a
+redelivered webhook changes nothing.
+
+| Webhook | Effect |
+|---|---|
+| `installation.created` | Installation created (not suspended); its repos created and enabled |
+| `installation.deleted`, `installation.suspend` | `suspended = true`. Deleted installations are kept, because PRs and the insert-only audit log reference them |
+| `installation.unsuspend` | `suspended = false` |
+| `installation.new_permissions_accepted` | Account login and type refreshed |
+| `installation_repositories.added` | Repos created, or re-enabled with their current name |
+| `installation_repositories.removed` | Repos set `enabled = false` (rows kept, because PRs reference them) |
+
+Every event also upserts the installation from its `account`, so a repositories event for a
+missed installation still works. `get_tenant(installation_id)` starts every job: it returns a
+`TenantCtx`, or raises `InstallationNotFound` / `InstallationSuspended`.
 
 Installation events upsert tenant and repo records. Removed repositories are disabled;
 suspension blocks the tenant, and deletion disables its repos. `get_tenant` rejects
@@ -26,8 +44,21 @@ validates their merged values, and caches the result in the tenant's repo row ke
 
 ## heimdall.yml
 
-Read at the PR's head commit from three layers, each overriding the one before: Heimdall's
-defaults, then the org's `.github` repo, then the repo itself.
+Three layers, each overriding the one before:
+
+1. Heimdall's defaults.
+2. `heimdall.yml` in the org's `<owner>/.github` repo, read at its **default branch** (that repo
+   has no copy of the PR's commit). Errors call it `<owner>/.github: heimdall.yml`.
+3. `heimdall.yml` at the repo root, read at the PR's **head commit**.
+
+A missing file is skipped; no files at all gives the defaults.
+
+`load_config` fetches both files every time, because a push can edit heimdall.yml. It then
+compares their fingerprint (`config_sha`, a SHA-256 of each file's source and text) with the one
+stored on the `repos` row. If they match, the stored `repos.config` is returned and nothing is
+written; otherwise the config is rebuilt and stored with its new `config_sha`. An invalid config
+raises and stores nothing, so the error shows up on every check. A stored config that no longer
+validates (after a schema change) is rebuilt.
 
 - Mappings merge key by key. Lists and single values are **replaced**, so a repo can shorten
   a list the org set.
