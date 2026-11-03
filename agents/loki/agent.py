@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Awaitable, Callable
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID
 
 from heimdall.adapters.ai.types import ChatResponse
@@ -137,7 +138,7 @@ async def run_loki(
         raise ValueError("MCP save_findings returned an invalid response")
     return LokiResult(
         saved=saved,
-        rejected=tuple(item for item in rejected if isinstance(item, dict)),
+        rejected=_json_objects(cast(list[object], rejected)),
         head_sha=head_sha,
     )
 
@@ -178,7 +179,7 @@ def _parse_findings(response: str) -> list[dict[str, str | int | None]]:
     return findings
 
 
-def _int_field(value: dict[str, object], name: str) -> int:
+def _int_field(value: Mapping[str, object], name: str) -> int:
     """Require an integer field from a structured MCP response."""
     field = value.get(name)
     if not isinstance(field, int):
@@ -186,9 +187,26 @@ def _int_field(value: dict[str, object], name: str) -> int:
     return field
 
 
-def _str_field(value: dict[str, object], name: str) -> str:
+def _str_field(value: Mapping[str, object], name: str) -> str:
     """Require a non-empty string field from a structured MCP response."""
     field = value.get(name)
     if not isinstance(field, str) or not field:
         raise ValueError(f"MCP response missing string {name}")
     return field
+
+
+def _json_object(value: object) -> dict[str, object] | None:
+    """Return a decoded JSON object with string keys, or None for any other value."""
+    if not isinstance(value, dict):
+        return None
+    return {str(key): item for key, item in cast(dict[object, object], value).items()}
+
+
+def _json_objects(values: list[object]) -> tuple[dict[str, object], ...]:
+    """Keep only the JSON objects from a decoded list, in order."""
+    objects: list[dict[str, object]] = []
+    for value in values:
+        json_object = _json_object(value)
+        if json_object is not None:
+            objects.append(json_object)
+    return tuple(objects)

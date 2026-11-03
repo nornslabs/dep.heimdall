@@ -19,7 +19,7 @@ from heimdall.modules.desk.api import format_approval_message, get_draft, save_d
 from heimdall.modules.tenancy.models import Repo
 from tests.integration.db.test_approval_service import (
     MaintainerConfigReader,
-    _draft_context,
+    draft_context,
 )
 
 pytestmark = pytest.mark.integration
@@ -52,7 +52,7 @@ async def test_switch_reaction_records_approval_and_rejects_non_maintainer(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     """Reject an outsider without writes, then approve through a fake Switch room."""
-    ctx, repo, _, draft_id = await _draft_context(sessions)
+    ctx, repo, _, draft_id = await draft_context(sessions)
     draft = await get_draft(sessions, ctx, draft_id)
     post_message = format_approval_message(
         draft.body,
@@ -122,7 +122,7 @@ async def test_policy_approval_and_maintainer_pause_are_tenant_scoped(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     """Approve allowed fixes by policy, then stop future approvals on maintainer request."""
-    ctx, repo, pr_id, draft_id = await _draft_context(sessions)
+    ctx, repo, pr_id, draft_id = await draft_context(sessions)
     reader = MaintainerConfigReader()
     approval = await approve_by_policy(sessions, reader, ctx, repo, draft_id, "lint")
     assert approval.approver == "policy:auto_suggest"

@@ -40,7 +40,7 @@ class FakeHuginnTools:
         run_index = self.run_ids.index(uuid.UUID(run_id))
         response = self.responses[min(run_index, len(self.responses) - 1)].copy()
         response["run_id"] = run_id
-        response["attempt"] = run_index + 1
+        response.setdefault("attempt", run_index + 1)
         response.setdefault("pr_id", "00000000-0000-0000-0000-000000000002")
         return response
 
@@ -48,7 +48,7 @@ class FakeHuginnTools:
 @pytest.mark.asyncio
 async def test_huginn_runs_three_attempts_and_reports_counts_and_assertions() -> None:
     """Aggregate saved paired results into one majority verdict message."""
-    response = {
+    response: dict[str, object] = {
         "pr_id": "00000000-0000-0000-0000-000000000002",
         "head_sha": "head-1",
         "status": "finished",
@@ -82,14 +82,14 @@ async def test_huginn_runs_three_attempts_and_reports_counts_and_assertions() ->
 @pytest.mark.asyncio
 async def test_huginn_withholds_verdict_when_attempts_disagree() -> None:
     """A tie across persisted run verdicts is reported as mixed results."""
-    base = {
+    base: dict[str, object] = {
         "pr_id": "00000000-0000-0000-0000-000000000002",
         "head_sha": "head-1",
         "status": "finished",
         "with_fix": {"passed": True},
         "without_fix": {"passed": False},
     }
-    results = [
+    results: list[dict[str, object]] = [
         {**base, "verdict": "fix_confirmed"},
         {**base, "verdict": "fix_failed"},
         {**base, "verdict": "not_reproduced"},
@@ -109,7 +109,7 @@ async def test_huginn_withholds_verdict_when_attempts_disagree() -> None:
 @pytest.mark.asyncio
 async def test_huginn_stops_after_bounded_polling() -> None:
     """Return still-running when saved attempts never reach a terminal state."""
-    pending = {
+    pending: dict[str, object] = {
         "pr_id": "00000000-0000-0000-0000-000000000002",
         "head_sha": "head-1",
         "status": "running",
@@ -131,6 +131,28 @@ async def test_huginn_stops_after_bounded_polling() -> None:
     assert tools.start_count == MAX_REPRO_RUNS
     assert all(count == MAX_TURNS for count in tools.polls_by_run.values())
     assert "still running" in result.message
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("attempt", ["1", True, 1.0])
+async def test_huginn_rejects_a_run_record_whose_attempt_is_not_an_integer(
+    attempt: object,
+) -> None:
+    """Treat a malformed MCP attempt number as an invalid record, not a coerced value."""
+    malformed: dict[str, object] = {
+        "pr_id": "00000000-0000-0000-0000-000000000002",
+        "head_sha": "head-1",
+        "attempt": attempt,
+        "status": "running",
+        "with_fix": None,
+        "without_fix": None,
+        "verdict": None,
+    }
+    tools = FakeHuginnTools([malformed])
+    pr_id = uuid.UUID("00000000-0000-0000-0000-000000000002")
+
+    with pytest.raises(ValueError, match="invalid run record"):
+        await run_huginn(tools, 123, pr_id, "head-1", "pytest -q", sleep=_no_wait)
 
 
 async def _no_wait(_delay: float) -> None:

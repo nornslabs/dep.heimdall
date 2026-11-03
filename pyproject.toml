@@ -73,9 +73,11 @@ known-first-party = ["heimdall"]
 
 [tool.pyright]
 pythonVersion = "3.12"
-include = ["src", "apps", "tests"]
+include = ["src", "apps", "agents", "migrations", "tests"]
 exclude = ["**/__pycache__", ".venv", ".serena"]
-strict = ["src"]
+# Strict everywhere so the CLI reports exactly what editors (Pylance) show.
+typeCheckingMode = "strict"
+extraPaths = ["src", "."]
 venvPath = "."
 venv = ".venv"
 

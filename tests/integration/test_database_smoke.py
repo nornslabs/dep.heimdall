@@ -1,17 +1,15 @@
-import os
-
-import asyncpg
 import pytest
+from sqlalchemy import text
+
+from heimdall.adapters.db.engine import create_engine
 
 pytestmark = pytest.mark.integration
 
 
-async def test_postgres_is_reachable() -> None:
-    url = os.environ.get("DATABASE_URL")
-    if not url:
-        pytest.skip("DATABASE_URL is not set")
-    conn = await asyncpg.connect(url)
+async def test_postgres_is_reachable(database_url: str) -> None:
+    engine = create_engine(database_url)
     try:
-        assert await conn.fetchval("SELECT 1") == 1
+        async with engine.connect() as connection:
+            assert await connection.scalar(text("SELECT 1")) == 1
     finally:
-        await conn.close()
+        await engine.dispose()
