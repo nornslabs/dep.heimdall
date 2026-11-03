@@ -17,6 +17,7 @@ from heimdall.adapters.github.auth import GitHubAppClients, load_private_key
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.adapters.github.sender import GitHubSender
 from heimdall.adapters.queue.app import create_queue_app
+from heimdall.adapters.queue.enqueue import DEFAULT_QUEUE
 from heimdall.adapters.switch import SwitchSender
 from heimdall.shared.logging import configure_logging, get_logger
 from heimdall.shared.settings import get_settings
@@ -27,7 +28,8 @@ log = get_logger(__name__)
 async def _run_jobs_then_stop_outbox(queue_app: App, stop: asyncio.Event) -> None:
     """Run the procrastinate worker; when it stops (SIGTERM, SIGINT), stop the outbox too."""
     try:
-        await queue_app.run_worker_async()
+        # Huginn's jobs sit on their own queue and run in the huginn service.
+        await queue_app.run_worker_async(queues=[DEFAULT_QUEUE])
     finally:
         stop.set()
 

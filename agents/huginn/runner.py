@@ -14,6 +14,7 @@ from heimdall.adapters.db.engine import create_engine, make_session_factory
 from heimdall.adapters.db.outbox.writer import write_outbox
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.queue.app import create_queue_app
+from heimdall.adapters.queue.enqueue import HUGINN_QUEUE
 from heimdall.modules.repro.api import get_run, start_run
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.ids import InstallationId
@@ -109,7 +110,7 @@ async def run_worker() -> None:
     register_huginn_task(queue_app, make_session_factory(engine))
     try:
         async with queue_app.open_async():
-            await queue_app.run_worker_async()
+            await queue_app.run_worker_async(queues=[HUGINN_QUEUE])
     finally:
         await engine.dispose()
         await ai.aclose()

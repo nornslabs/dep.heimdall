@@ -10,6 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
+from heimdall.adapters.queue.enqueue import HUGINN_QUEUE
 from heimdall.modules.intake.api import run_intake
 from heimdall.modules.intake.models import IntakeResult
 from heimdall.modules.repro.models import ReproRun
@@ -264,7 +265,7 @@ async def test_run_intake_saves_checklist_and_switch_outbox_atomically(
         )
         huginn_job = await connection.execute(
             text(
-                "SELECT args FROM procrastinate_jobs "
+                "SELECT queue_name, args FROM procrastinate_jobs "
                 "WHERE args->>'pr_id' = :pr_id AND args->>'test_cmd' IS NOT NULL"
             ),
             {"pr_id": str(pr_id)},
@@ -272,7 +273,9 @@ async def test_run_intake_saves_checklist_and_switch_outbox_atomically(
         assert pr.state == "checking"
         assert len(saved_results.all()) == 6
         assert "Intake checklist" in outbox.scalar_one()["message"]
-    assert huginn_job.scalar_one() == {
+    huginn_queue, huginn_args = huginn_job.one()
+    assert huginn_queue == HUGINN_QUEUE
+    assert huginn_args == {
         "installation_id": ctx.installation_id,
         "pr_id": str(pr_id),
         "head_sha": "head-1",
