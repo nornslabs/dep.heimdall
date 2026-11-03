@@ -11,7 +11,10 @@ import heimdall.modules
 metadata = SQLModel.metadata
 """The MetaData every table model registers with."""
 
-SHARED_TABLE_MODULES = ("heimdall.adapters.db.outbox",)
+QUEUE_TABLE_PREFIX = "procrastinate_"
+"""procrastinate owns these tables; its migration creates them and no model describes them."""
+
+SHARED_TABLE_MODULES = ("heimdall.adapters.db.outbox.models",)
 """Tables written by every module, so they live in the adapter instead of one module."""
 
 
@@ -40,3 +43,18 @@ def import_all_models() -> list[str]:
 
 def _name(module_info: pkgutil.ModuleInfo) -> str:
     return module_info.name
+
+
+def include_in_migrations(name: str | None, type_: str, _parent_names: object) -> bool:
+    """Tell alembic which database objects our models describe.
+
+    procrastinate's tables are left out, so autogenerate and the drift test leave them alone.
+
+    Args:
+        name: Name of the reflected object.
+        type_: Object kind, for example ``"table"`` or ``"index"``.
+
+    Returns:
+        False for procrastinate's tables, True for everything else.
+    """
+    return not (type_ == "table" and name is not None and name.startswith(QUEUE_TABLE_PREFIX))

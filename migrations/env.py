@@ -8,7 +8,7 @@ from alembic import context
 from sqlalchemy import Connection
 
 from heimdall.adapters.db.engine import create_engine
-from heimdall.adapters.db.metadata import import_all_models, metadata
+from heimdall.adapters.db.metadata import import_all_models, include_in_migrations, metadata
 
 DATABASE_URL_ENV = "HEIMDALL_DATABASE_URL"
 
@@ -28,7 +28,12 @@ def _database_url() -> str:
 
 
 def _run_with_connection(connection: Connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        compare_type=True,
+        include_name=include_in_migrations,
+    )
     with context.begin_transaction():
         context.run_migrations()
 
