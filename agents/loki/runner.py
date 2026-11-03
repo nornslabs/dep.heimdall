@@ -1,6 +1,6 @@
 """Read-only Codex CLI adapter for Loki's untrusted PR review input."""
 
-import asyncio
+from agents._runtime import run_agent_process
 
 CODEX_TIMEOUT_SECONDS = 30 * 60
 
@@ -17,7 +17,7 @@ class CodexRunner:
         self._executable = executable
 
     async def review(self, prompt: str) -> str:
-        """Run a single bounded read-only review prompt.
+        """Run one bounded, read-only review prompt.
 
         Args:
             prompt: System instructions plus PR content explicitly marked as data.
@@ -28,8 +28,8 @@ class CodexRunner:
         Raises:
             RuntimeError: Codex is missing, times out, or exits unsuccessfully.
         """
-        try:
-            process = await asyncio.create_subprocess_exec(
+        return await run_agent_process(
+            (
                 self._executable,
                 "exec",
                 "--sandbox",
@@ -38,23 +38,7 @@ class CodexRunner:
                 "never",
                 "--skip-git-repo-check",
                 "-",
-                cwd="/tmp",
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-        except FileNotFoundError as error:
-            raise RuntimeError("Codex CLI is not installed") from error
-
-        try:
-            stdout, _stderr = await asyncio.wait_for(
-                process.communicate(prompt.encode("utf-8")),
-                timeout=CODEX_TIMEOUT_SECONDS,
-            )
-        except TimeoutError as error:
-            process.kill()
-            await process.wait()
-            raise RuntimeError("Codex review timed out") from error
-        if process.returncode != 0:
-            raise RuntimeError(f"Codex review exited with status {process.returncode}")
-        return stdout.decode("utf-8")
+            ),
+            prompt,
+            timeout_seconds=CODEX_TIMEOUT_SECONDS,
+        )
