@@ -14,6 +14,7 @@ from heimdall.modules.approval._delivery import get_approved_draft
 from heimdall.modules.approval.domain import ApprovalRef, validate_approval
 from heimdall.modules.approval.models import Approval
 from heimdall.modules.approval.workflow_models import WorkflowDispatchApproval
+from heimdall.modules.audit.api import AuditEntry, append_in_transaction, pr_subject
 from heimdall.modules.desk.api import get_draft_in_transaction, hash_draft
 from heimdall.modules.tenancy.api import (
     ConfigFileReader,
@@ -23,9 +24,11 @@ from heimdall.modules.tenancy.api import (
     set_auto_suggest_paused_in_transaction,
 )
 from heimdall.modules.triage.api import get_pr_snapshot
-from heimdall.shared.context import TenantCtx
+from heimdall.shared.context import PrRef, TenantCtx
 from heimdall.shared.errors import DraftChanged, NotAMaintainer
 from heimdall.shared.github import RepoRef
+
+REPRO_DISPATCH_POLICY = "policy:repro_dispatch"
 
 
 async def queue_repro_workflow_dispatch(
@@ -67,10 +70,26 @@ async def queue_repro_workflow_dispatch(
         installation_id=ctx.installation_id,
         repro_run_id=run_id,
         request_hash=request_hash,
-        approver="policy:repro_dispatch",
+        approver=REPRO_DISPATCH_POLICY,
     )
     session.add(authorization)
     await session.flush()
+    repo_id = await get_repo_id_in_transaction(session, ctx, repo_full_name)
+    await append_in_transaction(
+        session,
+        ctx,
+        AuditEntry(
+            actor=REPRO_DISPATCH_POLICY,
+            action="repro.dispatch_authorized",
+            subject=pr_subject(PrRef(repo_id, pr_number)),
+            payload={
+                "repro_run_id": str(run_id),
+                "approval_id": str(authorization.id),
+                "request_hash": request_hash,
+                "head_sha": head_sha,
+            },
+        ),
+    )
     await write_outbox(
         session,
         installation_id=ctx.installation_id,
@@ -95,7 +114,7 @@ async def verify_repro_workflow_dispatch(
                 WorkflowDispatchApproval.id == approval_id,
                 WorkflowDispatchApproval.repro_run_id == run_id,
                 WorkflowDispatchApproval.request_hash == request_hash,
-                WorkflowDispatchApproval.approver == "policy:repro_dispatch",
+                WorkflowDispatchApproval.approver == REPRO_DISPATCH_POLICY,
             )
         )
         return result.first() is not None
@@ -181,6 +200,8 @@ async def record_approval(
         )
         session.add(approval)
         await session.flush()
+        pr_ref = PrRef(snapshot.repo_id, snapshot.number)
+        await _audit_approval(session, ctx, pr_ref, draft_id, approver, draft_hash, via)
         await _enqueue_approved_comment(session, ctx, repo, snapshot.number, draft_id, draft_hash)
         return ApprovalRef(approval.id, draft_id, approver, draft_hash, via)
 
@@ -233,7 +254,7 @@ async def approve_by_policy(
             session,
             ctx,
             repo,
-            snapshot.number,
+            PrRef(snapshot.repo_id, snapshot.number),
             draft_id,
             "policy:auto_suggest",
             expected_hash,
@@ -278,19 +299,29 @@ async def pause_auto_suggestions(
         if approver.casefold() not in maintainers:
             raise NotAMaintainer(f"{approver} is not a configured maintainer")
         await set_auto_suggest_paused_in_transaction(session, ctx, repo_id, True)
+        await append_in_transaction(
+            session,
+            ctx,
+            AuditEntry(
+                actor=approver,
+                action="auto_suggest.paused",
+                subject=pr_subject(PrRef(snapshot.repo_id, snapshot.number)),
+                payload={"draft_id": str(draft_id)},
+            ),
+        )
 
 
 async def _persist_approval(
     session: AsyncSession,
     ctx: TenantCtx,
     repo: RepoRef,
-    pr_number: int,
+    pr_ref: PrRef,
     draft_id: uuid.UUID,
     approver: str,
     draft_hash: str,
     via: str,
 ) -> ApprovalRef:
-    """Store one approval and its idempotent GitHub delivery request."""
+    """Store one approval, its audit entry and its idempotent GitHub delivery request."""
     existing_result = await session.exec(
         select_for_tenant(Approval, ctx.installation_id)
         .where(Approval.draft_id == draft_id)
@@ -300,7 +331,7 @@ async def _persist_approval(
     if existing is not None:
         if existing.draft_hash != draft_hash:
             raise DraftChanged("draft already has an approval for a different hash")
-        await _enqueue_approved_comment(session, ctx, repo, pr_number, draft_id, draft_hash)
+        await _enqueue_approved_comment(session, ctx, repo, pr_ref.number, draft_id, draft_hash)
         return ApprovalRef(
             existing.id, existing.draft_id, existing.approver, existing.draft_hash, existing.via
         )
@@ -314,8 +345,31 @@ async def _persist_approval(
     )
     session.add(approval)
     await session.flush()
-    await _enqueue_approved_comment(session, ctx, repo, pr_number, draft_id, draft_hash)
+    await _audit_approval(session, ctx, pr_ref, draft_id, approver, draft_hash, via)
+    await _enqueue_approved_comment(session, ctx, repo, pr_ref.number, draft_id, draft_hash)
     return ApprovalRef(approval.id, draft_id, approver, draft_hash, via)
+
+
+async def _audit_approval(
+    session: AsyncSession,
+    ctx: TenantCtx,
+    pr_ref: PrRef,
+    draft_id: uuid.UUID,
+    approver: str,
+    draft_hash: str,
+    via: str,
+) -> None:
+    """Record who approved which exact draft text, in the approval's own transaction."""
+    await append_in_transaction(
+        session,
+        ctx,
+        AuditEntry(
+            actor=approver,
+            action="draft.approved",
+            subject=pr_subject(pr_ref),
+            payload={"draft_id": str(draft_id), "draft_hash": draft_hash, "via": via},
+        ),
+    )
 
 
 async def _enqueue_approved_comment(

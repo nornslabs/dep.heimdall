@@ -9,12 +9,18 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
-from heimdall.modules.approval.api import get_approved_draft, record_approval
+from heimdall.modules.approval.api import (
+    approve_by_policy,
+    get_approved_draft,
+    pause_auto_suggestions,
+    record_approval,
+)
+from heimdall.modules.audit.api import list_for_pr
 from heimdall.modules.desk.api import get_draft, save_draft
 from heimdall.modules.tenancy.api import on_installation_event
 from heimdall.modules.triage.api import EventKind, Facts, PrEvent, handle_event
 from heimdall.modules.triage.models import Pr
-from heimdall.shared.context import TenantCtx
+from heimdall.shared.context import PrRef, TenantCtx
 from heimdall.shared.errors import DraftChanged, NotAMaintainer
 from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId, RepoId
@@ -103,3 +109,73 @@ async def test_record_approval_checks_maintainer_and_exact_hash(
         messages = queued.all()
     assert len(messages) == 1
     assert messages[0].payload["draft_hash"] == draft.body_hash
+
+
+def _pr_of(ctx: TenantCtx) -> PrRef:
+    """PR #1 in the repository draft_context creates for this tenant."""
+    return PrRef(RepoId(ctx.installation_id + 1), 1)
+
+
+async def test_record_approval_audits_the_first_approval_once(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    ctx, repo, _, draft_id = await draft_context(sessions)
+    reader = MaintainerConfigReader()
+    draft = await get_draft(sessions, ctx, draft_id)
+
+    await record_approval(sessions, reader, ctx, repo, draft_id, "reviewer", draft.body_hash)
+    await record_approval(sessions, reader, ctx, repo, draft_id, "reviewer", draft.body_hash)
+
+    entries = await list_for_pr(sessions, ctx, _pr_of(ctx))
+    assert [(entry.actor, entry.action) for entry in entries] == [("reviewer", "draft.approved")]
+    assert entries[0].payload == {
+        "draft_id": str(draft_id),
+        "draft_hash": draft.body_hash,
+        "via": "reaction",
+    }
+
+
+async def test_rejected_approval_leaves_no_audit_entry(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    ctx, repo, _, draft_id = await draft_context(sessions)
+    draft = await get_draft(sessions, ctx, draft_id)
+
+    with pytest.raises(NotAMaintainer):
+        await record_approval(
+            sessions, MaintainerConfigReader(), ctx, repo, draft_id, "stranger", draft.body_hash
+        )
+
+    assert await list_for_pr(sessions, ctx, _pr_of(ctx)) == []
+
+
+async def test_policy_approval_is_audited_under_the_policy_actor(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    ctx, repo, _, draft_id = await draft_context(sessions)
+    draft = await get_draft(sessions, ctx, draft_id)
+
+    await approve_by_policy(sessions, MaintainerConfigReader(), ctx, repo, draft_id, "lint")
+
+    entries = await list_for_pr(sessions, ctx, _pr_of(ctx))
+    assert [(entry.actor, entry.action) for entry in entries] == [
+        ("policy:auto_suggest", "draft.approved")
+    ]
+    assert entries[0].payload["draft_hash"] == draft.body_hash
+    assert entries[0].payload["via"] == "policy:auto_suggest"
+
+
+async def test_pausing_auto_suggestions_is_audited(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    ctx, repo, _, draft_id = await draft_context(sessions)
+
+    await pause_auto_suggestions(
+        sessions, MaintainerConfigReader(), ctx, repo, draft_id, "reviewer"
+    )
+
+    entries = await list_for_pr(sessions, ctx, _pr_of(ctx))
+    assert [(entry.actor, entry.action) for entry in entries] == [
+        ("reviewer", "auto_suggest.paused")
+    ]
+    assert entries[0].payload == {"draft_id": str(draft_id)}

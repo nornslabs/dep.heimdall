@@ -11,6 +11,7 @@ from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.modules.approval.workflow_models import WorkflowDispatchApproval
+from heimdall.modules.audit.api import list_for_pr
 from heimdall.modules.repro.api import (
     MAX_REPRO_RUNS,
     ReproStatus,
@@ -25,7 +26,7 @@ from heimdall.modules.repro.models import ReproRun
 from heimdall.modules.tenancy.api import on_installation_event
 from heimdall.modules.triage.api import EventKind, Facts, PrEvent, handle_event, on_step_done
 from heimdall.modules.triage.models import Pr
-from heimdall.shared.context import TenantCtx
+from heimdall.shared.context import PrRef, TenantCtx
 from heimdall.shared.errors import ReproLimitReached
 from heimdall.shared.ids import InstallationId, RepoId
 from tests.integration.db.installation_helpers import created_installation
@@ -117,6 +118,16 @@ async def test_start_run_queues_execution_and_timeout_together(
         assert dispatch.payload["ref"] == "main"
         assert dispatch.payload["inputs"]["base_sha"] == "base-1"
         assert approval.approver == "policy:repro_dispatch"
+    entries = await list_for_pr(sessions, ctx, PrRef(RepoId(ctx.installation_id + 1), 1))
+    assert [(entry.actor, entry.action) for entry in entries] == [
+        ("policy:repro_dispatch", "repro.dispatch_authorized")
+    ]
+    assert entries[0].payload == {
+        "repro_run_id": str(run.id),
+        "approval_id": str(approval.id),
+        "request_hash": approval.request_hash,
+        "head_sha": "head-1",
+    }
 
 
 async def test_get_run_returns_attempt_for_its_installation(
