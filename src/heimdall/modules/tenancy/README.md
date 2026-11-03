@@ -4,19 +4,32 @@ Installations, repos and each repo's effective `heimdall.yml` config.
 
 | File | Role |
 |---|---|
-| `api.py` | Public interface; `load_config(ctx, repo, sha)` lands here in HEI-46 |
-| `service.py` | Use cases |
-| `domain.py` | `parse_layer(text, source)`, `build_config(layers)`, `merge_layers(base, override)`, `RepoConfig` and its sections. Pure, no I/O |
+| `api.py` | Public interface: `load_config`, `TenancyDeps`, `RepoConfig` |
+| `service.py` | `load_config(deps, ctx, repo_id, sha) -> RepoConfig` |
+| `domain.py` | `parse_layer(text, source)`, `build_config(layers)`, `merge_layers(base, override)`, `config_sha(files)`, `RepoConfig` and its sections. Pure, no I/O |
 | `_config_model.py` | The schema: sections, defaults, the `test_cmd` rule |
 | `_config_merge.py` | `ConfigLayer` and the deep merge |
 | `_config_errors.py` | Turns pydantic errors into the exact lines maintainers see |
-| `ports.py` | Adapter interfaces |
+| `ports.py` | `ConfigFileReader` (implemented by `adapters/github`) |
 | `models.py` | `installations`, `repos` |
 
 ## heimdall.yml
 
-Read at the PR's head commit from three layers, each overriding the one before: Heimdall's
-defaults, then the org's `.github` repo, then the repo itself.
+Three layers, each overriding the one before:
+
+1. Heimdall's defaults.
+2. `heimdall.yml` in the org's `<owner>/.github` repo, read at its **default branch** (that repo
+   has no copy of the PR's commit). Errors call it `<owner>/.github: heimdall.yml`.
+3. `heimdall.yml` at the repo root, read at the PR's **head commit**.
+
+A missing file is skipped; no files at all gives the defaults.
+
+`load_config` fetches both files every time, because a push can edit heimdall.yml. It then
+compares their fingerprint (`config_sha`, a SHA-256 of each file's source and text) with the one
+stored on the `repos` row. If they match, the stored `repos.config` is returned and nothing is
+written; otherwise the config is rebuilt and stored with its new `config_sha`. An invalid config
+raises and stores nothing, so the error shows up on every check. A stored config that no longer
+validates (after a schema change) is rebuilt.
 
 - Mappings merge key by key. Lists and single values are **replaced**, so a repo can shorten
   a list the org set.

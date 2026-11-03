@@ -35,13 +35,13 @@ class GitHubApiReader:
         """Use ``clients`` to get an authenticated client per installation."""
         self._clients = clients
 
-    async def get_file(self, repo: RepoRef, path: str, ref: str) -> str | None:
+    async def get_file(self, repo: RepoRef, path: str, ref: str | None) -> str | None:
         """Read a text file at a commit, such as heimdall.yml at the PR's head.
 
         Args:
             repo: The repository and its installation.
             path: File path inside the repository.
-            ref: Commit sha (or branch) to read at.
+            ref: Commit sha (or branch) to read at; ``None`` reads the default branch.
 
         Returns:
             The file's text, or ``None`` if there is no file at that path.
@@ -53,7 +53,8 @@ class GitHubApiReader:
         url = f"/repos/{repo.full_name}/contents/{path}"
         async with github_errors("get file"):
             try:
-                reply = await get(self._client(repo), url, params={"ref": ref})
+                params = {"ref": ref} if ref is not None else None
+                reply = await get(self._client(repo), url, params=params)
             except RequestFailed as error:
                 if is_not_found(error):
                     return None
