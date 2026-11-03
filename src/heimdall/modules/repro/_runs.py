@@ -10,6 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.queue.enqueue import enqueue
+from heimdall.modules.approval.api import queue_repro_workflow_dispatch
 from heimdall.modules.repro.domain import (
     MAX_REPRO_RUNS,
     REPRO_TIMEOUT_SECONDS,
@@ -22,6 +23,7 @@ from heimdall.modules.repro.domain import (
     derive_verdict,
 )
 from heimdall.modules.repro.models import ReproRun
+from heimdall.modules.tenancy.api import get_repo_full_name_in_transaction
 from heimdall.modules.triage.api import (
     EventKind,
     Facts,
@@ -80,6 +82,18 @@ async def start_run(
         )
         session.add(run)
         await session.flush()
+        repo_full_name = await get_repo_full_name_in_transaction(session, ctx, pr.repo_id)
+        await queue_repro_workflow_dispatch(
+            session,
+            ctx,
+            run.id,
+            repo_full_name,
+            "heimdall-repro.yml",
+            pr.number,
+            run.head_sha,
+            pr.base_sha,
+            run.test_cmd,
+        )
         await _enqueue_run_jobs(session, ctx, pr, run)
         return ReproRunRef(run.id, attempt, head_sha, ReproStatus.QUEUED)
 

@@ -7,8 +7,10 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
+from heimdall.modules.approval.workflow_models import WorkflowDispatchApproval
 from heimdall.modules.repro.api import (
     MAX_REPRO_RUNS,
     ReproStatus,
@@ -93,6 +95,24 @@ async def test_start_run_queues_execution_and_timeout_together(
             {"run_id": str(run.id)},
         )
     assert jobs == 2
+    async with unit_of_work(sessions) as session:
+        dispatch = (
+            await session.exec(
+                select_for_tenant(OutboxMessage, ctx.installation_id).where(
+                    OutboxMessage.kind == "github.workflow_dispatch"
+                )
+            )
+        ).one()
+        approval = (
+            await session.exec(
+                select_for_tenant(WorkflowDispatchApproval, ctx.installation_id).where(
+                    WorkflowDispatchApproval.repro_run_id == run.id
+                )
+            )
+        ).one()
+        assert dispatch.payload["approval_id"] == str(approval.id)
+        assert dispatch.payload["request_hash"] == approval.request_hash
+        assert approval.approver == "policy:repro_dispatch"
 
 
 async def test_get_run_returns_attempt_for_its_installation(
