@@ -33,7 +33,7 @@ class MaintainerConfigReader:
         return None
 
 
-async def _draft_context(
+async def draft_context(
     sessions: async_sessionmaker[AsyncSession],
 ) -> tuple[TenantCtx, RepoRef, uuid.UUID, uuid.UUID]:
     """Create an enabled repo and current-head draft."""
@@ -75,7 +75,7 @@ async def test_record_approval_checks_maintainer_and_exact_hash(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     """Save an approval once and reject non-maintainer or changed-text attempts."""
-    ctx, repo, _, draft_id = await _draft_context(sessions)
+    ctx, repo, _, draft_id = await draft_context(sessions)
     reader = MaintainerConfigReader()
     draft = await get_draft(sessions, ctx, draft_id)
     with pytest.raises(NotAMaintainer):

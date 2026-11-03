@@ -2,12 +2,12 @@
 
 import pytest
 
-from heimdall.modules.triage._webhooks import _workflow_run_args
+from heimdall.modules.triage._webhooks import workflow_run_args
 
 
 def test_workflow_run_job_uses_bounded_verified_metadata() -> None:
     """Keep the queued action job scoped to the workflow run and repository."""
-    args = _workflow_run_args(
+    args = workflow_run_args(
         {
             "workflow_run": {
                 "id": 9182,
@@ -45,4 +45,4 @@ def test_workflow_run_job_rejects_missing_or_invalid_metadata(
 ) -> None:
     """Do not queue unscoped workflow result processing."""
     with pytest.raises(ValueError):
-        _workflow_run_args(payload)
+        workflow_run_args(payload)

@@ -4,13 +4,14 @@ import hashlib
 import hmac
 from unittest.mock import AsyncMock
 
+import pytest
 from fastapi.testclient import TestClient
 
 from apps.api import main as api
 from heimdall.adapters.db.engine import create_engine, make_session_factory
 
 
-def test_webhook_rejects_bad_signature_before_parsing(monkeypatch) -> None:
+def test_webhook_rejects_bad_signature_before_parsing(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reject unauthenticated input without calling webhook persistence."""
     engine = create_engine("postgresql://test:test@localhost/test")
     persist = AsyncMock()
@@ -28,7 +29,7 @@ def test_webhook_rejects_bad_signature_before_parsing(monkeypatch) -> None:
     persist.assert_not_awaited()
 
 
-def test_webhook_returns_202_for_new_and_200_for_duplicate(monkeypatch) -> None:
+def test_webhook_returns_202_for_new_and_200_for_duplicate(monkeypatch: pytest.MonkeyPatch) -> None:
     """Return accepted for new deliveries and OK for redeliveries."""
     engine = create_engine("postgresql://test:test@localhost/test")
     persist = AsyncMock(side_effect=[True, False])

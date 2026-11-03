@@ -6,10 +6,14 @@ import subprocess
 from pathlib import Path
 from typing import TextIO, cast
 
+import pytest
+
 RUNNER = Path(__file__).resolve().parents[3] / ".github/scripts/run-repro.py"
 
 
-def test_runner_invokes_configured_args_without_a_shell(monkeypatch, tmp_path: Path) -> None:
+def test_runner_invokes_configured_args_without_a_shell(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """A configured command is tokenized and executed as argv, never shell text."""
     module = runpy.run_path(str(RUNNER))
     calls: list[dict[str, object]] = []
@@ -32,7 +36,9 @@ def test_runner_invokes_configured_args_without_a_shell(monkeypatch, tmp_path: P
     assert outcome == {"passed": True, "failures": []}
 
 
-def test_runner_keeps_shell_metacharacters_inside_an_argument(monkeypatch, tmp_path: Path) -> None:
+def test_runner_keeps_shell_metacharacters_inside_an_argument(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """Shell syntax stays inert because the command is passed as an argument list."""
     module = runpy.run_path(str(RUNNER))
     commands: list[list[str]] = []

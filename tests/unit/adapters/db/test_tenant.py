@@ -1,3 +1,4 @@
+from sqlalchemy import inspect
 from sqlalchemy.dialects import postgresql
 from sqlmodel import Field
 
@@ -21,6 +22,6 @@ def test_select_for_tenant_filters_on_installation_id() -> None:
 
 
 def test_tenant_scoped_column_is_required() -> None:
-    column = Gadget.__table__.c.installation_id  # pyright: ignore[reportAttributeAccessIssue]
+    column = inspect(Gadget).columns["installation_id"]
 
     assert column.nullable is False

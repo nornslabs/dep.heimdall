@@ -18,7 +18,7 @@ from heimdall.adapters.db.metadata import import_all_models, metadata
 
 pytestmark = pytest.mark.integration
 
-ALEMBIC_INI = Path(__file__).resolve().parents[3] / "alembic.ini"
+ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 
 
 @pytest.fixture(scope="session")

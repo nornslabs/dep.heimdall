@@ -39,9 +39,9 @@ def file_content(text: str, path: str = "heimdall.yml") -> dict[str, object]:
 class FakeGitHub:
     """Routes requests by method and path; records every request it sees."""
 
-    routes: dict[tuple[str, str], Handler] = field(default_factory=dict)
-    requests: list[httpx2.Request] = field(default_factory=list)
-    tokens_issued: list[int] = field(default_factory=list)
+    routes: dict[tuple[str, str], Handler] = field(default_factory=dict[tuple[str, str], Handler])
+    requests: list[httpx2.Request] = field(default_factory=list[httpx2.Request])
+    tokens_issued: list[int] = field(default_factory=list[int])
 
     def on(self, method: str, path: str, handler: Handler) -> None:
         self.routes[(method, path)] = handler

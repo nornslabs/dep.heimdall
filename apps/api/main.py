@@ -1,8 +1,9 @@
 """HTTP entry point for GitHub webhooks and process health."""
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import cast
 
 from fastapi import FastAPI, Header, HTTPException, Request, Response, status
 from sqlalchemy import text
@@ -14,6 +15,27 @@ from heimdall.adapters.github.webhooks import verify_signature
 from heimdall.modules.triage.api import receive_webhook
 from heimdall.shared.logging import configure_logging
 from heimdall.shared.settings import get_settings
+
+
+def _parse_payload(body: bytes) -> dict[str, object]:
+    """Decode a webhook body, rejecting anything that is not a JSON object.
+
+    Args:
+        body: Raw request body, already signature-verified.
+
+    Returns:
+        The decoded JSON object.
+
+    Raises:
+        HTTPException: 400 when the body is not valid JSON or not an object.
+    """
+    try:
+        payload: object = json.loads(body)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST) from error
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
+    return cast(dict[str, object], payload)
 
 
 def create_app(
@@ -33,7 +55,7 @@ def create_app(
     """
 
     @asynccontextmanager
-    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         yield
         await engine.dispose()
 
@@ -53,12 +75,7 @@ def create_app(
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
         if not delivery_id or not event_name:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
-        try:
-            payload = json.loads(body)
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST) from error
-        if not isinstance(payload, dict):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)
+        payload = _parse_payload(body)
         action = payload.get("action")
         if action is not None and not isinstance(action, str):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST)

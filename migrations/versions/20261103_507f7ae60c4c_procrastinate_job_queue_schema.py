@@ -55,6 +55,8 @@ def upgrade() -> None:
     # schema.sql holds many statements. asyncpg runs a multi-statement script only through its
     # own execute(), not through the prepared statements op.execute uses.
     asyncpg_connection = op.get_bind().connection.driver_connection
+    if asyncpg_connection is None:
+        raise RuntimeError("procrastinate schema install needs an open asyncpg connection")
     await_only(asyncpg_connection.execute(SchemaManager.get_schema()))
 
 

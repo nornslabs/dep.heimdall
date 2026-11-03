@@ -53,6 +53,10 @@ class RecordedHuginnTools:
         return result
 
 
+async def _yield_once(_delay: float) -> None:
+    await asyncio.sleep(0)
+
+
 @pytest.mark.parametrize(
     "fixture_path",
     sorted(FIXTURE_DIR.glob("*.json")),
@@ -72,7 +76,7 @@ async def test_huginn_replays_recorded_pr_fixtures(fixture_path: Path) -> None:
         pr_id,
         str(run["head_sha"]),
         configured_command,
-        sleep=lambda _delay: asyncio.sleep(0),
+        sleep=_yield_once,
     )
 
     expected_verdict = fixture["expected_verdict"]

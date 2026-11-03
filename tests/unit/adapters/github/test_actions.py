@@ -6,7 +6,7 @@ import zipfile
 
 import pytest
 
-from heimdall.adapters.github.actions import _parse_artifact
+from heimdall.adapters.github.actions import parse_artifact
 
 
 def _archive(run_id: str, *, marker: str = "assert result == 1") -> bytes:
@@ -27,7 +27,7 @@ def _archive(run_id: str, *, marker: str = "assert result == 1") -> bytes:
 
 def test_parse_artifact_returns_paired_outcomes_and_failure_evidence() -> None:
     """Preserve bounded test assertions from both variants."""
-    artifact = _parse_artifact(_archive("run-1"), "run-1")
+    artifact = parse_artifact(_archive("run-1"), "run-1")
     assert artifact.run_id == "run-1"
     assert artifact.with_fix.passed is False
     assert artifact.with_fix.failures == ("assert result == 1",)
@@ -37,7 +37,7 @@ def test_parse_artifact_returns_paired_outcomes_and_failure_evidence() -> None:
 def test_parse_artifact_rejects_a_different_embedded_run_id() -> None:
     """Do not attach an artifact to a run other than its embedded identity."""
     with pytest.raises(ValueError, match="another run"):
-        _parse_artifact(_archive("run-a"), "run-b")
+        parse_artifact(_archive("run-a"), "run-b")
 
 
 def test_parse_artifact_rejects_unbounded_or_missing_files() -> None:
@@ -46,4 +46,4 @@ def test_parse_artifact_rejects_unbounded_or_missing_files() -> None:
     with zipfile.ZipFile(output, "w") as zipped:
         zipped.writestr("run-id", "run-1")
     with pytest.raises(ValueError, match="missing required files"):
-        _parse_artifact(output.getvalue(), "run-1")
+        parse_artifact(output.getvalue(), "run-1")

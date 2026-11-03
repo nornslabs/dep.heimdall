@@ -3,9 +3,12 @@
 import asyncio
 import os
 from logging.config import fileConfig
+from typing import Literal
 
 from alembic import context
+from alembic.autogenerate.api import AutogenContext
 from sqlalchemy import Connection
+from sqlmodel.sql.sqltypes import AutoString
 
 from heimdall.adapters.db.engine import create_engine
 from heimdall.adapters.db.metadata import import_all_models, include_in_migrations, metadata
@@ -27,12 +30,21 @@ def _database_url() -> str:
     return url
 
 
+def _render_item(type_: str, obj: object, autogen_context: AutogenContext) -> str | Literal[False]:
+    # SQLModel's AutoString is plain VARCHAR but has no type stubs; render it as sa.String so
+    # generated revisions don't depend on sqlmodel internals.
+    if type_ == "type" and isinstance(obj, AutoString):
+        return "sa.String()"
+    return False
+
+
 def _run_with_connection(connection: Connection) -> None:
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
         compare_type=True,
         include_name=include_in_migrations,
+        render_item=_render_item,
     )
     with context.begin_transaction():
         context.run_migrations()

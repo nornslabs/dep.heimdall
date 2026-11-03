@@ -8,7 +8,6 @@ Create Date: 2026-11-02 23:30:28.369717
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-import sqlmodel
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
@@ -53,9 +52,9 @@ def upgrade() -> None:
         sa.Column(
             "at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False
         ),
-        sa.Column("actor", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("action", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("subject", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("actor", sa.String(), nullable=False),
+        sa.Column("action", sa.String(), nullable=False),
+        sa.Column("subject", sa.String(), nullable=False),
         sa.Column(
             "payload",
             postgresql.JSONB(astext_type=sa.Text()),
@@ -73,9 +72,9 @@ def upgrade() -> None:
     op.create_table(
         "events",
         sa.Column("installation_id", sa.BigInteger(), nullable=False),
-        sa.Column("delivery_id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("kind", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("action", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("delivery_id", sa.String(), nullable=False),
+        sa.Column("kind", sa.String(), nullable=False),
+        sa.Column("action", sa.String(), nullable=True),
         sa.Column(
             "payload",
             postgresql.JSONB(astext_type=sa.Text()),
@@ -94,8 +93,8 @@ def upgrade() -> None:
     op.create_table(
         "installations",
         sa.Column("installation_id", sa.BigInteger(), autoincrement=False, nullable=False),
-        sa.Column("account_login", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("account_type", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("account_login", sa.String(), nullable=False),
+        sa.Column("account_type", sa.String(), nullable=False),
         sa.Column("suspended", sa.Boolean(), server_default="false", nullable=False),
         sa.Column(
             "created_at",
@@ -109,16 +108,16 @@ def upgrade() -> None:
         "outbox",
         sa.Column("installation_id", sa.BigInteger(), nullable=False),
         sa.Column("id", sa.Uuid(), nullable=False),
-        sa.Column("channel", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("kind", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("channel", sa.String(), nullable=False),
+        sa.Column("kind", sa.String(), nullable=False),
         sa.Column(
             "payload",
             postgresql.JSONB(astext_type=sa.Text()),
             server_default=sa.text("'{}'::jsonb"),
             nullable=False,
         ),
-        sa.Column("idempotency_key", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("status", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("idempotency_key", sa.String(), nullable=False),
+        sa.Column("status", sa.String(), nullable=False),
         sa.Column("attempts", sa.Integer(), server_default="0", nullable=False),
         sa.Column(
             "next_attempt_at",
@@ -126,7 +125,7 @@ def upgrade() -> None:
             server_default=sa.text("now()"),
             nullable=False,
         ),
-        sa.Column("last_error", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("last_error", sa.String(), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -145,8 +144,8 @@ def upgrade() -> None:
         sa.Column("installation_id", sa.BigInteger(), nullable=False),
         sa.Column("id", sa.BigInteger(), nullable=False),
         sa.Column("pr_id", sa.Uuid(), nullable=True),
-        sa.Column("agent", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("model", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("agent", sa.String(), nullable=False),
+        sa.Column("model", sa.String(), nullable=False),
         sa.Column("input_tokens", sa.Integer(), nullable=False),
         sa.Column("output_tokens", sa.Integer(), nullable=False),
         sa.Column(
@@ -159,9 +158,9 @@ def upgrade() -> None:
         "repos",
         sa.Column("repo_id", sa.BigInteger(), autoincrement=False, nullable=False),
         sa.Column("installation_id", sa.BigInteger(), nullable=False),
-        sa.Column("full_name", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("switch_room_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
-        sa.Column("config_sha", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("full_name", sa.String(), nullable=False),
+        sa.Column("switch_room_id", sa.String(), nullable=True),
+        sa.Column("config_sha", sa.String(), nullable=True),
         sa.Column(
             "config",
             postgresql.JSONB(astext_type=sa.Text()),
@@ -180,13 +179,13 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("repo_id", sa.BigInteger(), nullable=False),
         sa.Column("number", sa.Integer(), nullable=False),
-        sa.Column("author", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("head_sha", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("base_sha", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("author", sa.String(), nullable=False),
+        sa.Column("head_sha", sa.String(), nullable=False),
+        sa.Column("base_sha", sa.String(), nullable=False),
         sa.Column("linked_issue", sa.Integer(), nullable=True),
-        sa.Column("state", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("state", sa.String(), nullable=False),
         sa.Column("state_version", sa.Integer(), server_default="0", nullable=False),
-        sa.Column("switch_thread_id", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("switch_thread_id", sa.String(), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -214,8 +213,8 @@ def upgrade() -> None:
         sa.Column("installation_id", sa.BigInteger(), nullable=False),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("pr_id", sa.Uuid(), nullable=False),
-        sa.Column("head_sha", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("body", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("head_sha", sa.String(), nullable=False),
+        sa.Column("body", sa.String(), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -233,9 +232,9 @@ def upgrade() -> None:
         sa.Column("installation_id", sa.BigInteger(), nullable=False),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("pr_id", sa.Uuid(), nullable=False),
-        sa.Column("kind", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("body", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("body_hash", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("kind", sa.String(), nullable=False),
+        sa.Column("body", sa.String(), nullable=False),
+        sa.Column("body_hash", sa.String(), nullable=False),
         sa.Column("superseded_by", sa.Uuid(), nullable=True),
         sa.Column(
             "created_at",
@@ -254,12 +253,12 @@ def upgrade() -> None:
         sa.Column("installation_id", sa.BigInteger(), nullable=False),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("pr_id", sa.Uuid(), nullable=False),
-        sa.Column("head_sha", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("file", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("head_sha", sa.String(), nullable=False),
+        sa.Column("file", sa.String(), nullable=False),
         sa.Column("line", sa.Integer(), nullable=False),
-        sa.Column("text", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("severity", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("mechanical_category", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("text", sa.String(), nullable=False),
+        sa.Column("severity", sa.String(), nullable=False),
+        sa.Column("mechanical_category", sa.String(), nullable=True),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -278,10 +277,10 @@ def upgrade() -> None:
         sa.Column("installation_id", sa.BigInteger(), nullable=False),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("pr_id", sa.Uuid(), nullable=False),
-        sa.Column("head_sha", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("rule", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("head_sha", sa.String(), nullable=False),
+        sa.Column("rule", sa.String(), nullable=False),
         sa.Column("passed", sa.Boolean(), nullable=False),
-        sa.Column("detail", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("detail", sa.String(), nullable=True),
         sa.Column(
             "checked_at",
             sa.DateTime(timezone=True),
@@ -299,14 +298,14 @@ def upgrade() -> None:
         sa.Column("installation_id", sa.BigInteger(), nullable=False),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("pr_id", sa.Uuid(), nullable=False),
-        sa.Column("head_sha", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("head_sha", sa.String(), nullable=False),
         sa.Column("attempt", sa.Integer(), nullable=False),
-        sa.Column("test_cmd", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("test_cmd", sa.String(), nullable=False),
         sa.Column("gh_run_id", sa.BigInteger(), nullable=True),
-        sa.Column("status", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("status", sa.String(), nullable=False),
         sa.Column("with_fix", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("without_fix", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
-        sa.Column("verdict", sqlmodel.sql.sqltypes.AutoString(), nullable=True),
+        sa.Column("verdict", sa.String(), nullable=True),
         sa.Column(
             "started_at",
             sa.DateTime(timezone=True),
@@ -324,11 +323,11 @@ def upgrade() -> None:
     op.create_table(
         "agent_tasks",
         sa.Column("installation_id", sa.BigInteger(), nullable=False),
-        sa.Column("id", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("id", sa.String(), nullable=False),
         sa.Column("pr_id", sa.Uuid(), nullable=False),
         sa.Column("finding_id", sa.Uuid(), nullable=False),
         sa.Column("draft_id", sa.Uuid(), nullable=False),
-        sa.Column("status", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("status", sa.String(), nullable=False),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -354,9 +353,9 @@ def upgrade() -> None:
         sa.Column("installation_id", sa.BigInteger(), nullable=False),
         sa.Column("id", sa.Uuid(), nullable=False),
         sa.Column("draft_id", sa.Uuid(), nullable=False),
-        sa.Column("approver", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("draft_hash", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
-        sa.Column("via", sqlmodel.sql.sqltypes.AutoString(), nullable=False),
+        sa.Column("approver", sa.String(), nullable=False),
+        sa.Column("draft_hash", sa.String(), nullable=False),
+        sa.Column("via", sa.String(), nullable=False),
         sa.Column(
             "approved_at",
             sa.DateTime(timezone=True),

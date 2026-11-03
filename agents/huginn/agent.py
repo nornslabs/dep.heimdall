@@ -4,7 +4,7 @@ import asyncio
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, cast
 from uuid import UUID
 
 from heimdall.modules.repro.api import (
@@ -197,7 +197,7 @@ def _failure_details(runs: tuple[ReproRunDetails, ...]) -> tuple[str, ...]:
             raw_failures = outcome.get("failures")
             if not isinstance(raw_failures, list | tuple):
                 continue
-            for raw_failure in raw_failures:
+            for raw_failure in cast(list[object] | tuple[object, ...], raw_failures):
                 if not isinstance(raw_failure, str):
                     continue
                 failure = raw_failure.strip()[:MAX_FAILURE_LENGTH]
@@ -222,7 +222,7 @@ def _parse_run(value: dict[str, object]) -> ReproRunDetails:
             id=UUID(str(value["run_id"])),
             pr_id=UUID(str(value["pr_id"])),
             head_sha=str(value["head_sha"]),
-            attempt=int(value["attempt"]),
+            attempt=_int(value["attempt"]),
             status=ReproStatus(str(value["status"])),
             with_fix=_outcome(value.get("with_fix")),
             without_fix=_outcome(value.get("without_fix")),
@@ -238,7 +238,8 @@ def _outcome(value: object) -> dict[str, object] | None:
         return None
     if not isinstance(value, dict):
         raise ValueError("repro outcome must be an object")
-    return {str(key): item for key, item in value.items()}
+    outcome = cast(dict[object, object], value)
+    return {str(key): item for key, item in outcome.items()}
 
 
 def _required_uuid(value: object) -> UUID:
@@ -249,3 +250,10 @@ def _required_uuid(value: object) -> UUID:
         return UUID(value)
     except ValueError as error:
         raise ValueError("MCP start_repro returned an invalid run id") from error
+
+
+def _int(value: object) -> int:
+    """Accept a JSON integer, rejecting booleans and other types."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("expected an integer")
+    return value
