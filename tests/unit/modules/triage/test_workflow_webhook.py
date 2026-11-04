@@ -20,7 +20,6 @@ def test_workflow_run_job_uses_bounded_verified_metadata() -> None:
     )
     assert args == {
         "workflow_run_id": 9182,
-        "head_sha": "a" * 40,
         "repo_full_name": "octo/demo",
         "workflow_path": REPRO_PATH,
     }

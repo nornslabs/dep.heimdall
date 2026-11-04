@@ -86,7 +86,6 @@ async def test_completed_repro_workflow_queues_result_ingestion(
         "installation_id": 91_002,
         "delivery_id": delivery_id,
         "workflow_run_id": 3001,
-        "head_sha": "a" * 40,
         "repo_full_name": "seeded/demo",
         "workflow_path": ".github/workflows/heimdall-repro.yml",
     }

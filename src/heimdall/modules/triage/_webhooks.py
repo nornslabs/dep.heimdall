@@ -95,20 +95,17 @@ def workflow_run_args(payload: dict[str, object]) -> dict[str, int | str]:
     run = cast(dict[str, object], raw_run)
     repo = cast(dict[str, object], raw_repo)
     run_id = run.get("id")
-    head_sha = run.get("head_sha")
     repo_full_name = repo.get("full_name")
     workflow_path = run.get("path")
     if (
         not isinstance(run_id, int)
         or run_id <= 0
-        or not isinstance(head_sha, str)
         or not isinstance(repo_full_name, str)
         or not isinstance(workflow_path, str)
     ):
         raise ValueError("workflow_run webhook has invalid routing metadata")
     return {
         "workflow_run_id": run_id,
-        "head_sha": head_sha,
         "repo_full_name": repo_full_name,
         "workflow_path": workflow_path.partition("@")[0],
     }

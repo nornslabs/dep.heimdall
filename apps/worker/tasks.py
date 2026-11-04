@@ -114,11 +114,15 @@ def register_actions_result_task(
         installation_id: int,
         delivery_id: str,
         workflow_run_id: int,
-        head_sha: str,
         repo_full_name: str,
         workflow_path: str,
     ) -> None:
-        """Save paired outcomes only for the matching tenant, repo, and head."""
+        """Save paired outcomes only for the matching tenant and repo.
+
+        The run is identified by the artifact's run id. The workflow's own ``head_sha`` is the
+        dispatched branch tip, not the PR head, so it says nothing about which run this is;
+        ``record_result`` marks the result stale if the PR head moved since dispatch.
+        """
         ctx = await get_tenant(sessions, InstallationId(installation_id))
         await handle_webhook_delivery(sessions, ctx, delivery_id)
         if workflow_path != ".github/workflows/heimdall-repro.yml":
@@ -127,8 +131,6 @@ def register_actions_result_task(
         artifact = await results.get_paired_artifact(repo, workflow_run_id)
         run_id = UUID(artifact.run_id)
         run = await get_run(sessions, ctx, run_id)
-        if run.head_sha != head_sha:
-            return
         async with unit_of_work(sessions) as session:
             pr = await get_pr_snapshot(session, ctx, run.pr_id)
             if pr is None:
