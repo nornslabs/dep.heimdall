@@ -21,7 +21,9 @@ class Pr(TenantScoped, table=True):
     """A pull request and where it is in the triage state machine.
 
     ``state_version`` is bumped on every transition and checked in the UPDATE, so two
-    workers can never both move the same PR.
+    workers can never both move the same PR. ``repro_done_head`` and ``review_done_head``
+    hold the head each agent check last finished on; a check counts as done only while
+    that equals ``head_sha``, so a push resets both without touching them.
     """
 
     __tablename__ = "prs"  # pyright: ignore[reportAssignmentType]
@@ -41,6 +43,8 @@ class Pr(TenantScoped, table=True):
     state: str
     state_version: int = Field(default=0, sa_column_kwargs={"server_default": "0"})
     switch_thread_id: str | None = None
+    repro_done_head: str | None = None
+    review_done_head: str | None = None
     created_at: datetime = set_on_insert()
     updated_at: datetime = set_on_insert()
 

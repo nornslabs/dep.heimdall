@@ -1,0 +1,22 @@
+diff --git a/README.md b/README.md
+index 80c5781..b5b1f23 100644
+--- a/README.md
++++ b/README.md
+@@ -39,7 +39,7 @@ This project implements a Switch AI agent that can:
+ curl -LsSf https://astral.sh/uv/install.sh | sh
+ 
+ # Clone and setup
+-cd switch-ai-implement
++cd swaitchai-fastapi
+ uv sync
+ ```
+ 
+@@ -102,7 +102,7 @@ uv run python -c "from switch_agent.main import main; main()"
+ ## Project Structure
+ 
+ ```
+-switch-ai-implement/
++swaitchai-fastapi/
+ ├── pyproject.toml          # Project configuration and dependencies
+ ├── .env.example            # Example environment configuration
+ ├── README.md               # This file

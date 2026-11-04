@@ -83,32 +83,29 @@ async def receive_webhook(
 
 
 def workflow_run_args(payload: dict[str, object]) -> dict[str, int | str]:
-    """Extract bounded routing metadata from an authenticated workflow webhook."""
+    """Extract bounded routing metadata from an authenticated workflow webhook.
+
+    GitHub puts the workflow file on ``workflow_run.path``; the run has no nested
+    ``workflow`` object (that one sits at the top level of the payload).
+    """
     raw_run = payload.get("workflow_run")
     raw_repo = payload.get("repository")
     if not isinstance(raw_run, dict) or not isinstance(raw_repo, dict):
         raise ValueError("workflow_run webhook is missing run or repository data")
     run = cast(dict[str, object], raw_run)
     repo = cast(dict[str, object], raw_repo)
-    workflow = run.get("workflow")
-    if not isinstance(workflow, dict):
-        raise ValueError("workflow_run webhook is missing workflow metadata")
-    workflow_data = cast(dict[str, object], workflow)
     run_id = run.get("id")
-    head_sha = run.get("head_sha")
     repo_full_name = repo.get("full_name")
-    workflow_path = workflow_data.get("path")
+    workflow_path = run.get("path")
     if (
         not isinstance(run_id, int)
         or run_id <= 0
-        or not isinstance(head_sha, str)
         or not isinstance(repo_full_name, str)
         or not isinstance(workflow_path, str)
     ):
         raise ValueError("workflow_run webhook has invalid routing metadata")
     return {
         "workflow_run_id": run_id,
-        "head_sha": head_sha,
         "repo_full_name": repo_full_name,
         "workflow_path": workflow_path.partition("@")[0],
     }

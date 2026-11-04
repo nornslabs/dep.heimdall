@@ -165,8 +165,18 @@ to the local Heimdall database, then run:
 DATABASE_URL=postgresql://heimdall:<password>@localhost:5432/heimdall uv run pytest tests/integration
 ```
 
-The CI workflow runs lint, formatting, Pyright, unit tests, and database integration tests on pushes
-and pull requests.
+The end-to-end replay runs the three seeded demo PRs (#3 good fix, #4 fake fix, #5 rule breaker)
+through the whole pipeline: webhooks, both worker queues, the outbox, the MCP tool server, the
+agents' own loops and the 👍 approval. GitHub and Switch are faked from responses recorded off
+the demo repo (`tests/fixtures/e2e/`), and only Loki's model reply is scripted. It uses the same
+Postgres:
+
+```bash
+DATABASE_URL=postgresql://heimdall:<password>@localhost:5432/heimdall uv run pytest tests/e2e -m e2e
+```
+
+The CI workflow runs lint, formatting, Pyright, unit tests, database integration tests and the
+end-to-end replay on pushes and pull requests.
 
 ## Demo
 

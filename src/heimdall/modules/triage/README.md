@@ -5,19 +5,21 @@ The PR triage state machine. Only this module changes `prs.state`, and only thro
 
 Public functions: `receive_webhook`, `handle_webhook_delivery`, `handle_event`, `on_step_done`,
 `on_step_done_in_transaction`, and `get_pr_snapshot`. `domain.py` exposes the pure
-`next_state` transition function and its event, fact, state, and outcome types.
+`next_state` transition function, `with_checks_done`, and its event, fact, state, and
+outcome types.
 
 | File | Role |
 |---|---|
 | `api.py` | Public interface (`handle_event`, `on_step_done`, `receive_webhook`) |
 | `service.py` | Transactional state transitions and queue effects |
 | `_webhooks.py` | Persist verified deliveries and enqueue their handlers |
+| `_checks.py` | Store the head each agent check last finished on |
 | `domain.py` | `next_state(state, event, facts) -> Transition \| Rejected`, plus the types below. Pure, no I/O |
 | `_states.py` | `PrState`, `EventKind`, `Effect`, `Facts`, `Transition`, `Rejected`, `RejectReason` |
 | `_guards.py` | One named condition per guard, each with the reason it reports |
 | `_transitions.py` | `TRANSITIONS`: the LLD table, one rule per row |
 | `ports.py` | Adapter interfaces |
-| `models.py` | `prs`, `events` |
+| `models.py` | `prs` (with `repro_done_head`, `review_done_head`), `events` |
 
 ## Transitions (from the LLD)
 
@@ -51,3 +53,10 @@ Choices the LLD leaves open:
 - Events for a PR Heimdall hasn't seen yet are rejected, except `pull_request.opened`.
 - A `maintainer.command` while a draft is pending is rejected, because the table allows it
   only from `card_posted`.
+
+## Both checks done
+
+Huginn and Loki each report only their own check. `on_step_done_in_transaction` locks the
+PR row, adds any check already finished on the same head (`with_checks_done`), and stores
+the finishing check's head in `repro_done_head` or `review_done_head`. A check counts only
+while its stored head equals `prs.head_sha`, so a push makes both pending again.

@@ -61,3 +61,8 @@ jobs:
         env:
           DATABASE_URL: postgresql://heimdall:heimdall@localhost:5432/heimdall_test
         run: uv run pytest tests/integration
+
+      - name: End-to-end replay
+        env:
+          DATABASE_URL: postgresql://heimdall:heimdall@localhost:5432/heimdall_test
+        run: uv run pytest tests/e2e -m e2e

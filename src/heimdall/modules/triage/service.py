@@ -14,6 +14,7 @@ from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.queue.enqueue import HUGINN_QUEUE, enqueue
 from heimdall.modules.tenancy.api import repo_is_enabled
+from heimdall.modules.triage._checks import mark_check_done, stored_check_heads
 from heimdall.modules.triage._webhook_event import pull_request_event
 from heimdall.modules.triage.domain import (
     Effect,
@@ -26,6 +27,7 @@ from heimdall.modules.triage.domain import (
     RejectReason,
     Transition,
     next_state,
+    with_checks_done,
 )
 from heimdall.modules.triage.models import Event, Pr
 from heimdall.shared.context import TenantCtx
@@ -216,6 +218,9 @@ async def on_step_done_in_transaction(
 ) -> Transition | Rejected:
     """Apply step completion within an existing feature transaction.
 
+    The PR row is locked for the transaction, so when Huginn and Loki finish together the
+    second one sees the first one's stored head and posts the card.
+
     Args:
         session: Session inside the use case transaction.
         ctx: Tenant and request context.
@@ -223,7 +228,8 @@ async def on_step_done_in_transaction(
         event_id: Stable idempotency key for the result.
         kind: Completed step event.
         head_sha: Commit evaluated by the step.
-        facts: Rule and build results used by guards.
+        facts: Rule and build results used by guards. A step reports only its own
+            check; checks already finished on ``head_sha`` are added from the PR row.
         room_id: Optional Switch room for resulting outbox messages.
         room_message: Rendered checklist or failure explanation.
         linked_issue: Issue number found during intake, when present.
@@ -232,10 +238,13 @@ async def on_step_done_in_transaction(
     Returns:
         The transition, or the reason the result was rejected.
     """
-    result = await session.exec(select_for_tenant(Pr, ctx.installation_id).where(Pr.id == pr_id))
+    result = await session.exec(
+        select_for_tenant(Pr, ctx.installation_id).where(Pr.id == pr_id).with_for_update()
+    )
     pr = result.first()
     if pr is None:
         return Rejected(RejectReason.NOT_ALLOWED_FROM_STATE)
+    facts = with_checks_done(facts, head_sha, stored_check_heads(pr))
     event = PrEvent(
         event_id=event_id,
         repo_id=RepoId(pr.repo_id),
@@ -251,7 +260,10 @@ async def on_step_done_in_transaction(
         room_message=room_message,
         repro_test_cmd=repro_test_cmd,
     )
-    return await _apply_existing_event(session, ctx, pr, event)
+    transition = await _apply_existing_event(session, ctx, pr, event)
+    if isinstance(transition, Transition):
+        await mark_check_done(session, ctx, pr_id, kind, head_sha)
+    return transition
 
 
 async def get_pr_snapshot(

@@ -138,8 +138,6 @@ async def record_result(
     run_id: uuid.UUID,
     with_fix: RunOutcome,
     without_fix: RunOutcome,
-    *,
-    review_done: bool = False,
 ) -> ReproResult:
     """Store paired test results, derive a verdict and complete the triage step.
 
@@ -149,7 +147,6 @@ async def record_result(
         run_id: Reproduction attempt being completed.
         with_fix: Test result from the PR commit.
         without_fix: Test result from the base commit.
-        review_done: Whether Loki already finished on this head.
 
     Returns:
         Saved run status and verdict.
@@ -172,7 +169,7 @@ async def record_result(
         run.verdict = verdict.value
         run.status = ReproStatus.FINISHED.value
         run.finished_at = datetime.now(UTC)
-        await _complete_triage_step(session, ctx, pr, run, review_done)
+        await _complete_triage_step(session, ctx, pr, run)
         return ReproResult(run.id, ReproStatus.FINISHED, verdict)
 
 
@@ -180,8 +177,6 @@ async def timeout_run(
     sessions: async_sessionmaker[AsyncSession],
     ctx: TenantCtx,
     run_id: uuid.UUID,
-    *,
-    review_done: bool = False,
 ) -> bool:
     """Mark a queued or running attempt timed out and finish its triage step.
 
@@ -189,7 +184,6 @@ async def timeout_run(
         sessions: Tenant database session factory.
         ctx: Tenant and request context.
         run_id: Reproduction attempt whose timeout elapsed.
-        review_done: Whether Loki already finished on this head.
 
     Returns:
         True if this call marked the run timed out; False if it already finished.
@@ -202,7 +196,7 @@ async def timeout_run(
         run.finished_at = datetime.now(UTC)
         pr = await get_pr_snapshot(session, ctx, run.pr_id)
         if pr is not None and pr.head_sha == run.head_sha:
-            await _complete_triage_step(session, ctx, pr, run, review_done)
+            await _complete_triage_step(session, ctx, pr, run)
         return True
 
 
@@ -256,7 +250,6 @@ async def _complete_triage_step(
     ctx: TenantCtx,
     pr: PrSnapshot,
     run: ReproRun,
-    review_done: bool,
 ) -> None:
     """Report a finished or timed out run while preserving head scoping."""
     await on_step_done_in_transaction(
@@ -266,5 +259,5 @@ async def _complete_triage_step(
         f"repro:{run.id}:finished",
         EventKind.REPRO_FINISHED,
         run.head_sha,
-        Facts(repro_done=True, review_done=review_done),
+        Facts(repro_done=True),
     )

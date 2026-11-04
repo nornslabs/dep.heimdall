@@ -1,7 +1,7 @@
 """The PR triage state machine: a pure function over the LLD transition table (no I/O)."""
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from heimdall.modules.triage._guards import Guard
 from heimdall.modules.triage._states import (
@@ -19,6 +19,7 @@ from heimdall.shared.ids import RepoId
 
 __all__ = [
     "TRANSITIONS",
+    "CheckHeads",
     "Effect",
     "EventKind",
     "Facts",
@@ -30,6 +31,7 @@ __all__ = [
     "Rule",
     "Transition",
     "next_state",
+    "with_checks_done",
 ]
 
 
@@ -107,6 +109,35 @@ def next_state(state: PrState | None, event: EventKind, facts: Facts) -> Transit
             return Transition(rule.to, rule.effects)
         first_failure = first_failure or failed.reason
     return Rejected(first_failure or RejectReason.NOT_ALLOWED_FROM_STATE)
+
+
+@dataclass(frozen=True)
+class CheckHeads:
+    """The head each agent check last finished on, as triage stored it."""
+
+    repro: str | None
+    review: str | None
+
+
+def with_checks_done(facts: Facts, head_sha: str, done: CheckHeads) -> Facts:
+    """Add the checks that already finished on ``head_sha`` to a step's reported facts.
+
+    Huginn and Loki each report only their own result, so triage fills in the other one.
+    A check that finished on an older head stays pending: the push needs it to run again.
+
+    Args:
+        facts: What the finishing step reported.
+        head_sha: Commit the finishing step evaluated.
+        done: Heads stored for each check on the PR row.
+
+    Returns:
+        ``facts`` with ``repro_done`` and ``review_done`` set for checks done on this head.
+    """
+    return replace(
+        facts,
+        repro_done=facts.repro_done or done.repro == head_sha,
+        review_done=facts.review_done or done.review == head_sha,
+    )
 
 
 def _rules_for(state: PrState | None, event: EventKind) -> list[Rule]:
