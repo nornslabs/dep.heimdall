@@ -84,7 +84,7 @@ token. Configure the App with `metadata: read`, `contents: read`, `pull requests
    docker compose up --build
    ```
 
-   Compose starts Postgres, Mattermost, migrations, the API, worker, MCP server, bridge, the three
+   Compose starts Postgres, Mattermost, migrations, the API, worker, bridge, the three
    agents, the Smee forwarder, and the Switch server. The API listens at `http://localhost:8001`;
    Mattermost listens at `http://localhost:8065`; Switch listens at `http://localhost:8000` with
    its admin UI at `http://localhost:3000`. Switch needs its own `.env` values first; see

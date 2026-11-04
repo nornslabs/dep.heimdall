@@ -24,7 +24,7 @@ uv run ruff check . && uv run ruff format --check .
 uv run pyright
 cp .env.example .env            # then fill in; GitHub App key goes in secrets/github-app.pem
 docker compose up                # Postgres + Mattermost (Switch)
-docker compose --profile app up  # + api, worker, mcp, bridge and the three agents
+docker compose --profile app up  # + api, worker, bridge and the three agents (mcp: --profile mcp, stdio, debugging only)
 docker compose --profile app --profile tunnel up   # + smee webhook tunnel
 ```
 
