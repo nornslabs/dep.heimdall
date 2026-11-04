@@ -76,7 +76,7 @@ token. Configure the App with `metadata: read`, `contents: read`, `pull requests
    `heimdall.yml` room name is `triage`. Put the room's channel id in
    `HEIMDALL_DEFAULT_SWITCH_ROOM_ID`; every repo the App is installed on is linked to it. To move
    one repo to another room later, run
-   `python -m apps.admin.link_room <installation_id> <repo_id> <room_id>`.
+   `python -m apps.admin.link_room <installation_id> <owner/repo> <room_id>`.
 
 4. Start the stack:
 

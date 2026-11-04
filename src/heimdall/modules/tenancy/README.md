@@ -37,7 +37,8 @@ redelivered webhook changes nothing.
 `on_installation_event` can take a `default_room_id` (the worker passes
 `HEIMDALL_DEFAULT_SWITCH_ROOM_ID`). It fills `repos.switch_room_id` only where the repo has no room,
 so a room an operator chose is never replaced. `python -m apps.admin.link_room <installation_id>
-<repo_id> <room_id>` re-links one repo through `link_repo_room`.
+<owner/repo> <room_id>` resolves the tenant-owned repository and re-links it through
+`link_repo_room`.
 
 Every event also upserts the installation from its `account`, so a repositories event for a
 missed installation still works. `get_tenant(installation_id)` starts every job: it returns a
