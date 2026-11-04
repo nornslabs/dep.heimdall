@@ -53,6 +53,8 @@ class PrEvent:
         agent_room_id: Optional Switch room UUID. When set, the checklist is posted by Heimdall
             as the root of the PR's thread instead of by the bot.
         room_message: Optional rendered checklist or failure details.
+        thread_heading: Optional rendered heading; when set, Heimdall posts it as the thread
+            root and the checklist replies under it.
         repo_full_name: GitHub owner and repository name for queued intake.
     """
 
@@ -68,6 +70,7 @@ class PrEvent:
     room_id: str | None = None
     agent_room_id: str | None = None
     room_message: str | None = None
+    thread_heading: str | None = None
     repro_test_cmd: str | None = None
     repo_full_name: str = ""
     base_ref: str | None = None

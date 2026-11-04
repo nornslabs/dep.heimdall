@@ -18,7 +18,9 @@ Tables (`models.py`): `intake_results` (one row per rule per head commit).
 `api.py` exports `IntakeFacts`, `RuleResult`, `RuleName`, `evaluate_rules(facts, config)`,
 `run_intake(...)`, and `mark_results_stale(...)`. `run_intake` fetches GitHub facts, checks the
 head-scoped config, upserts six rule outcomes, then sends the checklist to Switch through the
-outbox and advances triage in the same transaction. CLA status comes from PR labels
+outbox and advances triage in the same transaction. The PR's thread opens with the heading
+`New PR #<no> <title>` (`_heading.py`); the PR title is untrusted, so it is flattened to one line,
+capped at `MAX_THREAD_TITLE_CHARS`, and stripped of Markdown and `@` mention syntax. CLA status comes from PR labels
 `cla-signed`, `cla: yes`, or `cla: signed` when the repo requires a CLA.
 
 The six checks are linked issue, author assignment, required labels, open PR limit, CLA, and CI.

@@ -83,7 +83,8 @@ The call therefore works only while that agent's service is connected, and fails
 
 * The row with `thread_role: "root"` opens the thread: its Switch event id is saved on
   `prs.switch_thread_id` through the `ThreadStore` port (`apps/worker/_threads.py` wires it to
-  triage). Intake's checklist is the root, posted by Heimdall.
+  triage). The root is Heimdall's heading `New PR #<no> <title>`; intake's checklist replies under
+  it. A reopened PR keeps its saved thread, so it reuses it rather than opening a new one.
 * Every other row with a `pr_id` replies in the saved thread. If the root has not been delivered
   yet it fails as `SwitchUnavailable`, so the outbox retries it instead of posting it flat.
 * A root row that finds a thread already saved (a later push re-ran intake) replies in it.

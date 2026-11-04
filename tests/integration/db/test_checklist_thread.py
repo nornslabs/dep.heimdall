@@ -10,7 +10,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.modules.tenancy.api import link_repo_room, on_installation_event
-from heimdall.modules.triage.api import EventKind, Facts, PrEvent, handle_event, on_step_done
+from heimdall.modules.triage.api import (
+    EventKind,
+    Facts,
+    PrEvent,
+    handle_event,
+    on_step_done,
+    save_switch_thread_id,
+)
 from heimdall.modules.triage.models import Pr
 from heimdall.shared.context import TenantCtx
 from heimdall.shared.ids import InstallationId, RepoId
@@ -146,3 +153,94 @@ async def test_a_repo_with_no_agent_room_keeps_the_bot_checklist(
         "channel_id": MATTERMOST_CHANNEL,
         "message": "Intake checklist for pull request #1",
     }
+
+
+HEADING = "New PR #1 Fix login"
+
+
+async def _outbox_payload_or_none(
+    sessions: async_sessionmaker[AsyncSession], event_id: str, effect: str
+) -> dict[str, object] | None:
+    async with unit_of_work(sessions) as session:
+        connection = await session.connection()
+        row = await connection.execute(
+            text("SELECT payload FROM outbox WHERE idempotency_key = :key"),
+            {"key": f"triage:{event_id}:{effect}"},
+        )
+        payload: dict[str, object] | None = row.scalar_one_or_none()
+        return payload
+
+
+async def _finish_intake(
+    sessions: async_sessionmaker[AsyncSession],
+    ctx: TenantCtx,
+    pr_id: uuid.UUID,
+    event_id: str,
+) -> None:
+    await on_step_done(
+        sessions,
+        ctx,
+        pr_id,
+        event_id,
+        EventKind.INTAKE_DONE,
+        "head-1",
+        Facts(intake_passed=True),
+        room_id=MATTERMOST_CHANNEL,
+        agent_room_id=AGENT_ROOM,
+        room_message="Intake checklist for pull request #1",
+        thread_heading=HEADING,
+    )
+
+
+async def test_the_heading_is_the_thread_root_and_the_checklist_replies_under_it(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    ctx, pr_id = await _open_pr(sessions, agent_room=AGENT_ROOM)
+
+    await _finish_intake(sessions, ctx, pr_id, "intake-heading")
+
+    assert await _outbox_payload_or_none(sessions, "intake-heading", "thread_heading") == {
+        "agent": "heimdall",
+        "channel_id": AGENT_ROOM,
+        "message": HEADING,
+        "pr_id": str(pr_id),
+        "thread_role": "root",
+    }
+    checklist = await _checklist_payload(sessions, "intake-heading", "outbox_thread_and_checklist")
+    assert checklist["pr_id"] == str(pr_id)
+    assert "thread_role" not in checklist
+
+
+async def test_a_repeat_push_adds_a_checklist_reply_but_no_second_heading(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    ctx, pr_id = await _open_pr(sessions, agent_room=AGENT_ROOM)
+    await save_switch_thread_id(sessions, ctx, pr_id, "sw_root")
+
+    await _finish_intake(sessions, ctx, pr_id, "intake-repeat")
+
+    assert await _outbox_payload_or_none(sessions, "intake-repeat", "thread_heading") is None
+    checklist = await _checklist_payload(sessions, "intake-repeat", "outbox_thread_and_checklist")
+    assert "thread_role" not in checklist
+
+
+async def test_a_repo_with_no_agent_room_gets_no_heading(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    ctx, pr_id = await _open_pr(sessions, agent_room=None)
+
+    await on_step_done(
+        sessions,
+        ctx,
+        pr_id,
+        "intake-flat",
+        EventKind.INTAKE_DONE,
+        "head-1",
+        Facts(intake_passed=True),
+        room_id=MATTERMOST_CHANNEL,
+        agent_room_id=None,
+        room_message="Intake checklist for pull request #1",
+        thread_heading=HEADING,
+    )
+
+    assert await _outbox_payload_or_none(sessions, "intake-flat", "thread_heading") is None

@@ -62,7 +62,8 @@ async def test_good_fix_card_says_reproduced_and_posts_only_after_approval(
     """PR #3: intake passes, the paired run confirms the fix, and 👍 posts the exact card."""
     await pipeline.open_pr(GOOD_FIX, NO_FINDINGS)
     assert await pipeline.pr_state(GOOD_FIX) == "checking"
-    assert "Ready for reproduction and review." in switch.room_posts[0]
+    assert switch.room_posts[0].startswith(f"New PR #{GOOD_FIX.number} ")
+    assert "Ready for reproduction and review." in switch.room_posts[1]
 
     await pipeline.run_huginn()
     assert any(post.startswith("Huginn: fix confirmed") for post in switch.room_posts)
@@ -78,10 +79,13 @@ async def test_good_fix_card_says_reproduced_and_posts_only_after_approval(
     assert switch.agent_who_posted(switch.posts_by_id[post_id].message[:20]) == "heimdall"
     assert switch.agent_who_posted("Intake checklist for pull request") == "heimdall"
     assert switch.agent_who_posted("Loki: reviewed") == "loki"
-    # One thread per PR: the checklist is the only root, and every agent post names its PR.
+    # One thread per PR: the heading is the only root, and every agent post names its PR.
     agent_rows = [row for row in switch.payloads if row.get("agent")]
     roots = [row for row in agent_rows if row.get("thread_role") == "root"]
-    assert [str(row["message"]).startswith("Intake checklist") for row in roots] == [True]
+    assert [str(row["message"]).startswith(f"New PR #{GOOD_FIX.number}") for row in roots] == [True]
+    checklist_rows = [r for r in agent_rows if str(r["message"]).startswith("Intake checklist")]
+    assert len(checklist_rows) == 1
+    assert "thread_role" not in checklist_rows[0]
     assert {row["agent"] for row in agent_rows} == {"heimdall", "huginn", "loki"}
     assert {row["pr_id"] for row in agent_rows} == {str(await pipeline.pr_id(GOOD_FIX))}
 
@@ -122,8 +126,9 @@ async def test_rule_breaker_fails_intake_and_writes_nothing_to_github(
     await pipeline.run_huginn()
 
     assert await pipeline.pr_state(RULE_BREAKER) == "intake_failed"
-    assert len(switch.room_posts) == 1
-    assert "Resolve the failed checks" in switch.room_posts[0]
+    assert len(switch.room_posts) == 2
+    assert switch.room_posts[0].startswith(f"New PR #{RULE_BREAKER.number} ")
+    assert "Resolve the failed checks" in switch.room_posts[1]
     assert await pipeline.latest_repro_run(RULE_BREAKER) is None
     assert github.writes() == []
     await assert_nothing_failed(pipeline)
