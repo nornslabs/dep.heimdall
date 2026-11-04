@@ -40,8 +40,70 @@ Heimdall's own API moved to host port `8001` (`API_PORT`) because Switch needs `
    display name) and the `MATTERMOST_USER` account.
 
 `HEIMDALL_SWITCH_URL` and `HEIMDALL_SWITCH_TOKEN` are unchanged and still describe the Mattermost
-connection the current bridge uses. Agent registration (HEI-80) and the agent adapter (HEI-81)
-build on this server.
+connection the current bridge uses. The agent adapter (HEI-81) builds on this server.
+
+## Registering the agents
+
+Huginn, Loki and Heimdall each need their own Switch identity. Registration is a one-off step
+after the stack is up. Switch shows each API key once, so the command writes ids and keys
+straight to `secrets/switch-agents.env` (gitignored, owner-only) and never prints them.
+
+1. **Register the agents**, from the repo root with the values from `.env` exported:
+
+   ```bash
+   export SWITCH_API_URL=http://localhost:8000      # your SWITCH_API_PORT
+   export AGENT_REGISTRATION_TOKEN GATEWAY_ADMIN_EMAIL GATEWAY_ADMIN_PASSWORD
+   uv run python -m apps.bridge.register_agents
+   ```
+
+   Switch creates a Mattermost bot for each agent and adds it to the team's default channels
+   (`town-square`, `off-topic`). Until addressing is set, only an agent's owner can mention it.
+2. **Create the triage room by hand.** In Mattermost, create a channel named `triage` in the
+   `heimdall` team and add the three bots (`huginn`, `loki`, `heimdall`) to it. Within a few
+   seconds Switch bridges it as a room named `Mattermost: triage`.
+3. **Find the Switch room id.** It is Switch's own UUID, **not** the Mattermost channel id:
+
+   ```bash
+   docker compose exec postgres psql -U heimdall -d switch -Atc \
+     "select id from rooms where name = 'Mattermost: triage'"
+   ```
+4. **Restrict who may mention the agents** to people in that room. This signs in once as the
+   Gateway admin and rotates no key:
+
+   ```bash
+   uv run python -m apps.bridge.register_agents --addressing-only --room-id <switch room id>
+   ```
+
+   No other agent, and not the Switch platform, may address them. (Passing `--room-id` in step 1
+   does the same if the room already exists.)
+5. **Check it.** The three agents appear in the Gateway (`http://localhost:3000`). In `#triage`,
+   post `@loki hello`. Until an agent's connection is running, Switch answers on its behalf that
+   it is offline, which shows the mention was accepted. A `docker compose logs switch` line
+   `Addressing denied … not permitted in room` means the room id is wrong.
+
+| Variable | Set by | Meaning |
+|---|---|---|
+| `SWITCH_<AGENT>_AGENT_ID` | the command | Switch id of `HUGINN`, `LOKI` or `HEIMDALL`. |
+| `SWITCH_<AGENT>_API_KEY` | the command | That agent's bearer key. Secret. |
+| `SWITCH_API_URL` | you | Switch API root; `http://switch:8000` inside compose. |
+
+**Re-running.** An agent that already exists is skipped with a message and the command exits
+1; the others still register. `--overwrite` replaces existing agents, which **rotates their
+keys and invalidates the old ones**, so any running agent must be restarted with the new key.
+
+**Retrying addressing.** If registration worked but the addressing step failed (wrong room id,
+admin sign-in refused, Switch down), run the command again with `--addressing-only --room-id
+<id>`. It reads the agent ids from the secrets file, registers nothing and rotates no key.
+
+**Safety checks.** The command checks the secrets file is writable, and signs in as admin when
+`--room-id` is given, *before* asking Switch for any key. If a key still cannot be written, it
+says so, stops, and never prints the key; Switch shows a key only once, so fix the file and
+re-run with `--overwrite`. `SWITCH_API_URL` must be `https`, except for this machine or a
+compose service name such as `http://switch:8000`, and must not contain credentials.
+
+**Not wired into compose yet.** `secrets/switch-agents.env` is not loaded by any compose
+service, and containers need `SWITCH_API_URL=http://switch:8000` rather than `localhost`. That
+wiring belongs with the code that starts the agents' connections (HEI-81/HEI-82).
 
 ## Versions
 

@@ -80,6 +80,10 @@ class SwitchRequestFailed(HeimdallError):
     """Switch rejected a request that cannot succeed unchanged."""
 
 
+class SwitchAgentExists(SwitchRequestFailed):
+    """An agent with this name is already registered; re-registering needs ``overwrite``."""
+
+
 class AiUnavailable(HeimdallError):
     """The model provider timed out, was unreachable, rate-limited us or had a server error.
 

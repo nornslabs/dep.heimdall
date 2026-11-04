@@ -53,3 +53,14 @@ is held in memory only, so a process restart resumes from `head`.
 
 Switch's `/message` call takes only `room_id` and `content`, so an agent cannot reply into
 a thread; plan on one room per PR.
+
+## Provisioning (`provisioning/`)
+
+`AgentRegistrar` calls `POST /agents` with the bootstrap registration token and returns an
+`AgentRegistration` (id and key; the key is hidden from `repr`). A 409 raises `SwitchAgentExists`.
+`SwitchAdmin` signs in once as the Gateway admin and calls `PUT /agents/{id}/addressing-policy`;
+that route needs a signed-in owner or admin, so the registration token is not enough.
+`triage_room_policy` is the narrowest policy that works: one rule admitting people in the triage
+room, no other agent and not the platform. Error messages carry the action and status only, never
+a response body, token or password. `agent/credentials.py` reads an agent's `SWITCH_<AGENT>_*`
+variables into an `AgentConnectionConfig`.
