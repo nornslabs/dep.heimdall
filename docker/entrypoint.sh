@@ -13,7 +13,7 @@ case "$role" in
   huginn)
     exec python -m agents.huginn.runner ;;
   loki|heimdall)
-    exec python -m "agents.$role.agent" ;;
+    exec python -m "agents.$role.runner" ;;
   *)
     echo "usage: entrypoint.sh {migrate|api|worker|mcp|bridge|huginn|loki|heimdall}" >&2
     exit 64 ;;
