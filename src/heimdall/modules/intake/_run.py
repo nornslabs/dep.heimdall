@@ -10,6 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.modules.intake._checklist import render_checklist
 from heimdall.modules.intake._github_facts import collect_intake_facts, linked_issue_number
+from heimdall.modules.intake._heading import render_thread_heading
 from heimdall.modules.intake._rules import evaluate_rules
 from heimdall.modules.intake._stale import mark_results_stale
 from heimdall.modules.intake.domain import IntakeFacts, RuleResult
@@ -86,6 +87,7 @@ async def run_intake(
         facts,
         results,
         config.repro.test_cmd,
+        pull_request.title,
     )
     return results
 
@@ -100,8 +102,12 @@ async def _save_results_and_transition(
     facts: IntakeFacts,
     results: tuple[RuleResult, ...],
     repro_test_cmd: str,
+    title: str,
 ) -> None:
-    """Commit result rows and the matching state transition together."""
+    """Commit result rows and the matching state transition together.
+
+    ``title`` is the PR's untrusted title; it only feeds the escaped thread heading.
+    """
     async with unit_of_work(sessions) as session:
         pr = await get_pr_snapshot(session, ctx, pr_id)
         if pr is None:
@@ -126,6 +132,7 @@ async def _save_results_and_transition(
             room_id=room_id,
             agent_room_id=agent_room_id,
             room_message=message,
+            thread_heading=render_thread_heading(pr.number, title),
             linked_issue=linked_issue_number(facts.body),
             repro_test_cmd=repro_test_cmd,
         )

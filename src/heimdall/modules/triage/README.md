@@ -27,7 +27,7 @@ outcome types.
 | From | Event | Guard | To | Effects |
 |---|---|---|---|---|
 | none | `pull_request.opened` | repo enabled | `received` | enqueue intake |
-| `received` | `intake.done` | all rules pass | `checking` | outbox checklist as the PR's thread root, posted by Heimdall when the repo has an agent room (else the bot); enqueue Huginn with validated repro command; enqueue `loki.run_review` |
+| `received` | `intake.done` | all rules pass | `checking` | outbox heading `New PR #<no> <title>` as the PR's thread root (only while the PR has no thread) and the checklist as its reply, both posted by Heimdall when the repo has an agent room (else the bot posts the flat checklist); enqueue Huginn with validated repro command; enqueue `loki.run_review` |
 | `received` | `intake.done` | any rule fails | `intake_failed` | outbox failed rules |
 | `checking` | `repro.finished` / `review.finished` | both done | `card_posted` | enqueue `heimdall.build_card` |
 | `checking` | either finished | only one done | `checking` | none |

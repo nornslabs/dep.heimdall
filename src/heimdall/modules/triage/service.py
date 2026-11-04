@@ -21,6 +21,7 @@ from heimdall.adapters.queue.enqueue import (
 )
 from heimdall.modules.tenancy.api import repo_is_enabled
 from heimdall.modules.triage._checks import mark_check_done, stored_check_heads
+from heimdall.modules.triage._heading_post import write_thread_heading
 from heimdall.modules.triage._webhook_event import pull_request_event
 from heimdall.modules.triage.domain import (
     Effect,
@@ -182,6 +183,7 @@ async def on_step_done(
     room_id: str | None = None,
     agent_room_id: str | None = None,
     room_message: str | None = None,
+    thread_heading: str | None = None,
     repro_test_cmd: str | None = None,
 ) -> Transition | Rejected:
     """Apply a completed intake, reproduction, or review step to its PR.
@@ -198,6 +200,8 @@ async def on_step_done(
         agent_room_id: Optional Switch room UUID; when set, Heimdall posts the checklist as
             the root of the PR's thread.
         room_message: Rendered checklist or failure explanation.
+        thread_heading: Rendered thread heading; when set, it opens the PR's thread and the
+            checklist replies under it.
         repro_test_cmd: Validated repository test command queued for Huginn.
 
     Returns:
@@ -215,6 +219,7 @@ async def on_step_done(
             room_id=room_id,
             agent_room_id=agent_room_id,
             room_message=room_message,
+            thread_heading=thread_heading,
             repro_test_cmd=repro_test_cmd,
         )
 
@@ -231,6 +236,7 @@ async def on_step_done_in_transaction(
     room_id: str | None = None,
     agent_room_id: str | None = None,
     room_message: str | None = None,
+    thread_heading: str | None = None,
     linked_issue: int | None = None,
     repro_test_cmd: str | None = None,
 ) -> Transition | Rejected:
@@ -252,6 +258,8 @@ async def on_step_done_in_transaction(
         agent_room_id: Optional Switch room UUID; when set, Heimdall posts the checklist as
             the root of the PR's thread.
         room_message: Rendered checklist or failure explanation.
+        thread_heading: Rendered thread heading; when set, it opens the PR's thread and the
+            checklist replies under it.
         linked_issue: Issue number found during intake, when present.
         repro_test_cmd: Validated repository test command queued for Huginn.
 
@@ -279,6 +287,7 @@ async def on_step_done_in_transaction(
         room_id=room_id,
         agent_room_id=agent_room_id,
         room_message=room_message,
+        thread_heading=thread_heading,
         repro_test_cmd=repro_test_cmd,
     )
     transition = await _apply_existing_event(session, ctx, pr, event)
@@ -511,6 +520,7 @@ async def _write_room_effects(
     payload = _checklist_payload(event, pr_id)
     if payload is None:
         return
+    await write_thread_heading(session, ctx, event, pr_id)
     await write_outbox(
         session,
         installation_id=ctx.installation_id,
@@ -522,7 +532,7 @@ async def _write_room_effects(
 
 
 def _checklist_payload(event: PrEvent, pr_id: UUID) -> JsonObject | None:
-    """Build the checklist post: Heimdall's thread root when the repo has an agent room.
+    """Build the checklist post: Heimdall's thread reply, or its root when no heading opens it.
 
     A repo with no agent room keeps the Mattermost bot's flat post, so nothing changes for a
     deployment that has not registered agents.
@@ -530,13 +540,15 @@ def _checklist_payload(event: PrEvent, pr_id: UUID) -> JsonObject | None:
     if event.room_message is None:
         return None
     if event.agent_room_id:
-        return {
+        post: JsonObject = {
             "agent": AgentName.HEIMDALL.value,
             "channel_id": event.agent_room_id,
             "message": event.room_message,
             "pr_id": str(pr_id),
-            "thread_role": "root",
         }
+        if event.thread_heading is None:
+            post["thread_role"] = "root"
+        return post
     if event.room_id:
         return {"channel_id": event.room_id, "message": event.room_message}
     return None
