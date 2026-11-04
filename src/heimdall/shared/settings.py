@@ -21,7 +21,8 @@ class Settings(BaseSettings):
         github_webhook_secret: Shared secret for verifying webhook signatures.
         switch_url: Base URL of the Switch server, if the bridge is used.
         switch_token: Bot token for Switch.
-        default_switch_room_id: Room newly enabled repos post to until an operator re-links them.
+        default_switch_room_id: Mattermost channel newly enabled repos post to (the bot's room).
+        default_switch_agent_room_id: Switch room UUID their agents post to; not the same id.
         log_level: Minimum level that gets logged.
     """
 
@@ -39,6 +40,7 @@ class Settings(BaseSettings):
     switch_url: str | None = None
     switch_token: SecretStr | None = None
     default_switch_room_id: str | None = None
+    default_switch_agent_room_id: str | None = None
     log_level: LogLevel = "INFO"
 
 

@@ -73,7 +73,7 @@ def register_heimdall_task(
             SUGGESTED_ACTION,
             await latest_run_id(sessions, ctx, snapshot.id, head_sha),
         )
-        if not job.room_id:
+        if not job.agent_room_id:
             log.warning("card_not_posted_no_room", installation_id=installation_id, pr_id=pr_id)
             return
         async with unit_of_work(sessions) as session:
@@ -84,7 +84,7 @@ def register_heimdall_task(
                 kind="room.message",
                 payload={
                     "agent": AgentName.HEIMDALL.value,
-                    "channel_id": job.room_id,
+                    "channel_id": job.agent_room_id,
                     "message": card.approval_message,
                 },
                 idempotency_key=f"heimdall:{installation_id}:{pr_id}:{head_sha}:card",

@@ -280,7 +280,6 @@ async def test_run_intake_saves_checklist_and_switch_outbox_atomically(
         "pr_id": str(pr_id),
         "head_sha": "head-1",
         "test_cmd": "pytest -q",
-        "room_id": "switch-room-1",
     }
 
 

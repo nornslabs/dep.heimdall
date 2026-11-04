@@ -16,16 +16,18 @@ async def on_installation_event(
     sessions: async_sessionmaker[AsyncSession],
     event: InstallationEvent,
     default_room_id: str | None = None,
+    default_agent_room_id: str | None = None,
 ) -> None:
     """Persist one parsed installation event and its repository changes atomically.
 
     Args:
         sessions: Tenant database session factory.
         event: Parsed installation lifecycle change.
-        default_room_id: Switch room for enabled repos that have no room linked yet.
+        default_room_id: Mattermost channel for enabled repos that have no room linked yet.
+        default_agent_room_id: Switch room UUID for enabled repos with no agent room yet.
     """
     async with unit_of_work(sessions) as session:
-        await apply_installation_event(session, event, default_room_id)
+        await apply_installation_event(session, event, default_room_id, default_agent_room_id)
 
 
 async def get_tenant(

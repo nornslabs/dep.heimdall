@@ -81,6 +81,20 @@ straight to `secrets/switch-agents.env` (gitignored, owner-only) and never print
    it is offline, which shows the mention was accepted. A `docker compose logs switch` line
    `Addressing denied … not permitted in room` means the room id is wrong.
 
+## Two room ids
+
+The triage room has two ids and they are not interchangeable:
+
+| Id | Looks like | Used by | Where it is stored |
+|---|---|---|---|
+| Mattermost channel id | 26 letters and digits | the Mattermost bot (checklist, alerts) | `HEIMDALL_DEFAULT_SWITCH_ROOM_ID`, `repos.switch_room_id` |
+| Switch room id | UUID (step 3 above) | the agents (Huginn, Loki, Heimdall) | `HEIMDALL_DEFAULT_SWITCH_AGENT_ROOM_ID`, `repos.switch_agent_room_id` |
+
+Switch answers `404` when an agent posts to the Mattermost id, and the post is not retried. Set
+both defaults in `.env`, or link one repo with
+`python -m apps.admin.link_room <installation id> <repo id> <channel id> --agent-room-id <uuid>`.
+A repo with no agent room gets no agent posts (Huginn's verdict, Loki's summary, Heimdall's card).
+
 | Variable | Set by | Meaning |
 |---|---|---|
 | `SWITCH_<AGENT>_AGENT_ID` | the command | Switch id of `HUGINN`, `LOKI` or `HEIMDALL`. |

@@ -70,6 +70,9 @@ The worker needs no open WebSocket to post: `POST /agents/{id}/message` works on
 (checked against Switch 0.31.0). The agent-post text reaches Mattermost unchanged, including the
 HTML-comment approval marker, so 👍 approval through the bridge is unaffected.
 
+Agent rows carry the Switch room UUID (`repos.switch_agent_room_id`), not the Mattermost channel
+id the bot uses; see `docs/switch.md` ("Two room ids").
+
 The idempotency key stays on the outbox row. `/message` has no key of its own, so a crash after
 Switch accepts a post can double-post on retry, as the Mattermost path can.
 

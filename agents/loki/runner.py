@@ -70,7 +70,7 @@ def register_loki_task(
             return
         tools = LokiMcpTools(create_server(sessions, reader, AGENT_NAME))
         result = await run_loki(tools, model, installation_id, job.snapshot.id, job.repo_full_name)
-        if result.dropped or not job.room_id:
+        if result.dropped or not job.agent_room_id:
             return
         async with unit_of_work(sessions) as session:
             await write_outbox(
@@ -80,7 +80,7 @@ def register_loki_task(
                 kind="room.message",
                 payload={
                     "agent": AgentName.LOKI.value,
-                    "channel_id": job.room_id,
+                    "channel_id": job.agent_room_id,
                     "message": format_review_message(
                         saved=result.saved,
                         rejected=len(result.rejected),

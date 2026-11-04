@@ -18,6 +18,7 @@ import httpx2
 
 from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.switch.ports import RoomEvent, RoomPost
+from heimdall.shared.errors import SwitchRequestFailed
 from tests.integration.adapters.github.fake_github import FakeGitHub, json_response
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "e2e"
@@ -28,6 +29,8 @@ MAINTAINER = "sboy99"
 # main's tip when PRs #3-#5 were opened; a dispatched repro run reports this as its head_sha.
 DEMO_MAIN_SHA = "3159115d345ebd5d809fa347da45d3bf6e9b1cfe"
 ROOM_ID = "triage-room"
+# Switch's own id for the same room; the bot and the agents are given different ids for it.
+AGENT_ROOM_ID = "switch-room-uuid"
 APPROVAL_MARKER = "<!-- heimdall-approval "
 REPRO_WORKFLOW = "heimdall-repro.yml"
 REPRO_WORKFLOW_PATH = f".github/workflows/{REPRO_WORKFLOW}"
@@ -229,10 +232,15 @@ class FakeSwitch:
         who spoke.
         """
         agent = message.payload.get("agent")
+        channel_id = str(message.payload["channel_id"])
+        # Like real Switch: an agent only knows the room's Switch id, the bot only its channel id.
+        expected = ROOM_ID if agent is None else AGENT_ROOM_ID
+        if channel_id != expected:
+            raise SwitchRequestFailed("Switch has no such room")
         self.agent_by_message[str(message.payload["message"])] = (
             agent if isinstance(agent, str) else None
         )
-        self.post(str(message.payload["channel_id"]), str(message.payload["message"]))
+        self.post(ROOM_ID, str(message.payload["message"]))
 
     def post(self, channel_id: str, message: str) -> str:
         """Put a message in a room, returning its post id."""

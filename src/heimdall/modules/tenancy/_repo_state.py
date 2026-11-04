@@ -52,6 +52,30 @@ async def repo_switch_room_id(
     return repo.switch_room_id if repo is not None else None
 
 
+async def repo_agent_room_id(
+    session: AsyncSession,
+    ctx: TenantCtx,
+    repo_id: RepoId,
+) -> str | None:
+    """Read the Switch room UUID the repository's agents post to.
+
+    This is not the bot's room: ``repo_switch_room_id`` is a Mattermost channel id, while a
+    Switch agent only accepts Switch's own room id.
+
+    Args:
+        session: Session inside the caller's transaction.
+        ctx: Tenant context that scopes the repository lookup.
+        repo_id: GitHub repository identifier.
+
+    Returns:
+        Switch room id, or None when no agent room is configured.
+    """
+    statement = select_for_tenant(Repo, ctx.installation_id).where(Repo.repo_id == repo_id)
+    result = await session.exec(statement)
+    repo = result.first()
+    return repo.switch_agent_room_id if repo is not None else None
+
+
 async def repo_auto_suggest_paused(session: AsyncSession, ctx: TenantCtx, repo_id: RepoId) -> bool:
     """Read the repository's maintainer-controlled auto-suggest pause flag."""
     statement = select_for_tenant(Repo, ctx.installation_id).where(Repo.repo_id == repo_id)
@@ -104,14 +128,17 @@ async def link_repo_room(
     ctx: TenantCtx,
     repo_id: RepoId,
     room_id: str,
+    agent_room_id: str | None = None,
 ) -> None:
-    """Point one repository at the Switch room where its triage is posted.
+    """Point one repository at the rooms where its triage is posted.
 
     Args:
         sessions: Tenant database session factory.
         ctx: Tenant context that scopes the repository lookup.
         repo_id: GitHub repository identifier.
-        room_id: Switch channel id; replaces any room linked before.
+        room_id: Mattermost channel id the bot posts to; replaces any room linked before.
+        agent_room_id: Switch room UUID the agents post to; replaces any linked before, and
+            None leaves the current one alone.
 
     Raises:
         ValueError: the repository is not registered for this installation.
@@ -127,3 +154,5 @@ async def link_repo_room(
         if repo is None:
             raise ValueError("repository is not registered for this installation")
         repo.switch_room_id = room_id
+        if agent_room_id is not None:
+            repo.switch_agent_room_id = agent_room_id

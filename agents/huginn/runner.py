@@ -8,6 +8,7 @@ from procrastinate import App
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from agents._job_context import load_agent_room_id
 from agents.huginn.agent import run_huginn
 from agents.huginn.config import load_ai_config
 from heimdall.adapters.ai import AiAdapter
@@ -75,7 +76,6 @@ def register_huginn_task(
         pr_id: str,
         head_sha: str,
         test_cmd: str,
-        room_id: str | None,
     ) -> None:
         """Run bounded paired attempts and queue one final room report."""
         tenant_id = InstallationId(installation_id)
@@ -88,6 +88,7 @@ def register_huginn_task(
             test_cmd,
             sleep=sleep,
         )
+        room_id = await load_agent_room_id(sessions, ctx, uuid.UUID(pr_id))
         if not room_id:
             return
         async with unit_of_work(sessions) as session:
