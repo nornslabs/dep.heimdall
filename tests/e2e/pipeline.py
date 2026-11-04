@@ -44,6 +44,7 @@ from heimdall.adapters.switch.ports import RoomEvent
 from heimdall.modules.tenancy.api import on_installation_event
 from heimdall.modules.triage.api import receive_webhook
 from tests.e2e.fake_world import (
+    AGENT_ROOM_ID,
     DEMO_MAIN_SHA,
     INSTALLATION_ID,
     REPO_FULL_NAME,
@@ -208,7 +209,7 @@ class Pipeline:
         queue_app = create_queue_app(deps.database_url, schema=deps.db_schema)
         register_intake_task(queue_app, deps.sessions, self.reader)
         register_triage_task(queue_app, deps.sessions)
-        register_installation_task(queue_app, deps.sessions, ROOM_ID)
+        register_installation_task(queue_app, deps.sessions, ROOM_ID, AGENT_ROOM_ID)
         register_repro_timeout_task(queue_app, deps.sessions)
         register_actions_result_task(queue_app, deps.sessions, GitHubActionsResults(deps.clients))
         return queue_app
@@ -216,7 +217,12 @@ class Pipeline:
     async def _install(self) -> None:
         """Install the app on the demo repo; the default room links it to the triage room."""
         installation = created_installation(INSTALLATION_ID, "nornslabs", REPO_ID, REPO_FULL_NAME)
-        await on_installation_event(self.sessions, installation, default_room_id=ROOM_ID)
+        await on_installation_event(
+            self.sessions,
+            installation,
+            default_room_id=ROOM_ID,
+            default_agent_room_id=AGENT_ROOM_ID,
+        )
 
     async def _advance(self, _seconds: float) -> None:
         """Huginn's poll wait: let the rest of the system move instead of sleeping."""

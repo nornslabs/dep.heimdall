@@ -12,6 +12,7 @@ from heimdall.modules.tenancy.api import (
     link_repo_room,
     on_installation_event,
     parse_installation_event,
+    repo_agent_room_id,
 )
 from heimdall.modules.tenancy.models import Repo
 from heimdall.shared.errors import InstallationNotFound, InstallationSuspended
@@ -246,6 +247,14 @@ async def _room(engine: AsyncEngine, repo_id: int) -> str | None:
         return row.scalar_one()
 
 
+async def _agent_room(engine: AsyncEngine, repo_id: int) -> str | None:
+    async with engine.connect() as conn:
+        row = await conn.execute(
+            text("SELECT switch_agent_room_id FROM repos WHERE repo_id = :id"), {"id": repo_id}
+        )
+        return row.scalar_one()
+
+
 async def test_new_repo_gets_the_default_room(
     engine: AsyncEngine, sessions: async_sessionmaker[AsyncSession]
 ) -> None:
@@ -287,3 +296,65 @@ async def test_link_repo_room_rejects_another_tenants_repo(
 
     with pytest.raises(ValueError, match="not registered"):
         await link_repo_room(sessions, ctx, RepoId(a), "room-x")
+
+
+async def test_new_repo_gets_the_default_agent_room_beside_the_bot_room(
+    engine: AsyncEngine, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    inst, a = _fresh_id(), _fresh_id()
+    event = parse_installation_event(
+        "installation", _payload(inst, "created", repositories=[_repo(a, "a")])
+    )
+    assert event is not None
+
+    await on_installation_event(
+        sessions, event, default_room_id="room-default", default_agent_room_id="agent-default"
+    )
+
+    assert await _room(engine, a) == "room-default"
+    assert await _agent_room(engine, a) == "agent-default"
+
+
+async def test_default_agent_room_never_replaces_a_linked_one(
+    engine: AsyncEngine, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    inst, a = _fresh_id(), _fresh_id()
+    event = parse_installation_event(
+        "installation", _payload(inst, "created", repositories=[_repo(a, "a")])
+    )
+    assert event is not None
+    await on_installation_event(sessions, event, default_agent_room_id="agent-default")
+    ctx = await get_tenant(sessions, InstallationId(inst))
+    await link_repo_room(sessions, ctx, RepoId(a), "room-chosen", agent_room_id="agent-chosen")
+
+    await on_installation_event(sessions, event, default_agent_room_id="agent-default")
+
+    assert await _agent_room(engine, a) == "agent-chosen"
+
+
+async def test_linking_the_bot_room_alone_keeps_the_agent_room(
+    engine: AsyncEngine, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    inst, a = _fresh_id(), _fresh_id()
+    await _apply(sessions, "installation", _payload(inst, "created", repositories=[_repo(a, "a")]))
+    ctx = await get_tenant(sessions, InstallationId(inst))
+    await link_repo_room(sessions, ctx, RepoId(a), "room-1", agent_room_id="agent-1")
+
+    await link_repo_room(sessions, ctx, RepoId(a), "room-2")
+
+    assert (await _room(engine, a), await _agent_room(engine, a)) == ("room-2", "agent-1")
+
+
+async def test_repo_agent_room_id_reads_only_this_tenants_repo(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    inst, other, a = _fresh_id(), _fresh_id(), _fresh_id()
+    await _apply(sessions, "installation", _payload(inst, "created", repositories=[_repo(a, "a")]))
+    await _apply(sessions, "installation", _payload(other, "created"))
+    ctx = await get_tenant(sessions, InstallationId(inst))
+    other_ctx = await get_tenant(sessions, InstallationId(other))
+    await link_repo_room(sessions, ctx, RepoId(a), "room-1", agent_room_id="agent-1")
+
+    async with unit_of_work(sessions) as session:
+        assert await repo_agent_room_id(session, ctx, RepoId(a)) == "agent-1"
+        assert await repo_agent_room_id(session, other_ctx, RepoId(a)) is None

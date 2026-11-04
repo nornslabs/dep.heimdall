@@ -6,7 +6,7 @@ receiving room posts/reactions. `SwitchSender` implements
 it through Mattermost-compatible REST and WebSocket APIs. It also delivers `switch`
 outbox messages; those contain `channel_id` and `message`, with optional `root_id` for
 a thread reply. The worker enables outbox delivery only when `HEIMDALL_SWITCH_URL`
-and `HEIMDALL_SWITCH_TOKEN` are configured.
+and `HEIMDALL_SWITCH_TOKEN` are configured; it wraps this sender in `SwitchRoutingSender`.
 
 `run_inbound_events` forwards the event stream to an injected handler. Handler failures
 are logged with event and post identifiers only; message bodies stay out of logs.
@@ -27,7 +27,9 @@ reactions and approvals because agent events carry no reactions.
 `SwitchAgentClient` (see `AgentRoomPort`) opens
 `/agents/{id}/connection/ws`, answers each `ping` with a `pong` carrying the processed
 cursor, delivers addressed `message` events to a handler, and posts with
-`POST /agents/{id}/message`. It is wired only in `apps/*/main.py` (done in HEI-82).
+`POST /agents/{id}/message`. It is wired only in `apps/*/main.py`; the worker's use of posting
+is described below. Inbound mentions are handled by `agents/_presence_*.py`, which only answers
+maintainers' `ping`/`hello`; no mention starts a job yet.
 
 Concurrency rules:
 
@@ -53,6 +55,27 @@ is held in memory only, so a process restart resumes from `head`.
 
 Switch's `/message` call takes only `room_id` and `content`, so an agent cannot reply into
 a thread; plan on one room per PR.
+
+## Posting as an agent from the outbox (`routing.py`, `agent/posters.py`)
+
+`SwitchRoutingSender` is the worker's `switch` outbox sender. A row whose payload has an
+`agent` (`huginn`, `loki` or `heimdall`, see `shared.agents.AgentName`) is posted through that
+agent's `AgentPoster`, so it shows under the agent's own name. A row with no `agent` goes through
+the Mattermost bot as before (triage checklist, dead-row alerts). A row that names an agent never
+falls back to the bot: an unknown name, or an agent whose key is not configured, fails as
+non-retryable `SwitchRequestFailed`, so the row goes dead and the room is told.
+
+`build_agent_posters` reads `SWITCH_<AGENT>_AGENT_ID` and `_API_KEY` for each agent. An agent with
+neither is left out; an agent with only one fails the worker's start naming the missing variable.
+The worker needs no open WebSocket to post: `POST /agents/{id}/message` works on the key alone
+(checked against Switch 0.31.0). The agent-post text reaches Mattermost unchanged, including the
+HTML-comment approval marker, so 👍 approval through the bridge is unaffected.
+
+Agent rows carry the Switch room UUID (`repos.switch_agent_room_id`), not the Mattermost channel
+id the bot uses; see `docs/switch.md` ("Two room ids").
+
+The idempotency key stays on the outbox row. `/message` has no key of its own, so a crash after
+Switch accepts a post can double-post on retry, as the Mattermost path can.
 
 ## Provisioning (`provisioning/`)
 

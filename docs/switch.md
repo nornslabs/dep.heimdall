@@ -81,6 +81,20 @@ straight to `secrets/switch-agents.env` (gitignored, owner-only) and never print
    it is offline, which shows the mention was accepted. A `docker compose logs switch` line
    `Addressing denied … not permitted in room` means the room id is wrong.
 
+## Two room ids
+
+The triage room has two ids and they are not interchangeable:
+
+| Id | Looks like | Used by | Where it is stored |
+|---|---|---|---|
+| Mattermost channel id | 26 letters and digits | the Mattermost bot (checklist, alerts) | `HEIMDALL_DEFAULT_SWITCH_ROOM_ID`, `repos.switch_room_id` |
+| Switch room id | UUID (step 3 above) | the agents (Huginn, Loki, Heimdall) | `HEIMDALL_DEFAULT_SWITCH_AGENT_ROOM_ID`, `repos.switch_agent_room_id` |
+
+Switch answers `404` when an agent posts to the Mattermost id, and the post is not retried. Set
+both defaults in `.env`, or link one repo with
+`python -m apps.admin.link_room <installation id> <repo id> <channel id> --agent-room-id <uuid>`.
+A repo with no agent room gets no agent posts (Huginn's verdict, Loki's summary, Heimdall's card).
+
 | Variable | Set by | Meaning |
 |---|---|---|
 | `SWITCH_<AGENT>_AGENT_ID` | the command | Switch id of `HUGINN`, `LOKI` or `HEIMDALL`. |
@@ -101,9 +115,38 @@ says so, stops, and never prints the key; Switch shows a key only once, so fix t
 re-run with `--overwrite`. `SWITCH_API_URL` must be `https`, except for this machine or a
 compose service name such as `http://switch:8000`, and must not contain credentials.
 
-**Not wired into compose yet.** `secrets/switch-agents.env` is not loaded by any compose
-service, and containers need `SWITCH_API_URL=http://switch:8000` rather than `localhost`. That
-wiring belongs with the code that starts the agents' connections (HEI-81/HEI-82).
+**Compose wiring.** `register_agents` writes the combined `secrets/switch-agents.env` and, beside it,
+one `secrets/switch-<agent>.env` per agent holding only that agent's id and key. Compose gives the
+`worker` the combined file (it posts as all three) and each agent service only its own file, so a
+compromised Loki process cannot post as Huginn. Every service gets `SWITCH_API_URL=http://switch:8000`.
+If you registered before the per-agent files existed, run the command again with `--overwrite`; it
+rotates the keys, so restart the worker and the agents afterwards. Rows that name an agent with no
+key die and alert the room; rows that name no agent still use the Mattermost bot.
+
+## Talking to the agents
+
+In the triage room, a maintainer can mention an agent to check it is running:
+
+```text
+@huginn ping          -> Huginn: pong, I'm alive.
+@loki hello           -> Loki: hello! I'm alive. I review a pull request's diff and file cited findings.
+@huginn @loki @heimdall ping    (all three answer)
+```
+
+`ping`, `alive`, `status`, `hello`, `hi` and `hey` are recognised, nothing else; any other text is
+ignored for now. Only a maintainer of a repo linked to that room gets an answer, so:
+
+* The room's agent id must be on a repo (`HEIMDALL_DEFAULT_SWITCH_AGENT_ROOM_ID` or `link_room
+  --agent-room-id`), and the agent claims linked rooms **when it starts**, so restart the agents
+  after linking a new room.
+* "Maintainer" is the repo's `maintainers` list from `heimdall.yml`, read from the copy intake cached
+  the last time a PR was processed. A repo that has never had a PR names nobody yet.
+* The sender is matched by their Mattermost username, which must equal their GitHub login: the same
+  assumption the 👍 approval already makes.
+
+The agent never posts from the message itself: the reply is queued in the outbox and the worker posts
+it under that agent's key. A person who maintains in two installations sharing one room gets no answer
+rather than a guess.
 
 ## Versions
 

@@ -15,7 +15,10 @@ from heimdall.shared.ids import InstallationId, RepoId
 
 
 async def apply_installation_event(
-    session: AsyncSession, event: InstallationEvent, default_room_id: str | None = None
+    session: AsyncSession,
+    event: InstallationEvent,
+    default_room_id: str | None = None,
+    default_agent_room_id: str | None = None,
 ) -> None:
     """Apply one installation event inside the caller's transaction.
 
@@ -25,11 +28,14 @@ async def apply_installation_event(
     Args:
         session: A session inside ``unit_of_work``.
         event: The parsed webhook.
-        default_room_id: Switch room given to enabled repos that have none yet.
+        default_room_id: Mattermost channel given to enabled repos that have none yet.
+        default_agent_room_id: Switch room UUID given to enabled repos that have none yet.
     """
     await _upsert_installation(session, event)
     for repo in event.repos_enabled:
-        await _enable_repo(session, event.installation_id, repo, default_room_id)
+        await _enable_repo(
+            session, event.installation_id, repo, default_room_id, default_agent_room_id
+        )
     if event.repos_disabled:
         await _disable_repos(session, event.installation_id, event.repos_disabled)
 
@@ -56,18 +62,27 @@ async def _enable_repo(
     installation_id: InstallationId,
     repo: RepoSummary,
     default_room_id: str | None,
+    default_agent_room_id: str | None,
 ) -> None:
     """Create the repo, or re-enable it and refresh its name (repos can be renamed).
 
-    The default room fills an empty link only, so a room an operator chose is never replaced.
+    The default rooms fill empty links only, so a room an operator chose is never replaced.
     """
     changes = {"full_name": repo.full_name, "enabled": True, "installation_id": installation_id}
-    statement = insert(Repo).values(repo_id=repo.repo_id, switch_room_id=default_room_id, **changes)
+    statement = insert(Repo).values(
+        repo_id=repo.repo_id,
+        switch_room_id=default_room_id,
+        switch_agent_room_id=default_agent_room_id,
+        **changes,
+    )
     statement = statement.on_conflict_do_update(
         index_elements=["repo_id"],
         set_={
             **changes,
             "switch_room_id": func.coalesce(Repo.switch_room_id, statement.excluded.switch_room_id),
+            "switch_agent_room_id": func.coalesce(
+                Repo.switch_agent_room_id, statement.excluded.switch_agent_room_id
+            ),
         },
     )
     await session.exec(statement)

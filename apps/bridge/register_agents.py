@@ -10,6 +10,7 @@ import asyncio
 import os
 import sys
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Final
 
 from apps.bridge._env_file import check_writable, merge_env_file, read_env_file
@@ -143,11 +144,27 @@ async def _register_one(
     return await _set_addressing(admin, spec, registration.agent_id, config.room_id, "registered; ")
 
 
+def own_secrets_file(secrets_file: Path, agent: str) -> Path:
+    """Path of the file that holds only one agent's id and key, beside the combined file.
+
+    Args:
+        secrets_file: The combined secrets file.
+        agent: Agent name such as ``loki``.
+
+    Returns:
+        ``switch-<agent>.env`` in the same folder, which that agent's service loads instead of
+        the combined file so it never holds another agent's key.
+    """
+    return secrets_file.with_name(f"switch-{agent}.env")
+
+
 def _save(spec: AgentSpec, agent_id: str, api_key: str, config: RunConfig) -> None:
     """Write the agent's id and key, or report loudly that the key is now lost."""
     id_name, key_name = credential_names(spec.name)
+    credentials = {id_name: agent_id, key_name: api_key}
     try:
-        merge_env_file(config.secrets_file, {id_name: agent_id, key_name: api_key})
+        merge_env_file(config.secrets_file, credentials)
+        merge_env_file(own_secrets_file(config.secrets_file, spec.name), credentials)
     except (OSError, ValueError) as error:
         _say(
             f"{spec.name}: registered as {agent_id} but its key was NOT saved "

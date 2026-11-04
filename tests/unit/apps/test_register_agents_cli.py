@@ -258,7 +258,8 @@ async def test_a_write_failure_midway_is_reported_stops_the_run_and_hides_the_ke
 
     def failing_merge(path: Path, updates: dict[str, str]) -> None:
         calls.append(1)
-        if len(calls) == 2:
+        # Each agent is saved twice (combined file, then its own), so call 3 is the second agent.
+        if len(calls) == 3:
             raise OSError("disk full")
         merge_env_file(path, updates)
 
@@ -410,3 +411,33 @@ def test_merge_env_file_creates_the_parent_directory_private(tmp_path: Path) -> 
     merge_env_file(tmp_path / "secrets" / "x.env", {"K": "v"})
 
     assert stat.S_IMODE((tmp_path / "secrets").stat().st_mode) == 0o700
+
+
+@respx.mock
+async def test_each_agent_also_gets_a_private_file_holding_only_its_own_key(
+    tmp_path: Path,
+) -> None:
+    _register_route()
+    secrets = tmp_path / "agents.env"
+
+    await run(["--secrets-file", str(secrets)], _environ())
+
+    for name in ("huginn", "loki", "heimdall"):
+        own = tmp_path / f"switch-{name}.env"
+        assert _lines(own) == {
+            f"SWITCH_{name.upper()}_AGENT_ID": f"id-{name}",
+            f"SWITCH_{name.upper()}_API_KEY": KEYS[name],
+        }
+        assert stat.S_IMODE(own.stat().st_mode) == 0o600
+
+
+@respx.mock
+async def test_rotating_a_key_updates_that_agents_own_file(tmp_path: Path) -> None:
+    _register_route()
+    secrets = tmp_path / "agents.env"
+    await run(["--secrets-file", str(secrets)], _environ())
+    merge_env_file(tmp_path / "switch-loki.env", {"SWITCH_LOKI_API_KEY": "stale"})
+
+    await run(["--secrets-file", str(secrets), "--overwrite"], _environ())
+
+    assert _lines(tmp_path / "switch-loki.env")["SWITCH_LOKI_API_KEY"] == KEYS["loki"]

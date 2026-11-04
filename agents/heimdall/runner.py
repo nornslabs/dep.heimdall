@@ -9,6 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from agents._job_context import load_pr_job_context
 from agents._mcp_tools import HeimdallMcpTools
+from agents._presence_runner import run_with_presence
 from agents.heimdall.agent import build_review_card
 from agents.heimdall.config import AGENT_NAME, load_ai_config
 from apps.mcp.main import create_server
@@ -21,6 +22,7 @@ from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.adapters.queue.app import create_queue_app
 from heimdall.adapters.queue.enqueue import HEIMDALL_QUEUE
 from heimdall.modules.repro.api import latest_run_id
+from heimdall.shared.agents import AgentName
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId
@@ -72,7 +74,7 @@ def register_heimdall_task(
             SUGGESTED_ACTION,
             await latest_run_id(sessions, ctx, snapshot.id, head_sha),
         )
-        if not job.room_id:
+        if not job.agent_room_id:
             log.warning("card_not_posted_no_room", installation_id=installation_id, pr_id=pr_id)
             return
         async with unit_of_work(sessions) as session:
@@ -81,7 +83,11 @@ def register_heimdall_task(
                 installation_id=tenant_id,
                 channel="switch",
                 kind="room.message",
-                payload={"channel_id": job.room_id, "message": card.approval_message},
+                payload={
+                    "agent": AgentName.HEIMDALL.value,
+                    "channel_id": job.agent_room_id,
+                    "message": card.approval_message,
+                },
                 idempotency_key=f"heimdall:{installation_id}:{pr_id}:{head_sha}:card",
             )
 
@@ -101,10 +107,16 @@ async def run_worker() -> None:
         settings.github_app_id, load_private_key(settings.github_private_key_path)
     )
     queue_app = create_queue_app(database_url)
-    register_heimdall_task(queue_app, make_session_factory(engine), GitHubApiReader(clients))
+    sessions = make_session_factory(engine)
+    register_heimdall_task(queue_app, sessions, GitHubApiReader(clients))
     try:
         async with queue_app.open_async():
-            await queue_app.run_worker_async(queues=[HEIMDALL_QUEUE])
+            await run_with_presence(
+                AgentName.HEIMDALL,
+                sessions,
+                lambda: queue_app.run_worker_async(queues=[HEIMDALL_QUEUE]),
+                default_room_id=settings.default_switch_agent_room_id,
+            )
     finally:
         await engine.dispose()
         await ai.aclose()

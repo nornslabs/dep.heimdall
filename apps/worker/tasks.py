@@ -159,13 +159,15 @@ def register_installation_task(
     queue_app: App,
     sessions: async_sessionmaker[AsyncSession],
     default_room_id: str | None,
+    default_agent_room_id: str | None = None,
 ) -> None:
     """Register the installation lifecycle job.
 
     Args:
         queue_app: Procrastinate app used by the worker process.
         sessions: Session factory for event handling.
-        default_room_id: Switch room given to repos the installation enables.
+        default_room_id: Mattermost channel given to repos the installation enables.
+        default_agent_room_id: Switch room UUID given to the same repos for their agents.
     """
 
     @queue_app.task(name="tenancy.on_installation_event")
@@ -175,4 +177,6 @@ def register_installation_task(
             installation_id=InstallationId(installation_id),
             request_id=new_request_id(),
         )
-        await handle_webhook_delivery(sessions, ctx, delivery_id, default_room_id)
+        await handle_webhook_delivery(
+            sessions, ctx, delivery_id, default_room_id, default_agent_room_id
+        )

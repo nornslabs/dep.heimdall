@@ -1,6 +1,7 @@
 """Switch Rooms delivery through its Mattermost-compatible chat API."""
 
 from heimdall.adapters.switch.ports import RoomEvent, RoomPort, RoomPost
+from heimdall.adapters.switch.routing import SwitchRoutingSender
 from heimdall.adapters.switch.runtime import RoomEventHandler, run_inbound_events
 from heimdall.adapters.switch.sender import SwitchSender
 
@@ -9,6 +10,7 @@ __all__ = [
     "RoomEventHandler",
     "RoomPort",
     "RoomPost",
+    "SwitchRoutingSender",
     "SwitchSender",
     "run_inbound_events",
 ]

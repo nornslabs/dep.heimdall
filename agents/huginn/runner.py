@@ -8,6 +8,8 @@ from procrastinate import App
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from agents._job_context import load_agent_room_id
+from agents._presence_runner import run_with_presence
 from agents.huginn.agent import run_huginn
 from agents.huginn.config import load_ai_config
 from heimdall.adapters.ai import AiAdapter
@@ -17,6 +19,7 @@ from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.queue.app import create_queue_app
 from heimdall.adapters.queue.enqueue import HUGINN_QUEUE
 from heimdall.modules.repro.api import get_run, start_run
+from heimdall.shared.agents import AgentName
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.ids import InstallationId
 
@@ -74,7 +77,6 @@ def register_huginn_task(
         pr_id: str,
         head_sha: str,
         test_cmd: str,
-        room_id: str | None,
     ) -> None:
         """Run bounded paired attempts and queue one final room report."""
         tenant_id = InstallationId(installation_id)
@@ -87,6 +89,7 @@ def register_huginn_task(
             test_cmd,
             sleep=sleep,
         )
+        room_id = await load_agent_room_id(sessions, ctx, uuid.UUID(pr_id))
         if not room_id:
             return
         async with unit_of_work(sessions) as session:
@@ -95,7 +98,11 @@ def register_huginn_task(
                 installation_id=tenant_id,
                 channel="switch",
                 kind="room.message",
-                payload={"channel_id": room_id, "message": result.message},
+                payload={
+                    "agent": AgentName.HUGINN.value,
+                    "channel_id": room_id,
+                    "message": result.message,
+                },
                 idempotency_key=f"huginn:{installation_id}:{pr_id}:{head_sha}:verdict",
             )
 
@@ -112,10 +119,16 @@ async def run_worker() -> None:
     database_url = settings.database_url.get_secret_value()
     engine = create_engine(database_url)
     queue_app = create_queue_app(database_url)
-    register_huginn_task(queue_app, make_session_factory(engine))
+    sessions = make_session_factory(engine)
+    register_huginn_task(queue_app, sessions)
     try:
         async with queue_app.open_async():
-            await queue_app.run_worker_async(queues=[HUGINN_QUEUE])
+            await run_with_presence(
+                AgentName.HUGINN,
+                sessions,
+                lambda: queue_app.run_worker_async(queues=[HUGINN_QUEUE]),
+                default_room_id=settings.default_switch_agent_room_id,
+            )
     finally:
         await engine.dispose()
         await ai.aclose()
