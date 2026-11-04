@@ -2,8 +2,8 @@
 
 Everything below the fakes is production code: webhook intake, procrastinate jobs on both
 queues, the outbox senders, the MCP tool server, the agents' own loops and the bridge's
-approval handler. The pipeline also stands in for the room-event dispatch that would wake
-Loki and Heimdall, since no production code does that yet.
+approval handler. Loki and Heimdall are woken by the queue jobs triage enqueues, exactly as
+their services would be; only Loki's model reply is scripted.
 """
 
 import uuid
@@ -17,13 +17,13 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from agents.heimdall.agent import CardResult, build_review_card
+from agents.heimdall.runner import register_heimdall_task
 from agents.huginn.runner import register_huginn_task
-from agents.loki.agent import LokiResult, run_loki
+from agents.loki.runner import register_loki_task
 from apps.bridge.approval import ApprovalReactionHandler
-from apps.mcp.main import create_server
 from apps.worker.tasks import (
     register_actions_result_task,
+    register_installation_task,
     register_intake_task,
     register_repro_timeout_task,
     register_triage_task,
@@ -34,7 +34,12 @@ from heimdall.adapters.github.auth import GitHubAppClients
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.adapters.github.sender import GitHubSender
 from heimdall.adapters.queue.app import create_queue_app
-from heimdall.adapters.queue.enqueue import DEFAULT_QUEUE, HUGINN_QUEUE
+from heimdall.adapters.queue.enqueue import (
+    DEFAULT_QUEUE,
+    HEIMDALL_QUEUE,
+    HUGINN_QUEUE,
+    LOKI_QUEUE,
+)
 from heimdall.adapters.switch.ports import RoomEvent
 from heimdall.modules.tenancy.api import on_installation_event
 from heimdall.modules.triage.api import receive_webhook
@@ -50,12 +55,10 @@ from tests.e2e.fake_world import (
     pull_request_webhook,
     workflow_run_webhook,
 )
-from tests.e2e.mcp_tools import HeimdallMcpTools, LokiMcpTools, ScriptedModel
+from tests.e2e.scripted_model import NO_FINDINGS_REPLY, ScriptedModel
 from tests.integration.db.installation_helpers import created_installation
 
 MAX_SETTLE_ROUNDS = 20
-RULES_SUMMARY = "All intake rules passed."
-SUGGESTED_ACTION = "Approve and merge."
 
 _PR_COLUMN = (
     "SELECT {column} FROM prs WHERE installation_id = :installation_id "
@@ -66,7 +69,6 @@ _LATEST_RUN = (
     "WHERE p.installation_id = :installation_id AND p.repo_id = :repo_id "
     "AND p.number = :number AND r.head_sha = p.head_sha ORDER BY r.attempt DESC LIMIT 1"
 )
-_LINK_ROOM = "UPDATE repos SET switch_room_id = :room WHERE repo_id = :repo"
 # The schema is shared by the whole session, so failures are read only past this test's start.
 _LAST_JOB_ID = "SELECT coalesce(max(id), 0) FROM procrastinate_jobs"
 _FAILED_JOBS = (
@@ -106,22 +108,38 @@ class Pipeline:
         self._main_queue = self._build_main_queue()
         self._huginn_queue = create_queue_app(deps.database_url, schema=deps.db_schema)
         register_huginn_task(self._huginn_queue, deps.sessions, sleep=self._advance)
+        self._loki_model = ScriptedModel(NO_FINDINGS_REPLY)
+        self._loki_queue = create_queue_app(deps.database_url, schema=deps.db_schema)
+        register_loki_task(self._loki_queue, deps.sessions, self.reader, self._loki_model)
+        self._heimdall_queue = create_queue_app(deps.database_url, schema=deps.db_schema)
+        register_heimdall_task(self._heimdall_queue, deps.sessions, self.reader)
         self._deliveries = 0
         self._started_at = datetime.now(UTC)
         self._since_job = 0
 
     @asynccontextmanager
     async def running(self) -> AsyncGenerator["Pipeline"]:
-        """Open both queue apps and install Heimdall on the demo repo."""
-        async with self._main_queue.open_async(), self._huginn_queue.open_async():
+        """Open every queue app and install Heimdall on the demo repo."""
+        async with (
+            self._main_queue.open_async(),
+            self._huginn_queue.open_async(),
+            self._loki_queue.open_async(),
+            self._heimdall_queue.open_async(),
+        ):
             self._started_at = datetime.now(UTC)
             last_job = await self._query(_LAST_JOB_ID, {})
             self._since_job = int(str(last_job[0][0]))
             await self._install()
             yield self
 
-    async def open_pr(self, pr: SeededPr) -> None:
-        """Deliver ``pull_request.opened`` and run everything it sets off on the main worker."""
+    async def open_pr(self, pr: SeededPr, loki_reply: str = NO_FINDINGS_REPLY) -> None:
+        """Deliver ``pull_request.opened`` and run everything it sets off.
+
+        Args:
+            pr: The recorded PR to open.
+            loki_reply: What Loki's scripted model answers if intake passes and wakes it.
+        """
+        self._loki_model.reply = loki_reply
         self._deps.github.seed(pr)
         await self._deliver("pull_request", "opened", pull_request_webhook(pr, "opened"))
         await self.settle()
@@ -130,36 +148,6 @@ class Pipeline:
         """Run queued Huginn jobs the way the ``huginn`` service would."""
         await self._huginn_queue.run_worker_async(queues=[HUGINN_QUEUE], wait=False)
         await self.settle()
-
-    async def wake_loki(self, pr: SeededPr, model_reply: str) -> LokiResult:
-        """Deliver ``pr.ready_for_review`` to Loki with a scripted model reply."""
-        tools = LokiMcpTools(create_server(self.sessions, self.reader, "loki"))
-        model = ScriptedModel(model_reply)
-        pr_id = await self.pr_id(pr)
-        result = await run_loki(tools, model, INSTALLATION_ID, pr_id, REPO_FULL_NAME)
-        await self.settle()
-        return result
-
-    async def wake_heimdall(self, pr: SeededPr) -> tuple[CardResult, str]:
-        """Deliver ``pr.ready_for_card`` to Heimdall and post its approval message to the room.
-
-        Returns:
-            The saved card and draft, and the room post id carrying the approval marker.
-        """
-        tools = HeimdallMcpTools(create_server(self.sessions, self.reader, "heimdall"))
-        card = await build_review_card(
-            tools,
-            INSTALLATION_ID,
-            await self.pr_id(pr),
-            pr.number,
-            REPO_FULL_NAME,
-            pr.title,
-            pr.head_sha,
-            RULES_SUMMARY,
-            SUGGESTED_ACTION,
-            await self.latest_repro_run(pr),
-        )
-        return card, self._deps.switch.post(card.approval_message)
 
     async def react_thumbs_up(self, post_id: str, login: str) -> None:
         """Have a Switch user react 👍 on a room post, then deliver what the bridge queued."""
@@ -171,7 +159,7 @@ class Pipeline:
         await self.settle()
 
     async def settle(self) -> None:
-        """Run default-queue jobs, send due outbox rows and report finished workflow runs.
+        """Run queued jobs, send due outbox rows and report finished workflow runs.
 
         Repeats until a round changes nothing, so a webhook's whole chain of effects lands.
 
@@ -180,6 +168,8 @@ class Pipeline:
         """
         for _round in range(MAX_SETTLE_ROUNDS):
             await self._main_queue.run_worker_async(queues=[DEFAULT_QUEUE], wait=False)
+            await self._loki_queue.run_worker_async(queues=[LOKI_QUEUE], wait=False)
+            await self._heimdall_queue.run_worker_async(queues=[HEIMDALL_QUEUE], wait=False)
             sent = await send_due_messages(self.sessions, self._senders, now=datetime.now(UTC))
             finished = self._deps.github.take_finished_runs()
             for run_id in finished:
@@ -218,18 +208,15 @@ class Pipeline:
         queue_app = create_queue_app(deps.database_url, schema=deps.db_schema)
         register_intake_task(queue_app, deps.sessions, self.reader)
         register_triage_task(queue_app, deps.sessions)
+        register_installation_task(queue_app, deps.sessions, ROOM_ID)
         register_repro_timeout_task(queue_app, deps.sessions)
         register_actions_result_task(queue_app, deps.sessions, GitHubActionsResults(deps.clients))
         return queue_app
 
     async def _install(self) -> None:
-        """Install the app on the demo repo and link the repo to the triage room."""
+        """Install the app on the demo repo; the default room links it to the triage room."""
         installation = created_installation(INSTALLATION_ID, "nornslabs", REPO_ID, REPO_FULL_NAME)
-        await on_installation_event(self.sessions, installation)
-        # No production code sets the room link yet; the replay sets it like an operator would.
-        async with self.sessions() as session, session.begin():
-            connection = await session.connection()
-            await connection.execute(text(_LINK_ROOM), {"room": ROOM_ID, "repo": REPO_ID})
+        await on_installation_event(self.sessions, installation, default_room_id=ROOM_ID)
 
     async def _advance(self, _seconds: float) -> None:
         """Huginn's poll wait: let the rest of the system move instead of sleeping."""

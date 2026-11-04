@@ -8,6 +8,7 @@ from heimdall.modules.tenancy._repo_reference import (
     get_repo_id_in_transaction,
 )
 from heimdall.modules.tenancy._repo_state import (
+    link_repo_room,
     repo_auto_suggest_paused,
     repo_is_enabled,
     repo_switch_room_id,
@@ -20,6 +21,7 @@ __all__ = [
     "get_repo_id",
     "get_repo_id_in_transaction",
     "get_tenant",
+    "link_repo_room",
     "load_config",
     "load_config_in_transaction",
     "on_installation_event",

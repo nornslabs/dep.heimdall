@@ -154,6 +154,20 @@ def register_actions_result_task(
             ),
         )
 
+
+def register_installation_task(
+    queue_app: App,
+    sessions: async_sessionmaker[AsyncSession],
+    default_room_id: str | None,
+) -> None:
+    """Register the installation lifecycle job.
+
+    Args:
+        queue_app: Procrastinate app used by the worker process.
+        sessions: Session factory for event handling.
+        default_room_id: Switch room given to repos the installation enables.
+    """
+
     @queue_app.task(name="tenancy.on_installation_event")
     async def installation_event_task(installation_id: int, delivery_id: str) -> None:
         """Apply one persisted installation lifecycle delivery."""
@@ -161,4 +175,4 @@ def register_actions_result_task(
             installation_id=InstallationId(installation_id),
             request_id=new_request_id(),
         )
-        await handle_webhook_delivery(sessions, ctx, delivery_id)
+        await handle_webhook_delivery(sessions, ctx, delivery_id, default_room_id)

@@ -60,18 +60,16 @@ async def test_good_fix_card_says_reproduced_and_posts_only_after_approval(
     pipeline: Pipeline, github: DemoGitHub, switch: FakeSwitch
 ) -> None:
     """PR #3: intake passes, the paired run confirms the fix, and 👍 posts the exact card."""
-    await pipeline.open_pr(GOOD_FIX)
+    await pipeline.open_pr(GOOD_FIX, NO_FINDINGS)
     assert await pipeline.pr_state(GOOD_FIX) == "checking"
     assert "Ready for reproduction and review." in switch.room_posts[0]
 
     await pipeline.run_huginn()
     assert any(post.startswith("Huginn: fix confirmed") for post in switch.room_posts)
-    loki = await pipeline.wake_loki(GOOD_FIX, NO_FINDINGS)
-    assert loki.saved == 0
     assert await pipeline.pr_state(GOOD_FIX) == "card_posted"
 
-    card, post_id = await pipeline.wake_heimdall(GOOD_FIX)
-    assert card.fix_status.startswith("Fix confirmed")
+    post_id = switch.approval_post_id()
+    assert "Fix confirmed" in switch.posts_by_id[post_id].message
     assert github.comments_posted(GOOD_FIX.number) == []
 
     await pipeline.react_thumbs_up(post_id, MAINTAINER)
@@ -85,18 +83,16 @@ async def test_fake_fix_card_says_not_reproduced_with_loki_finding(
     pipeline: Pipeline, github: DemoGitHub, switch: FakeSwitch
 ) -> None:
     """PR #4: tests pass with and without the change, and Loki cites the unused import."""
-    await pipeline.open_pr(FAKE_FIX)
+    await pipeline.open_pr(FAKE_FIX, UNUSED_IMPORT_FINDING)
     await pipeline.run_huginn()
     assert any(post.startswith("Huginn: issue not reproduced") for post in switch.room_posts)
-
-    loki = await pipeline.wake_loki(FAKE_FIX, UNUSED_IMPORT_FINDING)
-    assert (loki.saved, loki.rejected) == (1, ())
     assert await pipeline.pr_state(FAKE_FIX) == "card_posted"
 
-    card, post_id = await pipeline.wake_heimdall(FAKE_FIX)
-    assert card.fix_status.startswith("Issue not reproduced")
+    post_id = switch.approval_post_id()
+    card = switch.posts_by_id[post_id].message
+    assert "Issue not reproduced" in card
     # The card escapes Markdown in text that came from the PR or from Loki.
-    assert r"switch\_agent/config\.py:3" in card.approval_message
+    assert r"switch\_agent/config\.py:3" in card
 
     await pipeline.react_thumbs_up(post_id, OUTSIDER)
     assert switch.thread_replies == [NON_MAINTAINER_REPLY]

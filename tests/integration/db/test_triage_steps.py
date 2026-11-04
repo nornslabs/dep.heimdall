@@ -3,11 +3,13 @@
 import uuid
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
+from heimdall.adapters.queue.enqueue import HEIMDALL_QUEUE, LOKI_QUEUE
 from heimdall.modules.tenancy.api import on_installation_event
 from heimdall.modules.triage.api import (
     EventKind,
@@ -115,3 +117,53 @@ async def test_check_finished_on_an_old_head_does_not_count_after_a_push(
     await _intake_passed(sessions, ctx, pr_id, "head-2")
 
     assert await _finish(sessions, ctx, pr_id, REVIEW_DONE, "head-2") == "checking"
+
+
+async def _jobs(
+    sessions: async_sessionmaker[AsyncSession], pr_id: uuid.UUID, task_name: str
+) -> list[tuple[str, dict[str, object]]]:
+    """Return ``(queue, args)`` for every job of one task that names this PR."""
+    async with unit_of_work(sessions) as session:
+        connection = await session.connection()
+        rows = await connection.execute(
+            text(
+                "SELECT queue_name, args FROM procrastinate_jobs "
+                "WHERE task_name = :task AND args->>'pr_id' = :pr_id ORDER BY id"
+            ),
+            {"task": task_name, "pr_id": str(pr_id)},
+        )
+        return [(row[0], row[1]) for row in rows]
+
+
+async def test_loki_is_woken_once_the_pr_reaches_checking(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """Loki runs alongside Huginn: intake passing queues one review job for that head."""
+    ctx, _repo_id, pr_id = await _checking_pr(sessions, "head-1")
+
+    jobs = await _jobs(sessions, pr_id, "loki.run_review")
+
+    assert jobs == [
+        (
+            LOKI_QUEUE,
+            {"installation_id": ctx.installation_id, "pr_id": str(pr_id), "head_sha": "head-1"},
+        )
+    ]
+
+
+async def test_heimdall_is_woken_only_when_the_card_is_due(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """One check finishing is not enough; the second one queues the card job."""
+    ctx, _repo_id, pr_id = await _checking_pr(sessions, "head-1")
+
+    await _finish(sessions, ctx, pr_id, REPRO_DONE, "head-1")
+    assert await _jobs(sessions, pr_id, "heimdall.build_card") == []
+
+    await _finish(sessions, ctx, pr_id, REVIEW_DONE, "head-1")
+    assert await _jobs(sessions, pr_id, "heimdall.build_card") == [
+        (
+            HEIMDALL_QUEUE,
+            {"installation_id": ctx.installation_id, "pr_id": str(pr_id), "head_sha": "head-1"},
+        )
+    ]

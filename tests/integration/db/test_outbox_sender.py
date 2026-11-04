@@ -45,7 +45,11 @@ class RecordingSender:
         self.sent.append(message.idempotency_key)
 
 
-async def _write(sessions: async_sessionmaker[AsyncSession], channel: str = "github") -> str:
+async def _write(
+    sessions: async_sessionmaker[AsyncSession],
+    channel: str = "github",
+    payload: dict[str, object] | None = None,
+) -> str:
     key = f"test-{uuid.uuid4().hex}"
     async with unit_of_work(sessions) as session:
         await write_outbox(
@@ -53,7 +57,7 @@ async def _write(sessions: async_sessionmaker[AsyncSession], channel: str = "git
             installation_id=InstallationId(55),
             channel=channel,
             kind="pr.comment",
-            payload={"body": "thanks"},
+            payload=payload or {"body": "thanks"},
             idempotency_key=key,
         )
     return key
@@ -102,24 +106,50 @@ async def test_failed_message_is_retried_after_backoff(
     assert message.last_error == "GitHubUnavailable"
 
 
-async def test_message_dies_after_its_last_retry_and_raises_alert(
-    sessions: async_sessionmaker[AsyncSession],
-) -> None:
-    key = await _write(sessions)
+async def _kill(sessions: async_sessionmaker[AsyncSession], channel: str, key: str) -> None:
+    """Fail one message through every retry until it is dead."""
     sends = 1 + len(RETRY_DELAYS)  # the first try, then one retry per delay
-    github = RecordingSender([GitHubUnavailable("502") for _ in range(sends)], fail_key=key)
+    sender = RecordingSender([GitHubUnavailable("502") for _ in range(sends)], fail_key=key)
     now = datetime.now(UTC) + timedelta(seconds=1)
     for _ in range(sends):
-        await _send(sessions, {"github": github}, now=now)
+        await _send(sessions, {channel: sender}, now=now)
         now += timedelta(minutes=11)
+
+
+async def test_dead_room_message_alerts_its_room_in_words(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    key = await _write(sessions, "switch", {"channel_id": "room-9", "message": "checklist"})
+
+    await _kill(sessions, "switch", key)
 
     message = await _load(sessions, key)
     alert = await _load(sessions, f"alert:{message.id}")
     assert message.status == "dead"
-    assert message.attempts == sends
-    assert alert.channel == "switch"
-    assert alert.kind == "alert.outbox_dead"
-    assert alert.installation_id == 55
+    assert message.attempts == 1 + len(RETRY_DELAYS)
+    assert (alert.channel, alert.kind, alert.installation_id) == ("switch", "alert.outbox_dead", 55)
+    assert alert.payload["channel_id"] == "room-9"
+    text = alert.payload["message"]
+    assert isinstance(text, str)
+    assert str(message.id) in text
+    assert "GitHubUnavailable" in text
+    assert "checklist" not in text  # the dead message's content is never echoed back
+
+
+async def test_dead_message_without_a_room_raises_no_alert(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    key = await _write(sessions)
+
+    await _kill(sessions, "github", key)
+
+    message = await _load(sessions, key)
+    assert message.status == "dead"
+    async with unit_of_work(sessions) as session:
+        rows = await session.exec(
+            select(OutboxMessage).where(OutboxMessage.idempotency_key == f"alert:{message.id}")
+        )
+        assert rows.all() == []
 
 
 async def test_non_retryable_error_dies_immediately(

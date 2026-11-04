@@ -5,6 +5,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from heimdall.adapters.db.tenant import select_for_tenant
@@ -97,6 +98,34 @@ async def start_run(
         )
         await _enqueue_run_jobs(session, ctx, run)
         return ReproRunRef(run.id, attempt, head_sha, ReproStatus.QUEUED)
+
+
+async def latest_run_id(
+    sessions: async_sessionmaker[AsyncSession],
+    ctx: TenantCtx,
+    pr_id: uuid.UUID,
+    head_sha: str,
+) -> uuid.UUID | None:
+    """Find the newest reproduction attempt for one PR head, so a card can cite it.
+
+    Args:
+        sessions: Tenant database session factory.
+        ctx: Tenant and request context.
+        pr_id: Triage PR row identifier.
+        head_sha: Commit the attempt ran against.
+
+    Returns:
+        The attempt id, or None when no attempt was started for that head.
+    """
+    statement = (
+        select_for_tenant(ReproRun, ctx.installation_id)
+        .where(ReproRun.pr_id == pr_id, ReproRun.head_sha == head_sha)
+        .order_by(col(ReproRun.attempt).desc())
+        .limit(1)
+    )
+    async with unit_of_work(sessions) as session:
+        run = (await session.exec(statement)).first()
+        return run.id if run is not None else None
 
 
 async def get_run(

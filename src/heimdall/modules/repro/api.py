@@ -16,6 +16,7 @@ from heimdall.modules.repro.domain import (
 )
 from heimdall.modules.repro.service import (
     get_run,
+    latest_run_id,
     mark_runs_stale,
     record_result,
     start_run,
@@ -33,6 +34,7 @@ __all__ = [
     "Verdict",
     "derive_verdict",
     "get_run",
+    "latest_run_id",
     "mark_runs_stale",
     "record_result",
     "start_run",

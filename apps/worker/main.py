@@ -6,6 +6,7 @@ from procrastinate import App
 
 from apps.worker.tasks import (
     register_actions_result_task,
+    register_installation_task,
     register_intake_task,
     register_repro_timeout_task,
     register_triage_task,
@@ -55,6 +56,7 @@ async def run_worker() -> None:
     register_intake_task(queue_app, sessions, GitHubApiReader(github_clients))
     register_triage_task(queue_app, sessions)
     register_repro_timeout_task(queue_app, sessions)
+    register_installation_task(queue_app, sessions, settings.default_switch_room_id)
     register_actions_result_task(queue_app, sessions, GitHubActionsResults(github_clients))
     stop = asyncio.Event()
     log.info("worker_started", outbox_channels=sorted(senders))

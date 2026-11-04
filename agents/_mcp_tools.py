@@ -1,18 +1,20 @@
-"""Agent tool clients that call the real MCP server in-process, plus a scripted model for Loki.
+"""In-process MCP clients for the agents' scoped tool servers.
 
-Going through ``create_server`` keeps the per-agent tool scoping and the server's argument
-validation in the path, the same way a stdio MCP session would.
+Going through ``apps.mcp.main.create_server`` keeps the per-agent tool allowlist and the
+server's argument validation in the path, the same way a stdio MCP session would.
 """
 
-from collections.abc import Sequence
 from typing import cast
 
 from mcp.server.mcpserver import MCPServer
 
-from heimdall.adapters.ai import ChatMessage, ChatResponse, ToolChoice, ToolSpec, Usage
-from tests.e2e.fake_world import as_object
 
-SCRIPTED_MODEL = "scripted-e2e"
+def as_object(value: object) -> dict[str, object]:
+    """Narrow a parsed JSON value to an object, failing loudly on a bad tool result."""
+    if not isinstance(value, dict):
+        raise TypeError("MCP tool result must be a JSON object")
+    items: dict[object, object] = value  # pyright: ignore[reportUnknownVariableType]
+    return {str(key): item for key, item in items.items()}
 
 
 class McpToolClient:
@@ -134,28 +136,3 @@ class HeimdallMcpTools(McpToolClient):
             body=body,
         )
         return {key: str(value) for key, value in result.items()}
-
-
-class ScriptedModel:
-    """A ``ChatModel`` that always answers with one fixed reply, for Loki's single call."""
-
-    def __init__(self, reply: str) -> None:
-        """Keep the reply text the model returns."""
-        self._reply = reply
-        self.calls: list[tuple[ChatMessage, ...]] = []
-
-    @property
-    def model(self) -> str:
-        """The model name recorded in usage."""
-        return SCRIPTED_MODEL
-
-    async def chat(
-        self,
-        messages: Sequence[ChatMessage],
-        tools: Sequence[ToolSpec] = (),
-        *,
-        tool_choice: ToolChoice = "auto",
-    ) -> ChatResponse:
-        """Record the prompt and return the scripted reply."""
-        self.calls.append(tuple(messages))
-        return ChatResponse(self._reply, (), Usage(0, 0), SCRIPTED_MODEL)
