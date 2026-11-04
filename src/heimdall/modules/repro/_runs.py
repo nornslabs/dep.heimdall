@@ -274,13 +274,35 @@ async def _enqueue_run_jobs(
     )
 
 
+async def _has_open_attempt(session: AsyncSession, ctx: TenantCtx, run: ReproRun) -> bool:
+    """Tell whether another attempt for the same PR head is still queued or running."""
+    open_statuses = (ReproStatus.QUEUED.value, ReproStatus.RUNNING.value)
+    statement = (
+        select_for_tenant(ReproRun, ctx.installation_id)
+        .where(
+            ReproRun.pr_id == run.pr_id,
+            ReproRun.head_sha == run.head_sha,
+            ReproRun.id != run.id,
+            col(ReproRun.status).in_(open_statuses),
+        )
+        .limit(1)
+    )
+    return (await session.exec(statement)).first() is not None
+
+
 async def _complete_triage_step(
     session: AsyncSession,
     ctx: TenantCtx,
     pr: PrSnapshot,
     run: ReproRun,
 ) -> None:
-    """Report a finished or timed out run while preserving head scoping."""
+    """Report reproduction done once the last attempt for this head has ended.
+
+    Huginn starts every attempt up front, so the first to end must not report: triage would
+    build Heimdall's card while the newest attempt still has no verdict.
+    """
+    if await _has_open_attempt(session, ctx, run):
+        return
     await on_step_done_in_transaction(
         session,
         ctx,
