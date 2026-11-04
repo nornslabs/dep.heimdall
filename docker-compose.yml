@@ -182,9 +182,13 @@ services:
       - path: secrets/switch-agents.env
         required: false
 
+  # A stdio server: with no stdin attached it exits at once and `restart` loops it. The agents
+  # build their tools in-process, so nothing needs this running. For debugging:
+  #   docker compose --profile mcp run --rm -i mcp
   mcp:
     <<: *heimdall
     command: ["mcp"]
+    profiles: ["mcp"]
 
   bridge:
     <<: *heimdall
