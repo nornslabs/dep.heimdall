@@ -180,6 +180,29 @@ def format_approval_message(
     return f"{body.rstrip()}\n\n{marker}"
 
 
+_PLAIN_LOGIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*")
+
+
+def mention_maintainers(message: str, logins: tuple[str, ...]) -> str:
+    """Put an ``@`` mention of each maintainer above a card so they are notified of it.
+
+    The mention is only for the room: the saved draft and its hash are untouched, so what a
+    maintainer approves and what reaches GitHub stay exactly the card body.
+
+    Args:
+        message: The Switch post body, including its hidden approval marker.
+        logins: Maintainer logins. Any that is not a plain login is skipped, so repository
+            config cannot inject a broadcast mention or markup into the room.
+
+    Returns:
+        The message with a mention line above it, or unchanged when no login is usable.
+    """
+    mentions = [f"@{login}" for login in logins if _PLAIN_LOGIN.fullmatch(login)]
+    if not mentions:
+        return message
+    return f"{' '.join(mentions)}, your review is needed:\n\n{message}"
+
+
 def render_mechanical_task_block(
     task_id: str,
     finding_id: UUID,

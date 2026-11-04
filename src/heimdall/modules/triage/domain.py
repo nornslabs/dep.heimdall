@@ -49,7 +49,9 @@ class PrEvent:
         kind: State machine event to apply.
         facts: Guard facts already gathered from trusted adapters and stored results.
         linked_issue: Optional issue linked from intake.
-        room_id: Optional Switch channel for room effects.
+        room_id: Optional Mattermost channel the bot posts the checklist to.
+        agent_room_id: Optional Switch room UUID. When set, the checklist is posted by Heimdall
+            as the root of the PR's thread instead of by the bot.
         room_message: Optional rendered checklist or failure details.
         repo_full_name: GitHub owner and repository name for queued intake.
     """
@@ -64,6 +66,7 @@ class PrEvent:
     facts: Facts
     linked_issue: int | None = None
     room_id: str | None = None
+    agent_room_id: str | None = None
     room_message: str | None = None
     repro_test_cmd: str | None = None
     repo_full_name: str = ""

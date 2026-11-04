@@ -53,8 +53,8 @@ Reconnects with `start_from` and `expected_generation`: every other eviction, cl
 network errors, with capped exponential backoff. Message bodies are never logged. The cursor
 is held in memory only, so a process restart resumes from `head`.
 
-Switch's `/message` call takes only `room_id` and `content`, so an agent cannot reply into
-a thread; plan on one room per PR.
+Switch's `/message` call takes only `room_id` and `content`, so it cannot thread. Threaded posts
+use the `post_message` operation instead (`AgentPoster.post_in_thread`, below).
 
 ## Posting as an agent from the outbox (`routing.py`, `agent/posters.py`)
 
@@ -67,9 +67,28 @@ non-retryable `SwitchRequestFailed`, so the row goes dead and the room is told.
 
 `build_agent_posters` reads `SWITCH_<AGENT>_AGENT_ID` and `_API_KEY` for each agent. An agent with
 neither is left out; an agent with only one fails the worker's start naming the missing variable.
-The worker needs no open WebSocket to post: `POST /agents/{id}/message` works on the key alone
-(checked against Switch 0.31.0). The agent-post text reaches Mattermost unchanged, including the
+A flat post needs no open WebSocket: `POST /agents/{id}/message` works on the key alone (checked
+against Switch 0.31.0). The agent-post text reaches Mattermost unchanged, including the
 HTML-comment approval marker, so 👍 approval through the bridge is unaffected.
+
+### One thread per PR
+
+A row whose payload also has `pr_id` is posted into that PR's thread, through
+`POST /agents/{id}/ops/post_message` (`{"body", "thread_id"}`, replying `{"result": {"event_id"}}`).
+That operation has no room argument: it posts to the room the agent's live WebSocket connection
+has claimed, so the request names that connection. `load_agent_credentials` derives the connection
+id from the agent id (`connection_id_for`), so the worker and the agent's own service agree on it.
+The call therefore works only while that agent's service is connected, and fails as non-retryable
+`SwitchRequestFailed` (Switch answers 400) when it is not, or when the agent claims several rooms.
+
+* The row with `thread_role: "root"` opens the thread: its Switch event id is saved on
+  `prs.switch_thread_id` through the `ThreadStore` port (`apps/worker/_threads.py` wires it to
+  triage). Intake's checklist is the root, posted by Heimdall.
+* Every other row with a `pr_id` replies in the saved thread. If the root has not been delivered
+  yet it fails as `SwitchUnavailable`, so the outbox retries it instead of posting it flat.
+* A root row that finds a thread already saved (a later push re-ran intake) replies in it.
+* The first saved thread wins, so two roots racing cannot split the conversation.
+* A row with no `pr_id`, or a sender built without a thread store, posts flat as before.
 
 Agent rows carry the Switch room UUID (`repos.switch_agent_room_id`), not the Mattermost channel
 id the bot uses; see `docs/switch.md` ("Two room ids").

@@ -14,7 +14,7 @@ from heimdall.modules.intake._rules import evaluate_rules
 from heimdall.modules.intake._stale import mark_results_stale
 from heimdall.modules.intake.domain import IntakeFacts, RuleResult
 from heimdall.modules.intake.ports import IntakeReader
-from heimdall.modules.tenancy.api import load_config, repo_switch_room_id
+from heimdall.modules.tenancy.api import load_config, repo_agent_room_id, repo_switch_room_id
 from heimdall.modules.triage.api import (
     EventKind,
     Facts,
@@ -113,6 +113,7 @@ async def _save_results_and_transition(
         if not is_current:
             return
         room_id = await repo_switch_room_id(session, ctx, RepoId(pr.repo_id))
+        agent_room_id = await repo_agent_room_id(session, ctx, RepoId(pr.repo_id))
         message = render_checklist(pr.number, results)
         transition = await on_step_done_in_transaction(
             session,
@@ -123,6 +124,7 @@ async def _save_results_and_transition(
             head_sha,
             Facts(intake_passed=all(result.passed for result in results)),
             room_id=room_id,
+            agent_room_id=agent_room_id,
             room_message=message,
             linked_issue=linked_issue_number(facts.body),
             repro_test_cmd=repro_test_cmd,

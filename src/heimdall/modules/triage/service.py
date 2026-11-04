@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from heimdall.adapters.db.columns import JsonObject
 from heimdall.adapters.db.outbox.writer import write_outbox
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
@@ -35,6 +36,7 @@ from heimdall.modules.triage.domain import (
     with_checks_done,
 )
 from heimdall.modules.triage.models import Event, Pr
+from heimdall.shared.agents import AgentName
 from heimdall.shared.context import TenantCtx
 from heimdall.shared.ids import RepoId
 
@@ -178,6 +180,7 @@ async def on_step_done(
     facts: Facts,
     *,
     room_id: str | None = None,
+    agent_room_id: str | None = None,
     room_message: str | None = None,
     repro_test_cmd: str | None = None,
 ) -> Transition | Rejected:
@@ -191,7 +194,9 @@ async def on_step_done(
         kind: Completed step event.
         head_sha: Commit the step evaluated.
         facts: Current rule and agent build results.
-        room_id: Optional Switch room for result messages.
+        room_id: Optional Mattermost channel for the bot's checklist.
+        agent_room_id: Optional Switch room UUID; when set, Heimdall posts the checklist as
+            the root of the PR's thread.
         room_message: Rendered checklist or failure explanation.
         repro_test_cmd: Validated repository test command queued for Huginn.
 
@@ -208,6 +213,7 @@ async def on_step_done(
             head_sha,
             facts,
             room_id=room_id,
+            agent_room_id=agent_room_id,
             room_message=room_message,
             repro_test_cmd=repro_test_cmd,
         )
@@ -223,6 +229,7 @@ async def on_step_done_in_transaction(
     facts: Facts,
     *,
     room_id: str | None = None,
+    agent_room_id: str | None = None,
     room_message: str | None = None,
     linked_issue: int | None = None,
     repro_test_cmd: str | None = None,
@@ -241,7 +248,9 @@ async def on_step_done_in_transaction(
         head_sha: Commit evaluated by the step.
         facts: Rule and build results used by guards. A step reports only its own
             check; checks already finished on ``head_sha`` are added from the PR row.
-        room_id: Optional Switch room for resulting outbox messages.
+        room_id: Optional Mattermost channel for the bot's checklist.
+        agent_room_id: Optional Switch room UUID; when set, Heimdall posts the checklist as
+            the root of the PR's thread.
         room_message: Rendered checklist or failure explanation.
         linked_issue: Issue number found during intake, when present.
         repro_test_cmd: Validated repository test command queued for Huginn.
@@ -268,6 +277,7 @@ async def on_step_done_in_transaction(
         facts=replace(facts, repo_enabled=True),
         linked_issue=linked_issue if linked_issue is not None else pr.linked_issue,
         room_id=room_id,
+        agent_room_id=agent_room_id,
         room_message=room_message,
         repro_test_cmd=repro_test_cmd,
     )
@@ -445,8 +455,8 @@ async def _apply_effects(
 
         await mark_results_stale(session, ctx, str(pr_id), event.head_sha)
         await mark_runs_stale(session, ctx, str(pr_id), event.head_sha)
-    if event.room_id and event.room_message:
-        await _write_room_effects(session, ctx, event, effects)
+    if (event.agent_room_id or event.room_id) and event.room_message:
+        await _write_room_effects(session, ctx, event, effects, pr_id)
 
 
 async def _enqueue_agent_wakeups(
@@ -485,6 +495,7 @@ async def _write_room_effects(
     ctx: TenantCtx,
     event: PrEvent,
     effects: tuple[Effect, ...],
+    pr_id: UUID,
 ) -> None:
     """Write Switch checklist or intake failure to the transactional outbox."""
     room_effect = next(
@@ -495,13 +506,37 @@ async def _write_room_effects(
         ),
         None,
     )
-    if room_effect is None or event.room_id is None or event.room_message is None:
+    if room_effect is None or event.room_message is None:
+        return
+    payload = _checklist_payload(event, pr_id)
+    if payload is None:
         return
     await write_outbox(
         session,
         installation_id=ctx.installation_id,
         channel="switch",
         kind="room.message",
-        payload={"channel_id": event.room_id, "message": event.room_message},
+        payload=payload,
         idempotency_key=f"triage:{event.event_id}:{room_effect.value}",
     )
+
+
+def _checklist_payload(event: PrEvent, pr_id: UUID) -> JsonObject | None:
+    """Build the checklist post: Heimdall's thread root when the repo has an agent room.
+
+    A repo with no agent room keeps the Mattermost bot's flat post, so nothing changes for a
+    deployment that has not registered agents.
+    """
+    if event.room_message is None:
+        return None
+    if event.agent_room_id:
+        return {
+            "agent": AgentName.HEIMDALL.value,
+            "channel_id": event.agent_room_id,
+            "message": event.room_message,
+            "pr_id": str(pr_id),
+            "thread_role": "root",
+        }
+    if event.room_id:
+        return {"channel_id": event.room_id, "message": event.room_message}
+    return None

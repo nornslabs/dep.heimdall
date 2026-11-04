@@ -6,7 +6,7 @@ external effects remain behind the approval and outbox flows.
 
 Public functions: `save_card`, `save_draft`, `create_mechanical_task`, `get_draft`,
 `get_draft_in_transaction`,
-`render_card`, `render_mechanical_task_block`, `format_approval_message`, `hash_draft`,
+`render_card`, `render_mechanical_task_block`, `format_approval_message`, `mention_maintainers`, `hash_draft`,
 and `parse_command`.
 
 | File | Role |

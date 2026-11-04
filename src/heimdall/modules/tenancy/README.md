@@ -6,7 +6,8 @@ Repository auto-suggest pauses are tenant-scoped and persist until policy is re-
 
 Public functions: `parse_installation_event`, `on_installation_event`, `get_tenant`,
 `get_repo_id`, `get_repo_id_in_transaction`, `load_config`, `load_config_in_transaction`,
-`repo_is_enabled`, `repo_switch_room_id`, `repo_auto_suggest_paused`,
+`repo_is_enabled`, `repo_switch_room_id`, `repo_maintainers` (valid logins from the cached
+config, for card mentions), `repo_auto_suggest_paused`,
 `set_auto_suggest_paused`, `set_auto_suggest_paused_in_transaction` and `link_repo_room`.
 
 | File | Role |

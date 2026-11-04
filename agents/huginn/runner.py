@@ -102,6 +102,7 @@ def register_huginn_task(
                     "agent": AgentName.HUGINN.value,
                     "channel_id": room_id,
                     "message": result.message,
+                    "pr_id": pr_id,
                 },
                 idempotency_key=f"huginn:{installation_id}:{pr_id}:{head_sha}:verdict",
             )

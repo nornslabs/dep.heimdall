@@ -82,6 +82,7 @@ def register_loki_task(
                 payload={
                     "agent": AgentName.LOKI.value,
                     "channel_id": job.agent_room_id,
+                    "pr_id": pr_id,
                     "message": format_review_message(
                         saved=result.saved,
                         rejected=len(result.rejected),
