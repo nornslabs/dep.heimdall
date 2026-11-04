@@ -2,6 +2,7 @@
 
 import asyncio
 import uuid
+from collections.abc import Awaitable, Callable
 
 from procrastinate import App
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -56,12 +57,15 @@ class _DatabaseHuginnTools:
 def register_huginn_task(
     queue_app: App,
     sessions: async_sessionmaker[AsyncSession],
+    *,
+    sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
 ) -> None:
     """Register the transactional ready-for-reproduction job.
 
     Args:
         queue_app: Procrastinate app used by the Huginn worker.
         sessions: Tenant-scoped database sessions.
+        sleep: Wait between status polls; the e2e replay passes one that advances its fakes.
     """
 
     @queue_app.task(name="huginn.run_repro")
@@ -81,6 +85,7 @@ def register_huginn_task(
             uuid.UUID(pr_id),
             head_sha,
             test_cmd,
+            sleep=sleep,
         )
         if not room_id:
             return
