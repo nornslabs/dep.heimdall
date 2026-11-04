@@ -44,6 +44,11 @@ class AgentConnectionConfig:
         """URL of ``POST /agents/{id}/message``."""
         return f"{self.base_url.rstrip('/')}/agents/{self.agent_id}/message"
 
+    @property
+    def post_message_url(self) -> str:
+        """URL of ``POST /agents/{id}/ops/post_message``, the call that can post into a thread."""
+        return f"{self.base_url.rstrip('/')}/agents/{self.agent_id}/ops/post_message"
+
 
 def websocket_url(
     config: AgentConnectionConfig, *, start_from: int | None, expected_generation: int | None

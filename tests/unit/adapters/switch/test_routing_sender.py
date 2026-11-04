@@ -23,6 +23,9 @@ class RecordingPoster:
             raise self._error
         self.posts.append((room_id, content))
 
+    async def post_in_thread(self, content: str, thread_id: str | None) -> str:
+        raise AssertionError("a row with no pr_id must not be threaded")
+
 
 class RecordingBot:
     """Stands in for the Mattermost bot sender."""
