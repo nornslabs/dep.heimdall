@@ -28,7 +28,8 @@ async def send_checked(
     path: str,
     *,
     action: str,
-    body: dict[str, object],
+    body: dict[str, object] | None = None,
+    service: str = "Switch",
 ) -> httpx.Response:
     """Send one JSON request and map every failure to a Heimdall error.
 
@@ -40,24 +41,25 @@ async def send_checked(
         method: HTTP method.
         path: Path under the base URL.
         action: Short phrase for messages, for example ``"registering huginn"``.
-        body: JSON body.
+        body: JSON body, or None for a request without one.
+        service: Name used in messages, ``"Switch"`` or ``"Mattermost"``.
 
     Returns:
         The successful response.
 
     Raises:
         SwitchUnavailable: Network failure, timeout, 429 or a 5xx; safe to retry later.
-        SwitchRejected: Switch refused the request (a SwitchRequestFailed); retrying will not help.
+        SwitchRejected: The service refused it (a SwitchRequestFailed); retrying will not help.
     """
     try:
         response = await client.request(method, path, json=body)
     except httpx.HTTPError as error:
         raise SwitchUnavailable(
-            f"Switch unreachable while {action}: {type(error).__name__}"
+            f"{service} unreachable while {action}: {type(error).__name__}"
         ) from error
     if response.is_success:
         return response
     status = response.status_code
     if status >= _SERVER_ERROR_FLOOR or status == _TOO_MANY_REQUESTS:
-        raise SwitchUnavailable(f"Switch returned {status} while {action}")
-    raise SwitchRejected(f"Switch returned {status} while {action}", status=status)
+        raise SwitchUnavailable(f"{service} returned {status} while {action}")
+    raise SwitchRejected(f"{service} returned {status} while {action}", status=status)

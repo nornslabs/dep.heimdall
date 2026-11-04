@@ -51,8 +51,10 @@ token. Configure the App with `metadata: read`, `contents: read`, `pull requests
    cp .env.example .env
    ```
 
-   Set `HEIMDALL_GITHUB_APP_ID`, `HEIMDALL_GITHUB_WEBHOOK_SECRET`, `HEIMDALL_SWITCH_URL`,
-   `HEIMDALL_SWITCH_TOKEN`, and `SMEE_URL`. Create a Smee channel and use its URL as the GitHub
+   Set `HEIMDALL_GITHUB_APP_ID`, `HEIMDALL_GITHUB_WEBHOOK_SECRET`, `HEIMDALL_SWITCH_URL`, and
+   `SMEE_URL`, plus the Switch block (admin and registration values; see
+   [docs/switch.md](docs/switch.md)). Leave `HEIMDALL_SWITCH_TOKEN` and the two
+   `HEIMDALL_DEFAULT_SWITCH_*ROOM_ID` values empty: step 3 fills them in. Create a Smee channel and use its URL as the GitHub
    App webhook URL. Keep the webhook secret the same in GitHub and `.env`.
 
    Point the agents at a model. One `LLM_DEFAULT_*` block serves all three agents, and any
@@ -72,23 +74,29 @@ token. Configure the App with `metadata: read`, `contents: read`, `pull requests
 2. Put the downloaded GitHub App private key at `secrets/github-app.pem`. The Compose stack mounts
    it read-only at `/run/secrets/github-app.pem`. Never commit `.env` or `secrets/`.
 
-3. Create the `triage` room in Switch and give the configured bot access. The default
-   `heimdall.yml` room name is `triage`. Put the room's channel id in
-   `HEIMDALL_DEFAULT_SWITCH_ROOM_ID`; every repo the App is installed on is linked to it. To move
-   one repo to another room later, run
-   `python -m apps.admin.link_room <installation_id> <repo_id> <room_id>`.
+3. Start the infrastructure, then run the one-off setup. It creates the `triage` channel and a
+   Mattermost access token, registers the three agents with Switch, finds Switch's own room id and
+   writes `HEIMDALL_SWITCH_TOKEN`, `HEIMDALL_DEFAULT_SWITCH_ROOM_ID` and
+   `HEIMDALL_DEFAULT_SWITCH_AGENT_ROOM_ID` to `.env`. It is safe to re-run.
+
+   ```bash
+   docker compose up -d
+   uv run python -m apps.bridge.setup          # add --print to also show the token
+   ```
+
+   Every repo the App is installed on is linked to those rooms. To move one repo later, run
+   `python -m apps.admin.link_room <installation_id> <repo_id> <room_id> --agent-room-id <uuid>`.
 
 4. Start the stack:
 
    ```bash
-   docker compose up --build
+   docker compose --profile app --profile tunnel up -d --build
    ```
 
-   Compose starts Postgres, Mattermost, migrations, the API, worker, bridge, the three
-   agents, the Smee forwarder, and the Switch server. The API listens at `http://localhost:8001`;
+   Compose adds the migrations, the API, worker, MCP server, bridge, the three agents and the
+   Smee forwarder to the infrastructure already running. The API listens at `http://localhost:8001`;
    Mattermost listens at `http://localhost:8065`; Switch listens at `http://localhost:8000` with
-   its admin UI at `http://localhost:3000`. Switch needs its own `.env` values first; see
-   [docs/switch.md](docs/switch.md).
+   its admin UI at `http://localhost:3000`. See [docs/switch.md](docs/switch.md) for the Switch details.
 
 5. Install the GitHub App on a repository with Actions enabled. Open or update a PR and check its
    thread in the `triage` room. Completed reproduction workflows return through the `workflow_run`

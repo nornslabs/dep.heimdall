@@ -11,6 +11,7 @@ from heimdall.adapters.switch.provisioning._http import PROVISIONING_TIMEOUT_SEC
 GATEWAY_PREFIX: Final = "/gateway"
 _LOGIN_PATH: Final = "/auth/login"
 _ANY: Final = "*"
+_MATTERMOST_BRIDGE: Final = "mattermost"
 
 
 def triage_room_policy(room_id: str) -> dict[str, object]:
@@ -88,6 +89,34 @@ class SwitchAdmin:
             action=f"setting addressing for agent {agent_id}",
             body={"policy": triage_room_policy(room_id)},
         )
+
+    async def find_room_id(self, *, channel_slug: str) -> str | None:
+        """Find the Switch room that Switch bridged from a Mattermost channel.
+
+        Switch names bridged rooms by display name, so the match is on the channel's URL slug,
+        which Heimdall controls.
+
+        Args:
+            channel_slug: Mattermost channel name, for example ``triage``.
+
+        Returns:
+            Switch's own room UUID, or None while the channel has not been bridged yet.
+
+        Raises:
+            SwitchUnavailable: Switch was unreachable or failed; safe to retry.
+            SwitchRequestFailed: Login or the listing was refused.
+        """
+        await self.sign_in()
+        response = await send_checked(
+            self._client, "GET", "/rooms", action=f"listing rooms for {channel_slug}"
+        )
+        suffix = f"/channels/{channel_slug}"
+        for room in response.json():
+            if room.get("bridge_type") == _MATTERMOST_BRIDGE and str(
+                room.get("external_channel_url", "")
+            ).endswith(suffix):
+                return str(room["id"])
+        return None
 
     async def aclose(self) -> None:
         """Close the pooled HTTP client."""
