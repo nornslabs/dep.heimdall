@@ -40,8 +40,55 @@ Heimdall's own API moved to host port `8001` (`API_PORT`) because Switch needs `
    display name) and the `MATTERMOST_USER` account.
 
 `HEIMDALL_SWITCH_URL` and `HEIMDALL_SWITCH_TOKEN` are unchanged and still describe the Mattermost
-connection the current bridge uses. Agent registration (HEI-80) and the agent adapter (HEI-81)
-build on this server.
+connection the current bridge uses. The agent adapter (HEI-81) builds on this server.
+
+## Registering the agents
+
+Huginn, Loki and Heimdall each need their own Switch identity. Registration is a one-off step
+after the stack is up. Switch shows each API key once, so the command writes ids and keys
+straight to `secrets/switch-agents.env` (gitignored, owner-only) and never prints them.
+
+1. **Create the triage room by hand.** In Mattermost, create a channel named `triage` in the
+   `heimdall` team. Registration does not create it: Switch only adds each bot to the team's
+   default channels (`town-square`, `off-topic`). Add the three bots (`huginn`, `loki`,
+   `heimdall`) to `triage`, and note the room id.
+2. **Run the command**, from the repo root with the values from `.env` exported:
+
+   ```bash
+   export SWITCH_API_URL=http://localhost:8000      # your SWITCH_API_PORT
+   export AGENT_REGISTRATION_TOKEN GATEWAY_ADMIN_EMAIL GATEWAY_ADMIN_PASSWORD
+   uv run python -m apps.bridge.register_agents --room-id <triage room id>
+   ```
+
+   Without `--room-id` the agents are registered but addressing stays at Switch's default,
+   which only lets their owner mention them. With it, Gateway admin credentials are used once
+   to restrict each agent to being addressed by people in that room: no other agent, and not
+   the Switch platform.
+3. **Check it.** The three agents appear in the Gateway (`http://localhost:3000`).
+
+| Variable | Set by | Meaning |
+|---|---|---|
+| `SWITCH_<AGENT>_AGENT_ID` | the command | Switch id of `HUGINN`, `LOKI` or `HEIMDALL`. |
+| `SWITCH_<AGENT>_API_KEY` | the command | That agent's bearer key. Secret. |
+| `SWITCH_API_URL` | you | Switch API root; `http://switch:8000` inside compose. |
+
+**Re-running.** An agent that already exists is skipped with a message and the command exits
+1; the others still register. `--overwrite` replaces existing agents, which **rotates their
+keys and invalidates the old ones**, so any running agent must be restarted with the new key.
+
+**Retrying addressing.** If registration worked but the addressing step failed (wrong room id,
+admin sign-in refused, Switch down), run the command again with `--addressing-only --room-id
+<id>`. It reads the agent ids from the secrets file, registers nothing and rotates no key.
+
+**Safety checks.** The command checks the secrets file is writable, and signs in as admin when
+`--room-id` is given, *before* asking Switch for any key. If a key still cannot be written, it
+says so, stops, and never prints the key; Switch shows a key only once, so fix the file and
+re-run with `--overwrite`. `SWITCH_API_URL` must be `https`, except for this machine or a
+compose service name such as `http://switch:8000`, and must not contain credentials.
+
+**Not wired into compose yet.** `secrets/switch-agents.env` is not loaded by any compose
+service, and containers need `SWITCH_API_URL=http://switch:8000` rather than `localhost`. That
+wiring belongs with the code that starts the agents' connections (HEI-81/HEI-82).
 
 ## Versions
 
