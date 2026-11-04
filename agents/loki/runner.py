@@ -13,15 +13,19 @@ from agents._mcp_tools import LokiMcpTools
 from agents._runtime import ChatModel
 from agents.heimdall.config import load_ai_config as load_heimdall_config
 from agents.huginn.config import load_ai_config as load_huginn_config
+from agents.loki._message import format_review_message
 from agents.loki.agent import run_loki
 from agents.loki.config import AGENT_NAME, load_ai_config
 from apps.mcp.main import create_server
 from heimdall.adapters.ai import AiAdapter, AiConfig
 from heimdall.adapters.db.engine import create_engine, make_session_factory
+from heimdall.adapters.db.outbox.writer import write_outbox
+from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.github.auth import GitHubAppClients, load_private_key
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.adapters.queue.app import create_queue_app
 from heimdall.adapters.queue.enqueue import LOKI_QUEUE
+from heimdall.shared.agents import AgentName
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.errors import ConfigInvalid
 from heimdall.shared.ids import InstallationId
@@ -65,7 +69,26 @@ def register_loki_task(
             log.info("loki_job_stale", installation_id=installation_id, pr_id=pr_id)
             return
         tools = LokiMcpTools(create_server(sessions, reader, AGENT_NAME))
-        await run_loki(tools, model, installation_id, job.snapshot.id, job.repo_full_name)
+        result = await run_loki(tools, model, installation_id, job.snapshot.id, job.repo_full_name)
+        if result.dropped or not job.room_id:
+            return
+        async with unit_of_work(sessions) as session:
+            await write_outbox(
+                session,
+                installation_id=ctx.installation_id,
+                channel="switch",
+                kind="room.message",
+                payload={
+                    "agent": AgentName.LOKI.value,
+                    "channel_id": job.room_id,
+                    "message": format_review_message(
+                        saved=result.saved,
+                        rejected=len(result.rejected),
+                        head_sha=result.head_sha,
+                    ),
+                },
+                idempotency_key=f"loki:{installation_id}:{pr_id}:{head_sha}:review",
+            )
 
 
 async def run_worker() -> None:
