@@ -33,8 +33,6 @@ async def save_findings(
     event_id: str,
     findings: tuple[FindingInput, ...],
     config: ReviewConfig,
-    *,
-    repro_done: bool = False,
 ) -> FindingBatch:
     """Validate and save findings for the current PR head, then finish Loki's step.
 
@@ -48,7 +46,6 @@ async def save_findings(
         event_id: Stable job result idempotency key.
         findings: Untrusted proposed findings from Loki.
         config: Effective review limits and skipped paths.
-        repro_done: Whether Huginn already finished on this head.
 
     Returns:
         Accepted and rejected findings in input order.
@@ -71,7 +68,7 @@ async def save_findings(
             event_id,
             EventKind.REVIEW_FINISHED,
             head_sha,
-            Facts(review_done=True, repro_done=repro_done),
+            Facts(review_done=True),
         )
     return batch
 
