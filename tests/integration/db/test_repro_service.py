@@ -200,6 +200,55 @@ async def test_timeout_is_idempotent_and_finishes_the_run(
     assert saved.status == ReproStatus.TIMED_OUT.value
 
 
+async def _repro_done_head(
+    sessions: async_sessionmaker[AsyncSession], ctx: TenantCtx, pr_id: uuid.UUID
+) -> str | None:
+    """Read which head the PR's reproduction check was last reported done for."""
+    async with unit_of_work(sessions) as session:
+        pr = (
+            await session.exec(select_for_tenant(Pr, ctx.installation_id).where(Pr.id == pr_id))
+        ).one()
+        return pr.repro_done_head
+
+
+async def test_repro_step_stays_open_until_every_attempt_has_finished(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """One finished attempt must not report reproduction done while others still run.
+
+    Otherwise triage builds Heimdall's card early and it cites an attempt with no verdict.
+    """
+    ctx, pr_id = await _checking_pr(sessions)
+    first = await start_run(sessions, ctx, pr_id, "head-1", "pytest -q")
+    second = await start_run(sessions, ctx, pr_id, "head-1", "pytest -q")
+    passed = RunOutcome(passed=True, duration_seconds=1.0)
+
+    await record_result(sessions, ctx, first.id, passed, passed)
+
+    assert await _repro_done_head(sessions, ctx, pr_id) is None
+
+    await record_result(sessions, ctx, second.id, passed, passed)
+
+    assert await _repro_done_head(sessions, ctx, pr_id) == "head-1"
+
+
+async def test_repro_step_completes_when_the_last_open_attempt_times_out(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """A timeout counts as a finished attempt, so a hung run cannot hold the card forever."""
+    ctx, pr_id = await _checking_pr(sessions)
+    first = await start_run(sessions, ctx, pr_id, "head-1", "pytest -q")
+    second = await start_run(sessions, ctx, pr_id, "head-1", "pytest -q")
+    passed = RunOutcome(passed=True, duration_seconds=1.0)
+
+    await record_result(sessions, ctx, first.id, passed, passed)
+    assert await _repro_done_head(sessions, ctx, pr_id) is None
+
+    assert await timeout_run(sessions, ctx, second.id)
+
+    assert await _repro_done_head(sessions, ctx, pr_id) == "head-1"
+
+
 async def test_start_run_enforces_the_attempt_limit_per_head(
     sessions: async_sessionmaker[AsyncSession],
 ) -> None:

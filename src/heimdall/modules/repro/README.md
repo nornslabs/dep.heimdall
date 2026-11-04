@@ -5,6 +5,10 @@ derive a verdict. Attempts are tenant scoped and limited to three per head. Star
 transactionally queues execution and timeout jobs plus an exact-payload authorized workflow
 dispatch through the approval module.
 
+Triage hears that reproduction is done only when the last attempt for a head has finished or
+timed out. An earlier attempt ending while others still run reports nothing, so Heimdall's card
+is never built against an attempt that has no verdict yet.
+
 Public functions: `start_run`, `get_run`, `latest_run_id`, `record_result`, `timeout_run`, `mark_runs_stale`, and
 `derive_verdict`.
 
