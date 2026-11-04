@@ -42,11 +42,39 @@ Heimdall's own API moved to host port `8001` (`API_PORT`) because Switch needs `
 `HEIMDALL_SWITCH_URL` and `HEIMDALL_SWITCH_TOKEN` are unchanged and still describe the Mattermost
 connection the current bridge uses. The agent adapter (HEI-81) builds on this server.
 
-## Registering the agents
+## First-time setup (one command)
 
-Huginn, Loki and Heimdall each need their own Switch identity. Registration is a one-off step
-after the stack is up. Switch shows each API key once, so the command writes ids and keys
-straight to `secrets/switch-agents.env` (gitignored, owner-only) and never prints them.
+After step 4 above (infrastructure up, app profile **not** started), run:
+
+```bash
+uv run python -m apps.bridge.setup          # reads .env; --print also shows the token
+```
+
+It runs these steps and stops at the first that cannot finish:
+
+1. Waits for Switch and Mattermost to be healthy.
+2. Signs in to Mattermost as `MATTERMOST_ADMIN_USER`, creates the `triage` channel (or reuses it)
+   and a personal access token. -> `HEIMDALL_SWITCH_TOKEN`, `HEIMDALL_DEFAULT_SWITCH_ROOM_ID`
+   (written to `.env` immediately, because Mattermost shows a token only once).
+3. Registers Huginn, Loki and Heimdall (skipped when `secrets/switch-agents.env` already has all
+   three; no key is ever rotated).
+4. Adds the three bots, and `MATTERMOST_USER` if set, to the channel.
+5. Waits for Switch to bridge the channel, then reads Switch's own room UUID.
+   -> `HEIMDALL_DEFAULT_SWITCH_AGENT_ROOM_ID`
+6. Restricts who may mention the agents to people in that room.
+
+Then start the app: `docker compose --profile app up -d`. Re-running is safe: a token that still
+works is kept, an existing channel and registered agents are reused. If step 5 times out, wait a
+few seconds and run it again. The agents claim linked rooms **when they start**, so start (or
+restart) them after the values are in `.env` and the repo is linked.
+
+Without the command, the same result takes the manual steps below.
+
+## Registering the agents by hand
+
+Huginn, Loki and Heimdall each need their own Switch identity. Switch shows each API key once, so
+the command writes ids and keys straight to `secrets/switch-agents.env` (gitignored, owner-only)
+and never prints them.
 
 1. **Register the agents**, from the repo root with the values from `.env` exported:
 
