@@ -20,12 +20,14 @@ from heimdall.modules.tenancy._repo_state import (
 from heimdall.modules.tenancy._room_lookup import (
     RoomMaintainer,
     find_room_maintainer,
+    find_room_tenant,
     linked_agent_room_ids,
 )
 
 __all__ = [
     "RoomMaintainer",
     "find_room_maintainer",
+    "find_room_tenant",
     "get_repo_full_name_in_transaction",
     "get_repo_id",
     "get_repo_id_in_transaction",

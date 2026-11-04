@@ -132,15 +132,57 @@ async def test_a_greeting_gets_a_greeting_back(
     assert str(row.payload["message"]).startswith("Heimdall: hello!")
 
 
-async def test_someone_who_is_not_a_maintainer_gets_no_reply(
+async def _denied_rows(
+    sessions: async_sessionmaker[AsyncSession], message_id: str
+) -> list[OutboxMessage]:
+    async with unit_of_work(sessions) as session:
+        statement = select(OutboxMessage).where(
+            col(OutboxMessage.idempotency_key).like(f"presence-denied:%:{message_id}")
+        )
+        return list((await session.exec(statement)).all())
+
+
+async def test_someone_who_is_not_a_maintainer_is_told_so_and_who_to_ask(
     sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
 ) -> None:
-    room, _ = await _room_with_maintainers(sessions, engine, ["alice"])
+    room, installation_id = await _room_with_maintainers(sessions, engine, ["alice"])
     message = _message(room, "mallory", "@huginn ping")
 
     await PresenceHandler(AgentName.HUGINN, sessions).handle(message)
 
     assert await _rows(sessions, message.message_id) == []
+    (row,) = await _denied_rows(sessions, message.message_id)
+    assert (row.channel, row.kind) == ("switch", "room.message")
+    assert row.installation_id == installation_id
+    assert row.payload["agent"] == "huginn"
+    assert row.payload["channel_id"] == room
+    assert "@mallory" in str(row.payload["message"])
+    assert "add `mallory` to `maintainers` in `heimdall.yml`" in str(row.payload["message"])
+    assert row.idempotency_key == f"presence-denied:huginn:{message.message_id}"
+
+
+async def test_the_same_denied_message_delivered_twice_queues_one_reply(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    room, _ = await _room_with_maintainers(sessions, engine, ["alice"])
+    message = _message(room, "mallory", "ping")
+    handler = PresenceHandler(AgentName.LOKI, sessions)
+
+    await handler.handle(message)
+    await handler.handle(message)
+
+    assert len(await _denied_rows(sessions, message.message_id)) == 1
+
+
+async def test_a_non_maintainers_other_requests_still_get_no_reply(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    room, _ = await _room_with_maintainers(sessions, engine, ["alice"])
+    message = _message(room, "mallory", "@huginn run the repro again")
+
+    await PresenceHandler(AgentName.HUGINN, sessions).handle(message)
+
+    assert await _denied_rows(sessions, message.message_id) == []
 
 
 async def test_a_room_no_repo_links_gets_no_reply(
@@ -151,6 +193,7 @@ async def test_a_room_no_repo_links_gets_no_reply(
     await PresenceHandler(AgentName.HUGINN, sessions).handle(message)
 
     assert await _rows(sessions, message.message_id) == []
+    assert await _denied_rows(sessions, message.message_id) == []
 
 
 async def test_a_message_not_addressed_to_the_agent_gets_no_reply(
@@ -189,3 +232,4 @@ async def test_a_sender_who_maintains_in_two_installations_of_a_room_gets_no_rep
     await PresenceHandler(AgentName.HUGINN, sessions).handle(message)
 
     assert await _rows(sessions, message.message_id) == []
+    assert await _denied_rows(sessions, message.message_id) == []

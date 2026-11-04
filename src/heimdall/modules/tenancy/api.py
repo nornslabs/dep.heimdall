@@ -14,6 +14,7 @@ from heimdall.modules.tenancy.ports import ConfigFileReader
 from heimdall.modules.tenancy.service import (
     RoomMaintainer,
     find_room_maintainer,
+    find_room_tenant,
     get_repo_full_name_in_transaction,
     get_repo_id,
     get_repo_id_in_transaction,
@@ -42,6 +43,7 @@ __all__ = [
     "ReviewConfig",
     "RoomMaintainer",
     "find_room_maintainer",
+    "find_room_tenant",
     "get_repo_full_name_in_transaction",
     "get_repo_id",
     "get_repo_id_in_transaction",

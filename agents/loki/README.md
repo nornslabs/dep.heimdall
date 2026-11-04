@@ -8,7 +8,7 @@ head again and drops its findings if the head has moved.
 | File | Role |
 |---|---|
 | `agent.py` | Review flow and trust-boundary messages |
-| `runner.py` | Consumer of the `loki` queue only: runs `loki.run_review`, dropping jobs for an old head, then queues one room post as Loki through the outbox, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it answers a maintainer's `ping`/`hello` |
+| `runner.py` | Consumer of the `loki` queue only: runs `loki.run_review`, dropping jobs for an old head, then queues one room post as Loki through the outbox, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it answers a maintainer's `ping`/`hello`, and tells anyone else to ask an admin to add them to `maintainers` in `heimdall.yml` |
 | `_message.py` | Private: the room post, counts only (no PR or model text), so nothing untrusted is posted under Loki's name |
 | `_findings.py` | Private parsing of the model reply into findings (capped at `MAX_FINDINGS`) |
 | `config.py` | `AGENT_NAME`, `MAX_TURNS = 8`, `MAX_FINDINGS = 5`, `load_ai_config()` (`LLM_LOKI_*`) |
