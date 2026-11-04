@@ -1,14 +1,18 @@
 # Local stack. `docker compose up` starts the complete system, including the webhook tunnel.
 
+x-heimdall-environment: &heimdall-environment
+  HEIMDALL_DATABASE_URL: postgresql://heimdall:${POSTGRES_PASSWORD:-heimdall}@postgres:5432/heimdall
+  HEIMDALL_GITHUB_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
+  # Inside compose Switch is a service name; .env's localhost value is for the host.
+  SWITCH_API_URL: http://switch:8000
+
 x-heimdall: &heimdall
   build: .
   image: heimdall:dev
   env_file:
     - path: .env
       required: false
-  environment:
-    HEIMDALL_DATABASE_URL: postgresql://heimdall:${POSTGRES_PASSWORD:-heimdall}@postgres:5432/heimdall
-    HEIMDALL_GITHUB_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
+  environment: *heimdall-environment
   volumes:
     # Fail loudly if the key is missing instead of Docker creating an empty directory there.
     - type: bind
@@ -170,18 +174,13 @@ services:
   worker:
     <<: *heimdall
     command: ["worker"]
-    # Only the worker posts as the agents, so only it gets their keys. The merge above is
-    # shallow, so env_file and environment repeat the shared entries.
+    # The worker posts as all three agents, so it alone gets every key. The merge above is
+    # shallow, so env_file is repeated here with the combined secrets file added.
     env_file:
       - path: .env
         required: false
       - path: secrets/switch-agents.env
         required: false
-    environment:
-      HEIMDALL_DATABASE_URL: postgresql://heimdall:${POSTGRES_PASSWORD:-heimdall}@postgres:5432/heimdall
-      HEIMDALL_GITHUB_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
-      # Inside compose Switch is a service name; .env's localhost value is for the host.
-      SWITCH_API_URL: http://switch:8000
 
   mcp:
     <<: *heimdall
@@ -194,14 +193,32 @@ services:
   huginn:
     <<: *heimdall
     command: ["huginn"]
+    # Holds only huginn's own Switch key (written by apps.bridge.register_agents).
+    env_file:
+      - path: .env
+        required: false
+      - path: secrets/switch-huginn.env
+        required: false
 
   loki:
     <<: *heimdall
     command: ["loki"]
+    # Holds only loki's own Switch key (written by apps.bridge.register_agents).
+    env_file:
+      - path: .env
+        required: false
+      - path: secrets/switch-loki.env
+        required: false
 
   heimdall:
     <<: *heimdall
     command: ["heimdall"]
+    # Holds only heimdall's own Switch key (written by apps.bridge.register_agents).
+    env_file:
+      - path: .env
+        required: false
+      - path: secrets/switch-heimdall.env
+        required: false
 
   tunnel:
     image: node:22-alpine

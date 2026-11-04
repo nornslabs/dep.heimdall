@@ -115,12 +115,38 @@ says so, stops, and never prints the key; Switch shows a key only once, so fix t
 re-run with `--overwrite`. `SWITCH_API_URL` must be `https`, except for this machine or a
 compose service name such as `http://switch:8000`, and must not contain credentials.
 
-**Compose wiring.** Only the `worker` service loads `secrets/switch-agents.env` (when it exists)
-and gets `SWITCH_API_URL=http://switch:8000`, so a compromised api or mcp container does not hold
-the agents' keys. The worker uses the keys to post each agent's outbox rows
-under that agent's name (routing rules: `src/heimdall/adapters/switch/README.md`).
-Restart the worker after registering or rotating keys. With a key missing for an agent, rows that
-name it die and the room is alerted; rows that name no agent still use the Mattermost bot.
+**Compose wiring.** `register_agents` writes the combined `secrets/switch-agents.env` and, beside it,
+one `secrets/switch-<agent>.env` per agent holding only that agent's id and key. Compose gives the
+`worker` the combined file (it posts as all three) and each agent service only its own file, so a
+compromised Loki process cannot post as Huginn. Every service gets `SWITCH_API_URL=http://switch:8000`.
+If you registered before the per-agent files existed, run the command again with `--overwrite`; it
+rotates the keys, so restart the worker and the agents afterwards. Rows that name an agent with no
+key die and alert the room; rows that name no agent still use the Mattermost bot.
+
+## Talking to the agents
+
+In the triage room, a maintainer can mention an agent to check it is running:
+
+```text
+@huginn ping          -> Huginn: pong, I'm alive.
+@loki hello           -> Loki: hello! I'm alive. I review a pull request's diff and file cited findings.
+@huginn @loki @heimdall ping    (all three answer)
+```
+
+`ping`, `alive`, `status`, `hello`, `hi` and `hey` are recognised, nothing else; any other text is
+ignored for now. Only a maintainer of a repo linked to that room gets an answer, so:
+
+* The room's agent id must be on a repo (`HEIMDALL_DEFAULT_SWITCH_AGENT_ROOM_ID` or `link_room
+  --agent-room-id`), and the agent claims linked rooms **when it starts**, so restart the agents
+  after linking a new room.
+* "Maintainer" is the repo's `maintainers` list from `heimdall.yml`, read from the copy intake cached
+  the last time a PR was processed. A repo that has never had a PR names nobody yet.
+* The sender is matched by their Mattermost username, which must equal their GitHub login: the same
+  assumption the 👍 approval already makes.
+
+The agent never posts from the message itself: the reply is queued in the outbox and the worker posts
+it under that agent's key. A person who maintains in two installations sharing one room gets no answer
+rather than a guess.
 
 ## Versions
 

@@ -6,7 +6,7 @@ reproduction results. Valid slash commands are parsed as data and dispatched to 
 | File | Role |
 |---|---|
 | `agent.py` | Card assembly and command routing |
-| `runner.py` | Consumer of the `heimdall` queue only: runs `heimdall.build_card`, then queues the approval message for the repo's room |
+| `runner.py` | Consumer of the `heimdall` queue only: runs `heimdall.build_card`, then queues the approval message for the repo's room, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it answers a maintainer's `ping`/`hello` |
 | `prompt.md` | Trust boundaries, allowed tools, and output format |
 | `allowed_tools.py` | Heimdall's scoped MCP tool allowlist |
 | `config.py` | `AGENT_NAME`, `MAX_TURNS = 8`, `load_ai_config()` (`LLM_HEIMDALL_*`) |

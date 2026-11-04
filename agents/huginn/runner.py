@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from agents._job_context import load_agent_room_id
+from agents._presence_runner import run_with_presence
 from agents.huginn.agent import run_huginn
 from agents.huginn.config import load_ai_config
 from heimdall.adapters.ai import AiAdapter
@@ -118,10 +119,16 @@ async def run_worker() -> None:
     database_url = settings.database_url.get_secret_value()
     engine = create_engine(database_url)
     queue_app = create_queue_app(database_url)
-    register_huginn_task(queue_app, make_session_factory(engine))
+    sessions = make_session_factory(engine)
+    register_huginn_task(queue_app, sessions)
     try:
         async with queue_app.open_async():
-            await queue_app.run_worker_async(queues=[HUGINN_QUEUE])
+            await run_with_presence(
+                AgentName.HUGINN,
+                sessions,
+                lambda: queue_app.run_worker_async(queues=[HUGINN_QUEUE]),
+                default_room_id=settings.default_switch_agent_room_id,
+            )
     finally:
         await engine.dispose()
         await ai.aclose()

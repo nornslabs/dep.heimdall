@@ -10,6 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from agents._job_context import load_pr_job_context
 from agents._lifecycle import warn_if_shared_model
 from agents._mcp_tools import LokiMcpTools
+from agents._presence_runner import run_with_presence
 from agents._runtime import ChatModel
 from agents.heimdall.config import load_ai_config as load_heimdall_config
 from agents.huginn.config import load_ai_config as load_huginn_config
@@ -107,10 +108,16 @@ async def run_worker() -> None:
         settings.github_app_id, load_private_key(settings.github_private_key_path)
     )
     queue_app = create_queue_app(database_url)
-    register_loki_task(queue_app, make_session_factory(engine), GitHubApiReader(clients), ai)
+    sessions = make_session_factory(engine)
+    register_loki_task(queue_app, sessions, GitHubApiReader(clients), ai)
     try:
         async with queue_app.open_async():
-            await queue_app.run_worker_async(queues=[LOKI_QUEUE])
+            await run_with_presence(
+                AgentName.LOKI,
+                sessions,
+                lambda: queue_app.run_worker_async(queues=[LOKI_QUEUE]),
+                default_room_id=settings.default_switch_agent_room_id,
+            )
     finally:
         await engine.dispose()
         await ai.aclose()

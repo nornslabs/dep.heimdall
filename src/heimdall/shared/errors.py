@@ -24,6 +24,10 @@ class ConfigInvalid(HeimdallError):
     """The repo's heimdall.yml could not be parsed or failed validation."""
 
 
+class RoomTenantAmbiguous(HeimdallError):
+    """A Switch room maps to more than one installation for this sender, so none can be chosen."""
+
+
 class RepoLimitReached(HeimdallError):
     """The installation already has the maximum number of repos enabled."""
 
