@@ -71,6 +71,10 @@ async def test_good_fix_card_says_reproduced_and_posts_only_after_approval(
     post_id = switch.approval_post_id()
     assert "Fix confirmed" in switch.posts_by_id[post_id].message
     assert github.comments_posted(GOOD_FIX.number) == []
+    # Each agent's own posts name that agent; triage's checklist names none (the bot posts it).
+    assert switch.agent_who_posted("Huginn: fix confirmed") == "huginn"
+    assert switch.agent_who_posted(switch.posts_by_id[post_id].message[:20]) == "heimdall"
+    assert switch.agent_who_posted("Intake checklist for pull request") is None
 
     await pipeline.react_thumbs_up(post_id, MAINTAINER)
     comments = github.comments_posted(GOOD_FIX.number)

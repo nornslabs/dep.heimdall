@@ -220,9 +220,18 @@ class FakeSwitch:
     posts_by_id: dict[str, RoomPost] = field(default_factory=dict[str, RoomPost])
     users: dict[str, str] = field(default_factory=dict[str, str])
     thread_replies: list[str] = field(default_factory=list[str])
+    agent_by_message: dict[str, str | None] = field(default_factory=dict[str, str | None])
 
     async def send(self, message: OutboxMessage) -> None:
-        """Deliver one Switch outbox row to the room, where the bridge can later find it."""
+        """Deliver one Switch outbox row to the room, where the bridge can later find it.
+
+        Also remembers which agent the row named (``None`` for the bot) so a replay can check
+        who spoke.
+        """
+        agent = message.payload.get("agent")
+        self.agent_by_message[str(message.payload["message"])] = (
+            agent if isinstance(agent, str) else None
+        )
         self.post(str(message.payload["channel_id"]), str(message.payload["message"]))
 
     def post(self, channel_id: str, message: str) -> str:
@@ -231,6 +240,20 @@ class FakeSwitch:
         self.posts_by_id[post_id] = RoomPost(post_id, channel_id, "", message)
         self.room_posts.append(message)
         return post_id
+
+    def agent_who_posted(self, text_prefix: str) -> str | None:
+        """Return the agent named by the outbox row whose text starts with ``text_prefix``.
+
+        Returns:
+            The agent name, or ``None`` when the row named no agent (the bot posted it).
+
+        Raises:
+            LookupError: no such post reached the room.
+        """
+        for text, agent in self.agent_by_message.items():
+            if text.startswith(text_prefix):
+                return agent
+        raise LookupError(f"no post starting with {text_prefix!r} reached the room")
 
     def approval_post_id(self) -> str:
         """Return the id of the newest post carrying an approval marker.

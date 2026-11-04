@@ -101,9 +101,12 @@ says so, stops, and never prints the key; Switch shows a key only once, so fix t
 re-run with `--overwrite`. `SWITCH_API_URL` must be `https`, except for this machine or a
 compose service name such as `http://switch:8000`, and must not contain credentials.
 
-**Not wired into compose yet.** `secrets/switch-agents.env` is not loaded by any compose
-service, and containers need `SWITCH_API_URL=http://switch:8000` rather than `localhost`. That
-wiring belongs with the code that starts the agents' connections (HEI-81/HEI-82).
+**Compose wiring.** Only the `worker` service loads `secrets/switch-agents.env` (when it exists)
+and gets `SWITCH_API_URL=http://switch:8000`, so a compromised api or mcp container does not hold
+the agents' keys. The worker uses the keys to post each agent's outbox rows
+under that agent's name (routing rules: `src/heimdall/adapters/switch/README.md`).
+Restart the worker after registering or rotating keys. With a key missing for an agent, rows that
+name it die and the room is alerted; rows that name no agent still use the Mattermost bot.
 
 ## Versions
 

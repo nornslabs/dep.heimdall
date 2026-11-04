@@ -17,6 +17,7 @@ from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.queue.app import create_queue_app
 from heimdall.adapters.queue.enqueue import HUGINN_QUEUE
 from heimdall.modules.repro.api import get_run, start_run
+from heimdall.shared.agents import AgentName
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.ids import InstallationId
 
@@ -95,7 +96,11 @@ def register_huginn_task(
                 installation_id=tenant_id,
                 channel="switch",
                 kind="room.message",
-                payload={"channel_id": room_id, "message": result.message},
+                payload={
+                    "agent": AgentName.HUGINN.value,
+                    "channel_id": room_id,
+                    "message": result.message,
+                },
                 idempotency_key=f"huginn:{installation_id}:{pr_id}:{head_sha}:verdict",
             )
 

@@ -170,6 +170,18 @@ services:
   worker:
     <<: *heimdall
     command: ["worker"]
+    # Only the worker posts as the agents, so only it gets their keys. The merge above is
+    # shallow, so env_file and environment repeat the shared entries.
+    env_file:
+      - path: .env
+        required: false
+      - path: secrets/switch-agents.env
+        required: false
+    environment:
+      HEIMDALL_DATABASE_URL: postgresql://heimdall:${POSTGRES_PASSWORD:-heimdall}@postgres:5432/heimdall
+      HEIMDALL_GITHUB_PRIVATE_KEY_PATH: /run/secrets/github-app.pem
+      # Inside compose Switch is a service name; .env's localhost value is for the host.
+      SWITCH_API_URL: http://switch:8000
 
   mcp:
     <<: *heimdall

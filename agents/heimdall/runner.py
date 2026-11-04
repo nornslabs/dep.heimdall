@@ -21,6 +21,7 @@ from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.adapters.queue.app import create_queue_app
 from heimdall.adapters.queue.enqueue import HEIMDALL_QUEUE
 from heimdall.modules.repro.api import latest_run_id
+from heimdall.shared.agents import AgentName
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId
@@ -81,7 +82,11 @@ def register_heimdall_task(
                 installation_id=tenant_id,
                 channel="switch",
                 kind="room.message",
-                payload={"channel_id": job.room_id, "message": card.approval_message},
+                payload={
+                    "agent": AgentName.HEIMDALL.value,
+                    "channel_id": job.room_id,
+                    "message": card.approval_message,
+                },
                 idempotency_key=f"heimdall:{installation_id}:{pr_id}:{head_sha}:card",
             )
 

@@ -1,6 +1,7 @@
 """Background worker: runs queued jobs and the outbox sender loop side by side."""
 
 import asyncio
+from contextlib import AsyncExitStack
 
 from procrastinate import App
 
@@ -19,7 +20,9 @@ from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.adapters.github.sender import GitHubSender
 from heimdall.adapters.queue.app import create_queue_app
 from heimdall.adapters.queue.enqueue import DEFAULT_QUEUE
-from heimdall.adapters.switch import SwitchSender
+from heimdall.adapters.switch import SwitchRoutingSender, SwitchSender
+from heimdall.adapters.switch.agent.credentials import switch_api_url
+from heimdall.adapters.switch.agent.posters import build_agent_posters
 from heimdall.shared.logging import configure_logging, get_logger
 from heimdall.shared.settings import get_settings
 
@@ -40,10 +43,13 @@ async def run_worker() -> None:
     settings = get_settings()
     configure_logging(settings.log_level)
     senders: dict[str, ChannelSender] = {}
+    # Built before anything is opened so a half-set agent key fails the start, not a post.
+    agent_posters = build_agent_posters(switch_api_url())
+    bot: SwitchSender | None = None
     if settings.switch_url and settings.switch_token:
-        senders["switch"] = SwitchSender(
-            settings.switch_url, settings.switch_token.get_secret_value()
-        )
+        bot = SwitchSender(settings.switch_url, settings.switch_token.get_secret_value())
+    if bot is not None or agent_posters:
+        senders["switch"] = SwitchRoutingSender(bot, agent_posters)
     database_url = settings.database_url.get_secret_value()
     engine = create_engine(database_url)
     queue_app = create_queue_app(database_url)
@@ -65,10 +71,13 @@ async def run_worker() -> None:
             tasks.create_task(_run_jobs_then_stop_outbox(queue_app, stop))
             tasks.create_task(run_outbox_loop(sessions, senders, stop))
     finally:
-        sender = senders.get("switch")
-        if isinstance(sender, SwitchSender):
-            await sender.aclose()
-        await engine.dispose()
+        # One failing close must not leave the others open.
+        async with AsyncExitStack() as closers:
+            closers.push_async_callback(engine.dispose)
+            for poster in agent_posters.values():
+                closers.push_async_callback(poster.aclose)
+            if bot is not None:
+                closers.push_async_callback(bot.aclose)
         log.info("worker_stopped")
 
 
