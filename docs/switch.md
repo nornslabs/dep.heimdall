@@ -48,23 +48,38 @@ Huginn, Loki and Heimdall each need their own Switch identity. Registration is a
 after the stack is up. Switch shows each API key once, so the command writes ids and keys
 straight to `secrets/switch-agents.env` (gitignored, owner-only) and never prints them.
 
-1. **Create the triage room by hand.** In Mattermost, create a channel named `triage` in the
-   `heimdall` team. Registration does not create it: Switch only adds each bot to the team's
-   default channels (`town-square`, `off-topic`). Add the three bots (`huginn`, `loki`,
-   `heimdall`) to `triage`, and note the room id.
-2. **Run the command**, from the repo root with the values from `.env` exported:
+1. **Register the agents**, from the repo root with the values from `.env` exported:
 
    ```bash
    export SWITCH_API_URL=http://localhost:8000      # your SWITCH_API_PORT
    export AGENT_REGISTRATION_TOKEN GATEWAY_ADMIN_EMAIL GATEWAY_ADMIN_PASSWORD
-   uv run python -m apps.bridge.register_agents --room-id <triage room id>
+   uv run python -m apps.bridge.register_agents
    ```
 
-   Without `--room-id` the agents are registered but addressing stays at Switch's default,
-   which only lets their owner mention them. With it, Gateway admin credentials are used once
-   to restrict each agent to being addressed by people in that room: no other agent, and not
-   the Switch platform.
-3. **Check it.** The three agents appear in the Gateway (`http://localhost:3000`).
+   Switch creates a Mattermost bot for each agent and adds it to the team's default channels
+   (`town-square`, `off-topic`). Until addressing is set, only an agent's owner can mention it.
+2. **Create the triage room by hand.** In Mattermost, create a channel named `triage` in the
+   `heimdall` team and add the three bots (`huginn`, `loki`, `heimdall`) to it. Within a few
+   seconds Switch bridges it as a room named `Mattermost: triage`.
+3. **Find the Switch room id.** It is Switch's own UUID, **not** the Mattermost channel id:
+
+   ```bash
+   docker compose exec postgres psql -U heimdall -d switch -Atc \
+     "select id from rooms where name = 'Mattermost: triage'"
+   ```
+4. **Restrict who may mention the agents** to people in that room. This signs in once as the
+   Gateway admin and rotates no key:
+
+   ```bash
+   uv run python -m apps.bridge.register_agents --addressing-only --room-id <switch room id>
+   ```
+
+   No other agent, and not the Switch platform, may address them. (Passing `--room-id` in step 1
+   does the same if the room already exists.)
+5. **Check it.** The three agents appear in the Gateway (`http://localhost:3000`). In `#triage`,
+   post `@loki hello`. Until an agent's connection is running, Switch answers on its behalf that
+   it is offline, which shows the mention was accepted. A `docker compose logs switch` line
+   `Addressing denied … not permitted in room` means the room id is wrong.
 
 | Variable | Set by | Meaning |
 |---|---|---|
