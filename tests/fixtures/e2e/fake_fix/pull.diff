@@ -1,0 +1,39 @@
+diff --git a/switch_agent/config.py b/switch_agent/config.py
+index 2fd8b05..eaa1ca1 100644
+--- a/switch_agent/config.py
++++ b/switch_agent/config.py
+@@ -1,5 +1,6 @@
+ """Configuration management for the Switch AI agent."""
+ 
++import re
+ from functools import lru_cache
+ from typing import Literal
+ 
+@@ -81,9 +82,9 @@ class Settings(BaseSettings):
+     def ws_url(self) -> str:
+         """Convert HTTP URL to WebSocket URL."""
+         url = self.switch_bridge_url.rstrip("/")
+-        if url.startswith("https://"):
+-            return url.replace("https://", "wss://", 1)
+-        return url.replace("http://", "ws://", 1)
++        scheme = "wss" if url.startswith("https://") else "ws"
++        host = url.split("://", 1)[1]
++        return f"{scheme}://{host}"
+ 
+ 
+ @lru_cache
+diff --git a/tests/test_ws_url.py b/tests/test_ws_url.py
+new file mode 100644
+index 0000000..dcbdd56
+--- /dev/null
++++ b/tests/test_ws_url.py
+@@ -0,0 +1,9 @@
++"""Tests for turning the bridge URL into a WebSocket URL."""
++
++from switch_agent.config import Settings
++
++
++def test_https_bridge_url_becomes_wss() -> None:
++    settings = Settings(switch_bridge_url="https://bridge.example.com/")
++
++    assert settings.ws_url == "wss://bridge.example.com"

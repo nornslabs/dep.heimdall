@@ -1,0 +1,1 @@
+{"assignees":[],"base":{"ref":"main","sha":"3159115d345ebd5d809fa347da45d3bf6e9b1cfe"},"body":"The install steps and project tree still said `switch-ai-implement`.","draft":false,"head":{"ref":"seed/rule-breaker","sha":"3f98b27beae6c1d174b56ad45d70384f92a9b284"},"labels":[],"number":5,"state":"open","title":"Use the real repo name in the README","user":{"login":"sboy99"}}

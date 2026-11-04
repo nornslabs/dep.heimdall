@@ -1,0 +1,64 @@
+diff --git a/switch_agent/http_client.py b/switch_agent/http_client.py
+index a6cb86c..b6551a7 100644
+--- a/switch_agent/http_client.py
++++ b/switch_agent/http_client.py
+@@ -13,6 +13,8 @@
+ from switch_agent.models import (
+     AddressingMode,
+     AgentOperationsResponse,
++    AgentRegistrationRequest,
++    AgentRegistrationResponse,
+     ConnectionModel,
+     IntegrationProfile,
+     ListRoomsResponse,
+@@ -55,14 +57,14 @@ def _update_auth(self, api_key: str) -> None:
+         if self._client:
+             self._client.headers["Authorization"] = f"Bearer {api_key}"
+ 
+-    async def register_agent(self, request: RegisterAgentRequest) -> RegisterAgentResponse:
++    async def register_agent(self, request: AgentRegistrationRequest) -> AgentRegistrationResponse:
+         """Register a new agent with Switch."""
+         logger.info("registering_agent", name=request.name)
+         response = await self._client.post("/agents", json=request.model_dump(exclude_none=True))
+         response.raise_for_status()
+         data = response.json()
+         logger.info("agent_registered", agent_id=data["id"])
+-        return RegisterAgentResponse(**data)
++        return AgentRegistrationResponse(**data)
+ 
+     async def update_agent_addressing(self, agent_id: str, addressing: AddressingMode) -> None:
+         """Update who can address this agent."""
+@@ -160,9 +162,9 @@ def create_register_request(
+     connector_type: str,
+     integration_profile: IntegrationProfile,
+     display_name: Optional[str] = None,
+-) -> RegisterAgentRequest:
++) -> AgentRegistrationRequest:
+     """Create an agent registration request."""
+-    return RegisterAgentRequest(
++    return AgentRegistrationRequest(
+         name=name,
+         description=description,
+         connector_type=connector_type,
+diff --git a/tests/test_register_request.py b/tests/test_register_request.py
+new file mode 100644
+index 0000000..bd6d24f
+--- /dev/null
++++ b/tests/test_register_request.py
+@@ -0,0 +1,16 @@
++"""Tests for building the agent registration request."""
++
++from switch_agent.http_client import create_integration_profile, create_register_request
++from switch_agent.models import AgentRegistrationRequest
++
++
++def test_register_request_is_built_from_agent_settings() -> None:
++    request = create_register_request(
++        name="demo-agent",
++        description="Demo agent",
++        connector_type="fastapi-custom",
++        integration_profile=create_integration_profile(),
++    )
++
++    assert isinstance(request, AgentRegistrationRequest)
++    assert request.name == "demo-agent"

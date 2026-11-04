@@ -1,0 +1,119 @@
+"""Replay the three seeded demo PRs through the whole pipeline, as the demo shows them.
+
+Each test opens a recorded PR, lets the jobs, agents and outbox run, and checks what reached
+the room and GitHub. Agents run their real loops; only Loki's model reply is scripted.
+"""
+
+import json
+
+import pytest
+
+from apps.bridge.approval import NON_MAINTAINER_REPLY
+from tests.e2e.fake_world import (
+    MAINTAINER,
+    DemoGitHub,
+    FakeSwitch,
+    ReproScript,
+    load_seeded_pr,
+)
+from tests.e2e.pipeline import Pipeline
+
+pytestmark = pytest.mark.e2e
+
+GOOD_FIX = load_seeded_pr(
+    "good_fix",
+    ReproScript(
+        with_fix_passed=True,
+        without_fix_passed=False,
+        failures=("tests/test_register_request.py::test_register_request - NameError",),
+    ),
+)
+FAKE_FIX = load_seeded_pr("fake_fix", ReproScript(with_fix_passed=True, without_fix_passed=True))
+RULE_BREAKER = load_seeded_pr(
+    "rule_breaker", ReproScript(with_fix_passed=True, without_fix_passed=True)
+)
+
+NO_FINDINGS = json.dumps({"findings": []})
+UNUSED_IMPORT_FINDING = json.dumps(
+    {
+        "findings": [
+            {
+                "file": "switch_agent/config.py",
+                "line": 3,
+                "text": "`re` is imported but never used.",
+                "severity": "warning",
+                "mechanical_category": "lint",
+            }
+        ]
+    }
+)
+OUTSIDER = "drive-by-reviewer"
+
+
+async def assert_nothing_failed(pipeline: Pipeline) -> None:
+    """Every job and outbox delivery in the replay succeeded."""
+    assert await pipeline.failed_jobs() == []
+    assert await pipeline.outbox_errors() == []
+
+
+async def test_good_fix_card_says_reproduced_and_posts_only_after_approval(
+    pipeline: Pipeline, github: DemoGitHub, switch: FakeSwitch
+) -> None:
+    """PR #3: intake passes, the paired run confirms the fix, and 👍 posts the exact card."""
+    await pipeline.open_pr(GOOD_FIX)
+    assert await pipeline.pr_state(GOOD_FIX) == "checking"
+    assert "Ready for reproduction and review." in switch.room_posts[0]
+
+    await pipeline.run_huginn()
+    assert any(post.startswith("Huginn: fix confirmed") for post in switch.room_posts)
+    loki = await pipeline.wake_loki(GOOD_FIX, NO_FINDINGS)
+    assert loki.saved == 0
+    assert await pipeline.pr_state(GOOD_FIX) == "card_posted"
+
+    card, post_id = await pipeline.wake_heimdall(GOOD_FIX)
+    assert card.fix_status.startswith("Fix confirmed")
+    assert github.comments_posted(GOOD_FIX.number) == []
+
+    await pipeline.react_thumbs_up(post_id, MAINTAINER)
+    comments = github.comments_posted(GOOD_FIX.number)
+    assert len(comments) == 1
+    assert "Fix confirmed" in comments[0]
+    await assert_nothing_failed(pipeline)
+
+
+async def test_fake_fix_card_says_not_reproduced_with_loki_finding(
+    pipeline: Pipeline, github: DemoGitHub, switch: FakeSwitch
+) -> None:
+    """PR #4: tests pass with and without the change, and Loki cites the unused import."""
+    await pipeline.open_pr(FAKE_FIX)
+    await pipeline.run_huginn()
+    assert any(post.startswith("Huginn: issue not reproduced") for post in switch.room_posts)
+
+    loki = await pipeline.wake_loki(FAKE_FIX, UNUSED_IMPORT_FINDING)
+    assert (loki.saved, loki.rejected) == (1, ())
+    assert await pipeline.pr_state(FAKE_FIX) == "card_posted"
+
+    card, post_id = await pipeline.wake_heimdall(FAKE_FIX)
+    assert card.fix_status.startswith("Issue not reproduced")
+    # The card escapes Markdown in text that came from the PR or from Loki.
+    assert r"switch\_agent/config\.py:3" in card.approval_message
+
+    await pipeline.react_thumbs_up(post_id, OUTSIDER)
+    assert switch.thread_replies == [NON_MAINTAINER_REPLY]
+    assert github.comments_posted(FAKE_FIX.number) == []
+    await assert_nothing_failed(pipeline)
+
+
+async def test_rule_breaker_fails_intake_and_writes_nothing_to_github(
+    pipeline: Pipeline, github: DemoGitHub, switch: FakeSwitch
+) -> None:
+    """PR #5: no linked issue, assignee or label, so intake fails and no agent runs."""
+    await pipeline.open_pr(RULE_BREAKER)
+    await pipeline.run_huginn()
+
+    assert await pipeline.pr_state(RULE_BREAKER) == "intake_failed"
+    assert len(switch.room_posts) == 1
+    assert "Resolve the failed checks" in switch.room_posts[0]
+    assert await pipeline.latest_repro_run(RULE_BREAKER) is None
+    assert github.writes() == []
+    await assert_nothing_failed(pipeline)
