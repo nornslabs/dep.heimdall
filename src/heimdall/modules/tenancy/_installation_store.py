@@ -1,6 +1,6 @@
 """Writes for installation events: idempotent upserts, so a redelivered webhook changes nothing."""
 
-from sqlalchemy import update
+from sqlalchemy import func, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -14,7 +14,9 @@ from heimdall.modules.tenancy.models import Installation, Repo
 from heimdall.shared.ids import InstallationId, RepoId
 
 
-async def apply_installation_event(session: AsyncSession, event: InstallationEvent) -> None:
+async def apply_installation_event(
+    session: AsyncSession, event: InstallationEvent, default_room_id: str | None = None
+) -> None:
     """Apply one installation event inside the caller's transaction.
 
     The installation row is upserted first on every event, so a repositories event for an
@@ -23,10 +25,11 @@ async def apply_installation_event(session: AsyncSession, event: InstallationEve
     Args:
         session: A session inside ``unit_of_work``.
         event: The parsed webhook.
+        default_room_id: Switch room given to enabled repos that have none yet.
     """
     await _upsert_installation(session, event)
     for repo in event.repos_enabled:
-        await _enable_repo(session, event.installation_id, repo)
+        await _enable_repo(session, event.installation_id, repo, default_room_id)
     if event.repos_disabled:
         await _disable_repos(session, event.installation_id, event.repos_disabled)
 
@@ -49,14 +52,23 @@ async def _upsert_installation(session: AsyncSession, event: InstallationEvent) 
 
 
 async def _enable_repo(
-    session: AsyncSession, installation_id: InstallationId, repo: RepoSummary
+    session: AsyncSession,
+    installation_id: InstallationId,
+    repo: RepoSummary,
+    default_room_id: str | None,
 ) -> None:
-    """Create the repo, or re-enable it and refresh its name (repos can be renamed)."""
+    """Create the repo, or re-enable it and refresh its name (repos can be renamed).
+
+    The default room fills an empty link only, so a room an operator chose is never replaced.
+    """
     changes = {"full_name": repo.full_name, "enabled": True, "installation_id": installation_id}
-    statement = (
-        insert(Repo)
-        .values(repo_id=repo.repo_id, **changes)
-        .on_conflict_do_update(index_elements=["repo_id"], set_=changes)
+    statement = insert(Repo).values(repo_id=repo.repo_id, switch_room_id=default_room_id, **changes)
+    statement = statement.on_conflict_do_update(
+        index_elements=["repo_id"],
+        set_={
+            **changes,
+            "switch_room_id": func.coalesce(Repo.switch_room_id, statement.excluded.switch_room_id),
+        },
     )
     await session.exec(statement)
 

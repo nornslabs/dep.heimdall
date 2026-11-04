@@ -101,6 +101,7 @@ async def handle_webhook_delivery(
     sessions: async_sessionmaker[AsyncSession],
     ctx: TenantCtx,
     delivery_id: str,
+    default_room_id: str | None = None,
 ) -> Transition | Rejected | None:
     """Load one persisted delivery, apply its PR event and mark it handled.
 
@@ -108,6 +109,7 @@ async def handle_webhook_delivery(
         sessions: Session factory for webhook handling.
         ctx: Tenant and request context.
         delivery_id: GitHub delivery id stored by the API endpoint.
+        default_room_id: Switch room for repos an installation event enables.
 
     Returns:
         The state transition, or the reason the webhook was rejected.
@@ -130,7 +132,7 @@ async def handle_webhook_delivery(
 
         installation_event = parse_installation_event(event_name, payload)
         if installation_event is not None:
-            await on_installation_event(sessions, installation_event)
+            await on_installation_event(sessions, installation_event, default_room_id)
         await _mark_delivery_handled(sessions, ctx, delivery_id)
         return None
     event = pull_request_event(delivery_id, event_name, action, payload)

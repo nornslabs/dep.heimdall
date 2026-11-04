@@ -97,3 +97,33 @@ async def set_auto_suggest_paused_in_transaction(
     if repo is None:
         raise ValueError("repository is not registered for this installation")
     repo.auto_suggest_paused = paused
+
+
+async def link_repo_room(
+    sessions: async_sessionmaker[AsyncSession],
+    ctx: TenantCtx,
+    repo_id: RepoId,
+    room_id: str,
+) -> None:
+    """Point one repository at the Switch room where its triage is posted.
+
+    Args:
+        sessions: Tenant database session factory.
+        ctx: Tenant context that scopes the repository lookup.
+        repo_id: GitHub repository identifier.
+        room_id: Switch channel id; replaces any room linked before.
+
+    Raises:
+        ValueError: the repository is not registered for this installation.
+    """
+    async with unit_of_work(sessions) as session:
+        statement = (
+            select_for_tenant(Repo, ctx.installation_id)
+            .where(Repo.repo_id == repo_id)
+            .with_for_update()
+        )
+        result = await session.exec(statement)
+        repo = result.first()
+        if repo is None:
+            raise ValueError("repository is not registered for this installation")
+        repo.switch_room_id = room_id

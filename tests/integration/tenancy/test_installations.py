@@ -9,12 +9,13 @@ from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.modules.tenancy.api import (
     get_tenant,
+    link_repo_room,
     on_installation_event,
     parse_installation_event,
 )
 from heimdall.modules.tenancy.models import Repo
 from heimdall.shared.errors import InstallationNotFound, InstallationSuspended
-from heimdall.shared.ids import InstallationId
+from heimdall.shared.ids import InstallationId, RepoId
 
 pytestmark = pytest.mark.integration
 
@@ -235,3 +236,54 @@ async def test_get_tenant_uses_given_request_id(sessions: async_sessionmaker[Asy
 
     assert with_id.request_id == "delivery-123"
     assert without_id.request_id
+
+
+async def _room(engine: AsyncEngine, repo_id: int) -> str | None:
+    async with engine.connect() as conn:
+        row = await conn.execute(
+            text("SELECT switch_room_id FROM repos WHERE repo_id = :id"), {"id": repo_id}
+        )
+        return row.scalar_one()
+
+
+async def test_new_repo_gets_the_default_room(
+    engine: AsyncEngine, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    inst, a = _fresh_id(), _fresh_id()
+    event = parse_installation_event(
+        "installation", _payload(inst, "created", repositories=[_repo(a, "a")])
+    )
+    assert event is not None
+
+    await on_installation_event(sessions, event, default_room_id="room-default")
+
+    assert await _room(engine, a) == "room-default"
+
+
+async def test_default_room_never_replaces_a_linked_room(
+    engine: AsyncEngine, sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    inst, a = _fresh_id(), _fresh_id()
+    event = parse_installation_event(
+        "installation", _payload(inst, "created", repositories=[_repo(a, "a")])
+    )
+    assert event is not None
+    await on_installation_event(sessions, event, default_room_id="room-default")
+    ctx = await get_tenant(sessions, InstallationId(inst))
+    await link_repo_room(sessions, ctx, RepoId(a), "room-chosen")
+
+    await on_installation_event(sessions, event, default_room_id="room-default")
+
+    assert await _room(engine, a) == "room-chosen"
+
+
+async def test_link_repo_room_rejects_another_tenants_repo(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    inst, other, a = _fresh_id(), _fresh_id(), _fresh_id()
+    await _apply(sessions, "installation", _payload(inst, "created", repositories=[_repo(a, "a")]))
+    await _apply(sessions, "installation", _payload(other, "created"))
+    ctx = await get_tenant(sessions, InstallationId(other))
+
+    with pytest.raises(ValueError, match="not registered"):
+        await link_repo_room(sessions, ctx, RepoId(a), "room-x")
