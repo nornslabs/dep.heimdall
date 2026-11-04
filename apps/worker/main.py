@@ -5,6 +5,7 @@ from contextlib import AsyncExitStack
 
 from procrastinate import App
 
+from apps.worker._threads import SessionThreadStore
 from apps.worker.tasks import (
     register_actions_result_task,
     register_installation_task,
@@ -48,12 +49,12 @@ async def run_worker() -> None:
     bot: SwitchSender | None = None
     if settings.switch_url and settings.switch_token:
         bot = SwitchSender(settings.switch_url, settings.switch_token.get_secret_value())
-    if bot is not None or agent_posters:
-        senders["switch"] = SwitchRoutingSender(bot, agent_posters)
     database_url = settings.database_url.get_secret_value()
     engine = create_engine(database_url)
     queue_app = create_queue_app(database_url)
     sessions = make_session_factory(engine)
+    if bot is not None or agent_posters:
+        senders["switch"] = SwitchRoutingSender(bot, agent_posters, SessionThreadStore(sessions))
     github_clients = GitHubAppClients(
         settings.github_app_id,
         load_private_key(settings.github_private_key_path),

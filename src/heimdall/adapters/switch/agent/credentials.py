@@ -3,10 +3,12 @@
 import os
 from collections.abc import Mapping
 from urllib.parse import urlsplit
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from heimdall.adapters.switch.agent.config import AgentConnectionConfig
 from heimdall.shared.errors import ConfigInvalid
 
+CONNECTION_NAMESPACE: UUID = NAMESPACE_URL
 ENV_PREFIX = "SWITCH"
 DEFAULT_SWITCH_API_URL = "http://localhost:8000"
 _ALLOWED_SCHEMES = ("http", "https")
@@ -80,7 +82,9 @@ def load_agent_credentials(
         environ: Variables to read; the process environment when omitted.
 
     Returns:
-        Connection settings with the key hidden from ``repr``.
+        Connection settings with the key hidden from ``repr``. The connection id is derived
+        from the agent id, so the agent's own service and the worker agree on it: the worker
+        names that live connection when it posts into a thread on the agent's behalf.
 
     Raises:
         ConfigInvalid: either variable is unset or blank. The error names the variable, never
@@ -90,7 +94,25 @@ def load_agent_credentials(
     id_name, key_name = credential_names(agent)
     agent_id = _required(env, id_name)
     api_key = _required(env, key_name)
-    return AgentConnectionConfig(base_url=base_url, agent_id=agent_id, api_key=api_key, rooms=rooms)
+    return AgentConnectionConfig(
+        base_url=base_url,
+        agent_id=agent_id,
+        api_key=api_key,
+        rooms=rooms,
+        connection_id=connection_id_for(agent_id),
+    )
+
+
+def connection_id_for(agent_id: str) -> str:
+    """Derive the stable connection id every process of one agent uses.
+
+    Args:
+        agent_id: The agent's id from registration.
+
+    Returns:
+        A UUID string that is the same on every call for the same agent id.
+    """
+    return str(uuid5(CONNECTION_NAMESPACE, f"heimdall-agent-connection:{agent_id}"))
 
 
 def _required(env: Mapping[str, str], name: str) -> str:

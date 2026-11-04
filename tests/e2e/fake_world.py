@@ -224,6 +224,7 @@ class FakeSwitch:
     users: dict[str, str] = field(default_factory=dict[str, str])
     thread_replies: list[str] = field(default_factory=list[str])
     agent_by_message: dict[str, str | None] = field(default_factory=dict[str, str | None])
+    payloads: list[dict[str, object]] = field(default_factory=list[dict[str, object]])
 
     async def send(self, message: OutboxMessage) -> None:
         """Deliver one Switch outbox row to the room, where the bridge can later find it.
@@ -240,6 +241,7 @@ class FakeSwitch:
         self.agent_by_message[str(message.payload["message"])] = (
             agent if isinstance(agent, str) else None
         )
+        self.payloads.append(dict(message.payload))
         self.post(ROOM_ID, str(message.payload["message"]))
 
     def post(self, channel_id: str, message: str) -> str:

@@ -4,7 +4,8 @@ The PR triage state machine. Only this module changes `prs.state`, and only thro
 `domain.next_state` (AGENTS.md rule 8).
 
 Public functions: `receive_webhook`, `handle_webhook_delivery`, `handle_event`, `on_step_done`,
-`on_step_done_in_transaction`, and `get_pr_snapshot`. `domain.py` exposes the pure
+`on_step_done_in_transaction`, `get_pr_snapshot`, and `get_switch_thread_id` /
+`save_switch_thread_id` (the Switch thread every agent replies into; the first saved wins). `domain.py` exposes the pure
 `next_state` transition function, `with_checks_done`, and its event, fact, state, and
 outcome types.
 
@@ -26,7 +27,7 @@ outcome types.
 | From | Event | Guard | To | Effects |
 |---|---|---|---|---|
 | none | `pull_request.opened` | repo enabled | `received` | enqueue intake |
-| `received` | `intake.done` | all rules pass | `checking` | outbox thread + checklist; enqueue Huginn with validated repro command; enqueue `loki.run_review` |
+| `received` | `intake.done` | all rules pass | `checking` | outbox checklist as the PR's thread root, posted by Heimdall when the repo has an agent room (else the bot); enqueue Huginn with validated repro command; enqueue `loki.run_review` |
 | `received` | `intake.done` | any rule fails | `intake_failed` | outbox failed rules |
 | `checking` | `repro.finished` / `review.finished` | both done | `card_posted` | enqueue `heimdall.build_card` |
 | `checking` | either finished | only one done | `checking` | none |

@@ -21,7 +21,9 @@ from heimdall.adapters.github.auth import GitHubAppClients, load_private_key
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.adapters.queue.app import create_queue_app
 from heimdall.adapters.queue.enqueue import HEIMDALL_QUEUE
+from heimdall.modules.desk.api import mention_maintainers
 from heimdall.modules.repro.api import latest_run_id
+from heimdall.modules.tenancy.api import repo_maintainers
 from heimdall.shared.agents import AgentName
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.github import RepoRef
@@ -78,6 +80,7 @@ def register_heimdall_task(
             log.warning("card_not_posted_no_room", installation_id=installation_id, pr_id=pr_id)
             return
         async with unit_of_work(sessions) as session:
+            maintainers = await repo_maintainers(session, ctx, snapshot.repo_id)
             await write_outbox(
                 session,
                 installation_id=tenant_id,
@@ -86,7 +89,8 @@ def register_heimdall_task(
                 payload={
                     "agent": AgentName.HEIMDALL.value,
                     "channel_id": job.agent_room_id,
-                    "message": card.approval_message,
+                    "message": mention_maintainers(card.approval_message, maintainers),
+                    "pr_id": pr_id,
                 },
                 idempotency_key=f"heimdall:{installation_id}:{pr_id}:{head_sha}:card",
             )

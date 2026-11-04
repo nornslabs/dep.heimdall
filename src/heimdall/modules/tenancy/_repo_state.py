@@ -1,5 +1,8 @@
 """Read tenant repository state inside a caller's transaction."""
 
+import re
+from typing import cast
+
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -156,3 +159,38 @@ async def link_repo_room(
         repo.switch_room_id = room_id
         if agent_room_id is not None:
             repo.switch_agent_room_id = agent_room_id
+
+
+_PLAIN_LOGIN = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*")
+
+
+async def repo_maintainers(
+    session: AsyncSession,
+    ctx: TenantCtx,
+    repo_id: RepoId,
+) -> tuple[str, ...]:
+    """Read the maintainer logins from the repository's cached config, for room mentions.
+
+    Entries that are not plain GitHub logins are dropped: config comes from the repository,
+    and anything with a space, an ``@`` or markup could otherwise turn a mention into a
+    broadcast or a link in a room post.
+
+    Args:
+        session: Session inside the caller's transaction.
+        ctx: Tenant context that scopes the repository lookup.
+        repo_id: GitHub repository identifier.
+
+    Returns:
+        The valid logins in configured order; empty when the repo, config or list is missing.
+    """
+    statement = select_for_tenant(Repo, ctx.installation_id).where(Repo.repo_id == repo_id)
+    repo = (await session.exec(statement)).first()
+    if repo is None:
+        return ()
+    raw: object = repo.config.get("maintainers")
+    if not isinstance(raw, list):
+        return ()
+    entries = cast(list[object], raw)
+    return tuple(
+        entry for entry in entries if isinstance(entry, str) and _PLAIN_LOGIN.fullmatch(entry)
+    )
