@@ -65,6 +65,37 @@ async def find_room_maintainer(
     return RoomMaintainer(InstallationId(first.installation_id), RepoId(first.repo_id))
 
 
+async def find_room_tenant(session: AsyncSession, agent_room_id: str) -> InstallationId | None:
+    """Find which tenant owns a room, so an agent can answer someone who is not a maintainer.
+
+    Unlike ``find_room_maintainer`` this does not look at who is asking, so it must only be used
+    for fixed replies that reveal nothing about the repo.
+
+    Args:
+        session: A session inside the caller's transaction.
+        agent_room_id: Switch room UUID the message arrived in.
+
+    Returns:
+        The installation whose enabled repos are linked to the room, or None when no enabled
+        repo links it.
+
+    Raises:
+        RoomTenantAmbiguous: repos of more than one installation share the room, so there is
+            no safe tenant to act for.
+    """
+    statement = (
+        select(col(Repo.installation_id))
+        .where(Repo.switch_agent_room_id == agent_room_id, col(Repo.enabled).is_(True))
+        .distinct()
+    )
+    installations = (await session.exec(statement)).all()
+    if not installations:
+        return None
+    if len(installations) > 1:
+        raise RoomTenantAmbiguous("room is shared by more than one installation")
+    return InstallationId(installations[0])
+
+
 async def linked_agent_room_ids(session: AsyncSession) -> tuple[str, ...]:
     """List the Switch rooms any enabled repo links for its agents, each once.
 

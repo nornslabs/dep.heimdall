@@ -10,6 +10,11 @@ Public functions: `parse_installation_event`, `on_installation_event`, `get_tena
 config, for card mentions), `repo_auto_suggest_paused`,
 `set_auto_suggest_paused`, `set_auto_suggest_paused_in_transaction` and `link_repo_room`.
 
+For messages sent to an agent in a Switch room: `find_room_maintainer` (the tenant a sender speaks
+for, if they are on a linked repo's cached `maintainers`) and `find_room_tenant` (the tenant that
+owns the room whoever is asking, used only for fixed replies; None for an unlinked room, and
+`RoomTenantAmbiguous` when installations share it).
+
 | File | Role |
 |---|---|
 | `api.py` | `on_installation_event`, `get_tenant`, `load_config`, `InstallationEvent`, and `RepoConfig` |

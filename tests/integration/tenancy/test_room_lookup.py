@@ -11,6 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.modules.tenancy.api import (
     find_room_maintainer,
+    find_room_tenant,
     get_tenant,
     link_repo_room,
     linked_agent_room_ids,
@@ -166,3 +167,47 @@ async def test_linked_agent_rooms_lists_each_enabled_repos_room_once(
 
     assert rooms.count(room) == 1
     assert disabled_room not in rooms
+
+
+async def _tenant(sessions: async_sessionmaker[AsyncSession], room: str) -> int | None:
+    async with unit_of_work(sessions) as session:
+        return await find_room_tenant(session, room)
+
+
+async def test_a_linked_room_resolves_to_its_tenant_whoever_is_asking(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    room = f"room-{uuid.uuid4().hex}"
+    installation_id, _ = await _repo_in_room(sessions, engine, room, ["alice"])
+
+    assert await _tenant(sessions, room) == installation_id
+
+
+async def test_a_room_no_repo_links_has_no_tenant(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    assert await _tenant(sessions, f"room-{uuid.uuid4().hex}") is None
+
+
+async def test_a_room_whose_repo_is_disabled_has_no_tenant(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    room = f"room-{uuid.uuid4().hex}"
+    _, repo_id = await _repo_in_room(sessions, engine, room, ["alice"])
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE repos SET enabled = false WHERE repo_id = :id"), {"id": repo_id}
+        )
+
+    assert await _tenant(sessions, room) is None
+
+
+async def test_a_room_shared_by_two_installations_has_no_safe_tenant(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    room = f"room-{uuid.uuid4().hex}"
+    await _repo_in_room(sessions, engine, room, ["alice"])
+    await _repo_in_room(sessions, engine, room, ["bob"])
+
+    with pytest.raises(RoomTenantAmbiguous):
+        await _tenant(sessions, room)

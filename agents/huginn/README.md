@@ -7,7 +7,7 @@ command, reads saved outcomes, and queues one aggregate verdict message through 
 | File | Role |
 |---|---|
 | `agent.py` | Bounded polling loop and deterministic verdict message |
-| `runner.py` | Consumer of the `huginn` queue only, and tenant-scoped repro tool adapter, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it answers a maintainer's `ping`/`hello` |
+| `runner.py` | Consumer of the `huginn` queue only, and tenant-scoped repro tool adapter, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it answers a maintainer's `ping`/`hello`, and tells anyone else to ask an admin to add them to `maintainers` in `heimdall.yml` |
 | `prompt.md` | Role, untrusted-data rules, and output format |
 | `allowed_tools.py` | Huginn's `start_repro` and `get_repro` MCP allowlist |
 | `config.py` | `AGENT_NAME`, `MAX_TURNS = 12`, `MAX_REPRO_RUNS`, `load_ai_config()` (`LLM_HUGINN_*`) |
