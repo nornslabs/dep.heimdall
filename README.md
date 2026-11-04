@@ -73,7 +73,10 @@ token. Configure the App with `metadata: read`, `contents: read`, `pull requests
    it read-only at `/run/secrets/github-app.pem`. Never commit `.env` or `secrets/`.
 
 3. Create the `triage` room in Switch and give the configured bot access. The default
-   `heimdall.yml` room name is `triage`.
+   `heimdall.yml` room name is `triage`. Put the room's channel id in
+   `HEIMDALL_DEFAULT_SWITCH_ROOM_ID`; every repo the App is installed on is linked to it. To move
+   one repo to another room later, run
+   `python -m apps.admin.link_room <installation_id> <repo_id> <room_id>`.
 
 4. Start the stack:
 

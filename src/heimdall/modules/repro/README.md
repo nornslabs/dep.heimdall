@@ -5,7 +5,7 @@ derive a verdict. Attempts are tenant scoped and limited to three per head. Star
 transactionally queues execution and timeout jobs plus an exact-payload authorized workflow
 dispatch through the approval module.
 
-Public functions: `start_run`, `get_run`, `record_result`, `timeout_run`, `mark_runs_stale`, and
+Public functions: `start_run`, `get_run`, `latest_run_id`, `record_result`, `timeout_run`, `mark_runs_stale`, and
 `derive_verdict`.
 
 | File | Role |

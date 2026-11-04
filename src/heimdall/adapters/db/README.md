@@ -36,6 +36,9 @@ again, so every `ChannelSender` must be idempotent per `idempotency_key`.
 - **Retryable failure** (any exception except a non-retryable `HeimdallError`): retried after
   2 s, 8 s, 30 s, 2 m, 10 m, so at most 6 sends.
 - **After the last retry**, or on a non-retryable error: `status = dead`, plus a `switch`
-  message `alert.outbox_dead` for the room. Alerts never raise alerts.
+  message `alert.outbox_dead` in the dead message's own room (its `channel_id`), in words that
+  name the outbox id, channel, kind and error type but never the message content. A dead row with
+  no `channel_id` (a GitHub comment) is logged as `outbox_alert_skipped` and raises no alert.
+  Alerts never raise alerts.
 - **`last_error`** stores only the error type, since error text can quote PR content.
 - **No sender for a channel:** the message stays `pending`.

@@ -18,6 +18,7 @@ from heimdall.modules.repro.api import (
     RunOutcome,
     Verdict,
     get_run,
+    latest_run_id,
     record_result,
     start_run,
     timeout_run,
@@ -209,3 +210,17 @@ async def test_start_run_enforces_the_attempt_limit_per_head(
 
     with pytest.raises(ReproLimitReached):
         await start_run(sessions, ctx, pr_id, "head-1", "pytest -q")
+
+
+async def test_latest_run_id_is_the_newest_attempt_for_the_head(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """Heimdall's card cites the last attempt, and nothing when no run was ever started."""
+    ctx, pr_id = await _checking_pr(sessions)
+    assert await latest_run_id(sessions, ctx, pr_id, "head-1") is None
+
+    await start_run(sessions, ctx, pr_id, "head-1", "pytest -q")
+    second = await start_run(sessions, ctx, pr_id, "head-1", "pytest -q")
+
+    assert await latest_run_id(sessions, ctx, pr_id, "head-1") == second.id
+    assert await latest_run_id(sessions, ctx, pr_id, "head-2") is None

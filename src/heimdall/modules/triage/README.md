@@ -26,9 +26,9 @@ outcome types.
 | From | Event | Guard | To | Effects |
 |---|---|---|---|---|
 | none | `pull_request.opened` | repo enabled | `received` | enqueue intake |
-| `received` | `intake.done` | all rules pass | `checking` | outbox thread + checklist; enqueue Huginn with validated repro command; room: ready for review |
+| `received` | `intake.done` | all rules pass | `checking` | outbox thread + checklist; enqueue Huginn with validated repro command; enqueue `loki.run_review` |
 | `received` | `intake.done` | any rule fails | `intake_failed` | outbox failed rules |
-| `checking` | `repro.finished` / `review.finished` | both done | `card_posted` | room: ready for card |
+| `checking` | `repro.finished` / `review.finished` | both done | `card_posted` | enqueue `heimdall.build_card` |
 | `checking` | either finished | only one done | `checking` | none |
 | `card_posted` | `maintainer.command` | sender is maintainer | `draft_pending` | room event to Heimdall |
 | `card_posted` | `finding.mechanical` | category in `auto_suggest` | `approved` | approve by policy, outbox GitHub comment |

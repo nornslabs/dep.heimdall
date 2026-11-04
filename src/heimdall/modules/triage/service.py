@@ -12,7 +12,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from heimdall.adapters.db.outbox.writer import write_outbox
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
-from heimdall.adapters.queue.enqueue import HUGINN_QUEUE, enqueue
+from heimdall.adapters.queue.enqueue import (
+    HEIMDALL_QUEUE,
+    HUGINN_QUEUE,
+    LOKI_QUEUE,
+    enqueue,
+)
 from heimdall.modules.tenancy.api import repo_is_enabled
 from heimdall.modules.triage._checks import mark_check_done, stored_check_heads
 from heimdall.modules.triage._webhook_event import pull_request_event
@@ -430,6 +435,7 @@ async def _apply_effects(
             queue=HUGINN_QUEUE,
             lock=f"huginn:{ctx.installation_id}:{pr_id}:{event.head_sha}",
         )
+    await _enqueue_agent_wakeups(session, ctx, event, effects, pr_id)
     if Effect.MARK_OLDER_RUNS_STALE in effects:
         from heimdall.modules.intake.api import mark_results_stale
         from heimdall.modules.repro.api import mark_runs_stale
@@ -438,6 +444,37 @@ async def _apply_effects(
         await mark_runs_stale(session, ctx, str(pr_id), event.head_sha)
     if event.room_id and event.room_message:
         await _write_room_effects(session, ctx, event, effects)
+
+
+async def _enqueue_agent_wakeups(
+    session: AsyncSession,
+    ctx: TenantCtx,
+    event: PrEvent,
+    effects: tuple[Effect, ...],
+    pr_id: UUID,
+) -> None:
+    """Queue Loki's review and Heimdall's card in the state transaction that makes them due.
+
+    The jobs carry only ids: each agent reads the PR and its repo itself, so nothing here
+    copies untrusted PR content into a job.
+    """
+    args = {"installation_id": ctx.installation_id, "pr_id": str(pr_id), "head_sha": event.head_sha}
+    if Effect.ROOM_READY_FOR_REVIEW in effects:
+        await enqueue(
+            session,
+            "loki.run_review",
+            args,
+            queue=LOKI_QUEUE,
+            lock=f"loki:{ctx.installation_id}:{pr_id}:{event.head_sha}",
+        )
+    if Effect.ROOM_READY_FOR_CARD in effects:
+        await enqueue(
+            session,
+            "heimdall.build_card",
+            args,
+            queue=HEIMDALL_QUEUE,
+            lock=f"heimdall:{ctx.installation_id}:{pr_id}:{event.head_sha}",
+        )
 
 
 async def _write_room_effects(

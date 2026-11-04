@@ -1,13 +1,9 @@
 """Heimdall's review-card workflow and maintainer-command routing."""
 
-import asyncio
 from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
 
-from agents._lifecycle import wait_until_stopped
-from agents.heimdall.config import AGENT_NAME, load_ai_config
-from heimdall.adapters.ai import AiAdapter
 from heimdall.modules.desk.api import (
     CardContent,
     DeskCommand,
@@ -230,21 +226,3 @@ def _repro_summary(result: dict[str, object]) -> str:
         ReproStatus.TIMED_OUT: "Reproduction timed out; no verdict is available.",
         ReproStatus.STALE: "Reproduction is stale because the PR head changed.",
     }.get(status, "Reproduction is still running; no verdict is available.")
-
-
-async def _serve() -> None:
-    """Build Heimdall's adapter from its own config and keep it until the process stops."""
-    ai = AiAdapter(load_ai_config())
-    try:
-        await wait_until_stopped(AGENT_NAME, ai.model)
-    finally:
-        await ai.aclose()
-
-
-def main() -> None:
-    """Start Heimdall: fail fast on bad model config, then wait for work."""
-    asyncio.run(_serve())
-
-
-if __name__ == "__main__":
-    main()

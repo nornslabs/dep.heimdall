@@ -10,6 +10,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from heimdall.adapters.db.columns import utc_now
+from heimdall.adapters.db.outbox._alert import render_dead_alert
 from heimdall.adapters.db.outbox._retry import Dead, after_failure
 from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.db.outbox.writer import PENDING, write_outbox
@@ -170,8 +171,16 @@ async def _record_failure(
 
 
 async def _alert_room(session: AsyncSession, message: OutboxMessage) -> None:
-    """Tell the room a message died, unless it was itself an alert (no alert loops)."""
+    """Tell the dead message's room it died, unless it was itself an alert (no alert loops).
+
+    Only room messages carry a ``channel_id``; a dead GitHub comment has no room to tell yet,
+    so it is logged and the maintainers find it through the outbox row.
+    """
     if message.kind == ALERT_KIND:
+        return
+    room_id = message.payload.get("channel_id")
+    if not isinstance(room_id, str) or not room_id:
+        log.warning("outbox_alert_skipped", outbox_id=str(message.id), channel=message.channel)
         return
     await write_outbox(
         session,
@@ -179,10 +188,11 @@ async def _alert_room(session: AsyncSession, message: OutboxMessage) -> None:
         channel=ALERT_CHANNEL,
         kind=ALERT_KIND,
         payload={
+            "channel_id": room_id,
+            "message": render_dead_alert(
+                str(message.id), message.channel, message.kind, message.last_error
+            ),
             "outbox_id": str(message.id),
-            "channel": message.channel,
-            "kind": message.kind,
-            "last_error": message.last_error,
         },
         idempotency_key=f"alert:{message.id}",
     )

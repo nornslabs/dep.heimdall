@@ -7,7 +7,7 @@ Repository auto-suggest pauses are tenant-scoped and persist until policy is re-
 Public functions: `parse_installation_event`, `on_installation_event`, `get_tenant`,
 `get_repo_id`, `get_repo_id_in_transaction`, `load_config`, `load_config_in_transaction`,
 `repo_is_enabled`, `repo_switch_room_id`, `repo_auto_suggest_paused`,
-`set_auto_suggest_paused`, and `set_auto_suggest_paused_in_transaction`.
+`set_auto_suggest_paused`, `set_auto_suggest_paused_in_transaction` and `link_repo_room`.
 
 | File | Role |
 |---|---|
@@ -33,6 +33,11 @@ redelivered webhook changes nothing.
 | `installation.new_permissions_accepted` | Account login and type refreshed |
 | `installation_repositories.added` | Repos created, or re-enabled with their current name |
 | `installation_repositories.removed` | Repos set `enabled = false` (rows kept, because PRs reference them) |
+
+`on_installation_event` can take a `default_room_id` (the worker passes
+`HEIMDALL_DEFAULT_SWITCH_ROOM_ID`). It fills `repos.switch_room_id` only where the repo has no room,
+so a room an operator chose is never replaced. `python -m apps.admin.link_room <installation_id>
+<repo_id> <room_id>` re-links one repo through `link_repo_room`.
 
 Every event also upserts the installation from its `account`, so a repositories event for a
 missed installation still works. `get_tenant(installation_id)` starts every job: it returns a

@@ -6,12 +6,13 @@ reproduction results. Valid slash commands are parsed as data and dispatched to 
 | File | Role |
 |---|---|
 | `agent.py` | Card assembly and command routing |
+| `runner.py` | Consumer of the `heimdall` queue only: runs `heimdall.build_card`, then queues the approval message for the repo's room |
 | `prompt.md` | Trust boundaries, allowed tools, and output format |
 | `allowed_tools.py` | Heimdall's scoped MCP tool allowlist |
 | `config.py` | `AGENT_NAME`, `MAX_TURNS = 8`, `load_ai_config()` (`LLM_HEIMDALL_*`) |
 
-The card and command flows are deterministic today. `main()` builds Heimdall's `AiAdapter` from
-its own config, so a bad model setting fails at startup.
+The card and command flows are deterministic today. The worker builds Heimdall's `AiAdapter` from
+its own config at startup, so a bad model setting fails before any job runs.
 
 `build_review_card` returns `approval_message`, which adds hidden draft identity and hash metadata
 for the bridge. The marker is outside the saved draft body, so the approval hash still covers

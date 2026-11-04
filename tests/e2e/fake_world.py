@@ -28,6 +28,7 @@ MAINTAINER = "sboy99"
 # main's tip when PRs #3-#5 were opened; a dispatched repro run reports this as its head_sha.
 DEMO_MAIN_SHA = "3159115d345ebd5d809fa347da45d3bf6e9b1cfe"
 ROOM_ID = "triage-room"
+APPROVAL_MARKER = "<!-- heimdall-approval "
 REPRO_WORKFLOW = "heimdall-repro.yml"
 REPRO_WORKFLOW_PATH = f".github/workflows/{REPRO_WORKFLOW}"
 DIFF_MEDIA_TYPE = "application/vnd.github.diff"
@@ -221,23 +222,34 @@ class FakeSwitch:
     thread_replies: list[str] = field(default_factory=list[str])
 
     async def send(self, message: OutboxMessage) -> None:
-        """Deliver one Switch outbox row to the room."""
-        self.room_posts.append(str(message.payload["message"]))
+        """Deliver one Switch outbox row to the room, where the bridge can later find it."""
+        self.post(str(message.payload["channel_id"]), str(message.payload["message"]))
 
-    def post(self, message: str) -> str:
-        """Put a message in the room as Heimdall's bridge would, returning its post id."""
+    def post(self, channel_id: str, message: str) -> str:
+        """Put a message in a room, returning its post id."""
         post_id = f"post-{len(self.posts_by_id) + 1}"
-        self.posts_by_id[post_id] = RoomPost(post_id, ROOM_ID, "", message)
+        self.posts_by_id[post_id] = RoomPost(post_id, channel_id, "", message)
         self.room_posts.append(message)
         return post_id
 
+    def approval_post_id(self) -> str:
+        """Return the id of the newest post carrying an approval marker.
+
+        Raises:
+            LookupError: no such post reached the room.
+        """
+        for post_id, post in reversed(self.posts_by_id.items()):
+            if APPROVAL_MARKER in post.message:
+                return post_id
+        raise LookupError("no approval message reached the room")
+
     async def open_thread(self, channel_id: str, message: str) -> str:
         """Start a thread with a root post."""
-        return self.post(message)
+        return self.post(channel_id, message)
 
     async def post_to_role(self, channel_id: str, role: str, message: str) -> str:
         """Post a message addressed to an agent role."""
-        return self.post(message)
+        return self.post(channel_id, message)
 
     async def react(self, post_id: str, emoji_name: str) -> None:
         """Accept a reaction; the replay never reads Heimdall's own reactions."""
