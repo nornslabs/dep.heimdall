@@ -52,6 +52,14 @@ services:
       MM_SQLSETTINGS_DATASOURCE: postgres://mattermost:${MATTERMOST_DB_PASSWORD:-mattermost}@postgres:5432/mattermost?sslmode=disable&connect_timeout=10
       MM_SERVICESETTINGS_SITEURL: http://localhost:8065
       MM_SERVICESETTINGS_ENABLEBOTACCOUNTCREATION: "true"
+      # Switch creates one bot per agent and signs them in with access tokens.
+      MM_SERVICESETTINGS_ENABLEUSERACCESSTOKENS: "true"
+      # Switch's setup step creates the admin user and team through the open signup.
+      MM_TEAMSETTINGS_ENABLEOPENSERVER: "true"
+      MM_SERVICESETTINGS_ENABLEONBOARDINGFLOW: "false"
+      # Mattermost refuses integration calls to private hosts unless named here; button presses
+      # on Switch cards are a POST from this container to the switch service.
+      MM_SERVICESETTINGS_ALLOWEDUNTRUSTEDINTERNALCONNECTIONS: switch
     ports:
       - "${MATTERMOST_PORT:-8065}:8065"
     volumes:
@@ -61,6 +69,87 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+
+  # Creates the `switch` database and roles in the shared Postgres; safe to run on every `up`.
+  switch-db-init:
+    image: postgres:16
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-heimdall}
+      POSTGRES_USER: heimdall
+      POSTGRES_DB: heimdall
+      SWITCH_DB_OWNER_PASSWORD: ${SWITCH_DB_OWNER_PASSWORD:-switch-owner}
+      SWITCH_DB_PASSWORD: ${SWITCH_DB_PASSWORD:-switch-app}
+    volumes:
+      - ./docker/switch-init-db.sh:/switch-init-db.sh:ro
+    entrypoint: ["sh", "/switch-init-db.sh"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  # Switch server (API on 8000). Pinned: the Switch Console and agent protocol track releases.
+  switch:
+    image: ghcr.io/sandbox-quantum/switch-core:${SWITCH_VERSION:-0.31.0}
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: switch
+      DB_USER: switch_app
+      DB_PASSWORD: ${SWITCH_DB_PASSWORD:-switch-app}
+      DB_OWNER_USER: switch_owner
+      DB_OWNER_PASSWORD: ${SWITCH_DB_OWNER_PASSWORD:-switch-owner}
+      # The compose file Switch publishes hardcodes `localhost`; this one reads .env. It cannot
+      # be changed once the server has run. MATRIX_SERVER_NAME is the pre-rename spelling.
+      ID_SERVER_NAME: ${ID_SERVER_NAME:-localhost}
+      MATRIX_SERVER_NAME: ${ID_SERVER_NAME:-localhost}
+      AGENT_REGISTRATION_TOKEN: ${AGENT_REGISTRATION_TOKEN:-}
+      SECRET_KEYS: ${SECRET_KEYS:-}
+      GATEWAY_ADMIN_EMAIL: ${GATEWAY_ADMIN_EMAIL:-}
+      GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:-}
+      GATEWAY_PUBLIC_URL: ${GATEWAY_PUBLIC_URL:-}
+      FRONTEND_BASE_URL: ${FRONTEND_BASE_URL:-http://localhost:3000}
+      # Plain http on localhost: a Secure cookie would never be sent back.
+      GATEWAY_COOKIE_SECURE: "false"
+      # Mattermost is on the compose network, a private address.
+      OUTBOUND_ALLOWED_PRIVATE_HOSTS: mattermost
+    ports:
+      - "${SWITCH_API_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      switch-db-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Switch admin UI (port 3000).
+  gateway:
+    image: ghcr.io/sandbox-quantum/gateway:${SWITCH_VERSION:-0.31.0}
+    ports:
+      - "${SWITCH_GATEWAY_PORT:-3000}:3000"
+    depends_on:
+      - switch
+    restart: unless-stopped
+
+  # Connects Switch to the `mattermost` service above: creates the admin user and team, then links
+  # them. Retries until both servers are ready.
+  switch-setup:
+    image: ghcr.io/sandbox-quantum/setup:${SWITCH_VERSION:-0.31.0}
+    environment:
+      SWITCH_URL: http://switch:8000
+      MATTERMOST_URL: http://mattermost:8065
+      MATTERMOST_URL_FOR_SWITCH: http://mattermost:8065
+      MATTERMOST_CALLBACK_BASE_URL: http://switch:8081
+      MATTERMOST_ADMIN_USER: ${MATTERMOST_ADMIN_USER:-}
+      MATTERMOST_ADMIN_PASSWORD: ${MATTERMOST_ADMIN_PASSWORD:-}
+      MATTERMOST_TEAM_NAME: ${MATTERMOST_TEAM_NAME:-heimdall}
+      MATTERMOST_USER: ${MATTERMOST_USER:-}
+      MATTERMOST_USER_PASSWORD: ${MATTERMOST_USER_PASSWORD:-}
+      GATEWAY_ADMIN_EMAIL: ${GATEWAY_ADMIN_EMAIL:-}
+      GATEWAY_ADMIN_PASSWORD: ${GATEWAY_ADMIN_PASSWORD:-}
+    depends_on:
+      - mattermost
+      - switch
+    restart: on-failure
 
   # Runs `alembic upgrade head` once; every app service waits for it to succeed.
   migrate:
@@ -75,7 +164,8 @@ services:
     <<: *heimdall
     command: ["api"]
     ports:
-      - "${API_PORT:-8000}:8000"
+      # 8000 on the host belongs to the Switch server.
+      - "${API_PORT:-8001}:8000"
 
   worker:
     <<: *heimdall

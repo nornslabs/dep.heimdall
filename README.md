@@ -82,8 +82,10 @@ token. Configure the App with `metadata: read`, `contents: read`, `pull requests
    ```
 
    Compose starts Postgres, Mattermost, migrations, the API, worker, MCP server, bridge, the three
-   agents, and the Smee forwarder. The API listens at `http://localhost:8000`; Mattermost listens
-   at `http://localhost:8065`.
+   agents, the Smee forwarder, and the Switch server. The API listens at `http://localhost:8001`;
+   Mattermost listens at `http://localhost:8065`; Switch listens at `http://localhost:8000` with
+   its admin UI at `http://localhost:3000`. Switch needs its own `.env` values first; see
+   [docs/switch.md](docs/switch.md).
 
 5. Install the GitHub App on a repository with Actions enabled. Open or update a PR and check its
    thread in the `triage` room. Completed reproduction workflows return through the `workflow_run`
