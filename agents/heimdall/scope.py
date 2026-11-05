@@ -11,6 +11,8 @@ SCOPE = AgentScope(
         "intake rules and why they passed or failed",
         "drafts waiting for approval",
         "next steps for the maintainer",
+        "closing, reopening or merging the PR, and asking the contributor for changes, "
+        "when a maintainer asks",
     ),
     redirects=(
         Redirect("deep test questions: repro runs, commands, verdicts", AgentName.HUGINN),

@@ -59,7 +59,7 @@ def register_mention_task(queue_app: App, deps: MentionDeps) -> None:
         if channel is None:
             log.info("mention_dropped_no_room", **ids)
             return
-        ports = DbMentionPorts(deps, ctx, sender_role)
+        ports = DbMentionPorts(deps, ctx, sender_role, sender)
         question = Question(pr_ref=pr_ref, sender=sender, text=text)
         ai = deps.model()
         answer = None

@@ -41,6 +41,7 @@ class ActSetup:
         reader: Read-only GitHub adapter.
         ctx: Tenant and request context.
         pr: The PR being acted on.
+        sender: Login of the maintainer whose message asked for the action; empty if unknown.
     """
 
     server: MCPServer
@@ -48,6 +49,7 @@ class ActSetup:
     reader: GitHubApiReader
     ctx: TenantCtx
     pr: MentionPr
+    sender: str = ""
 
 
 type GuardActTools = Callable[[ActSetup, tuple[AgentTool, ...]], Awaitable[tuple[AgentTool, ...]]]
@@ -86,17 +88,21 @@ class MentionDeps:
 class DbMentionPorts:
     """``MentionPorts`` for one job, reading one tenant's PRs and maintainer lists."""
 
-    def __init__(self, deps: MentionDeps, ctx: TenantCtx, sender_role: str) -> None:
+    def __init__(
+        self, deps: MentionDeps, ctx: TenantCtx, sender_role: str, sender: str = ""
+    ) -> None:
         """Bind the ports to one tenant and the sender's role.
 
         Args:
             deps: The agent's mention dependencies.
             ctx: Tenant and request context for this job.
             sender_role: The role the bridge gave the sender; only a maintainer may act.
+            sender: The sender's login, so an approval is recorded under their name.
         """
         self._deps = deps
         self._ctx = ctx
         self._sender_role = sender_role
+        self._sender = sender
 
     async def load_pr(self, pr_ref: str) -> MentionPr | None:
         """Return the PR for ``pr_ref``, or None when it is malformed or not this tenant's."""
@@ -141,7 +147,9 @@ class DbMentionPorts:
         tools = await mcp_agent_tools(server, names)
         if mode == "ask":
             return tools
-        setup = ActSetup(server, self._deps.sessions, self._deps.reader, self._ctx, pr)
+        setup = ActSetup(
+            server, self._deps.sessions, self._deps.reader, self._ctx, pr, self._sender
+        )
         return await self._deps.guard_act_tools(setup, tools)
 
     async def _snapshot(self, session: AsyncSession, pr: MentionPr) -> PrSnapshot:
