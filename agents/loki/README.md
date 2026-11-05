@@ -27,7 +27,7 @@ All four skills are required (`REQUIRED_SKILLS` in `config.py`).
 | `../_runtime.py` | Shared agent runtime (`run_agent`, `ToolBox`, `RunUsage`, `still_current`); see `../README.md` |
 | `../_lifecycle.py` | The `loki_same_model_as_other_agents` warning |
 | `prompt.md` | Review rules and JSON output contract |
-| `allowed_tools.py` | Exact `get_pr_context`, `get_diff`, and `save_findings` allowlist |
+| `allowed_tools.py` | Exact `get_pr_context`, `get_diff`, `get_file` and `save_findings` allowlist |
 | `skills/` | Four required playbooks (see table above) |
 
 At startup Loki logs `loki_same_model_as_other_agents` when its model string matches Huginn's or
