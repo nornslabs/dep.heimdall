@@ -2,6 +2,7 @@
 
 import asyncio
 
+from apps.bridge._health import HealthPingHandler
 from apps.bridge.approval import ApprovalReactionHandler
 from heimdall.adapters.db.engine import create_engine, make_session_factory
 from heimdall.adapters.github.auth import GitHubAppClients, load_private_key
@@ -14,14 +15,15 @@ log = get_logger(__name__)
 
 
 class _BridgeHandler:
-    """Log safe event metadata before routing approval reactions."""
+    """Log safe event metadata, answer a ping to Bifröst, and route approvals otherwise."""
 
-    def __init__(self, approvals: ApprovalReactionHandler) -> None:
-        """Configure the approval reaction use case."""
+    def __init__(self, approvals: ApprovalReactionHandler, health: HealthPingHandler) -> None:
+        """Configure the approval reaction use case and the health check."""
         self._approvals = approvals
+        self._health = health
 
     async def handle(self, event: RoomEvent) -> None:
-        """Log safe identifiers and pass the event to approval handling."""
+        """Log safe identifiers, then answer a health ping or pass the event to approvals."""
         log.info(
             "switch_event_received",
             event_kind=event.kind,
@@ -29,6 +31,8 @@ class _BridgeHandler:
             post_id=event.post_id,
             user_id=event.user_id,
         )
+        if await self._health.handle(event):
+            return
         await self._approvals.handle(event)
 
 
@@ -47,7 +51,8 @@ async def run_bridge() -> None:
     )
     handler = ApprovalReactionHandler(sessions, GitHubApiReader(github_clients), room)
     try:
-        await run_inbound_events(room, _BridgeHandler(handler), asyncio.Event())
+        bridge = _BridgeHandler(handler, HealthPingHandler(room))
+        await run_inbound_events(room, bridge, asyncio.Event())
     finally:
         await room.aclose()
         await engine.dispose()

@@ -7,6 +7,11 @@ must configure those identities consistently with `heimdall.yml` maintainer entr
 
 Non-maintainers receive one short thread reply. They create no approval or GitHub outbox entry.
 
+`@bifrost ping` is a plain health check (`_health.py`): the bridge answers it with a fixed line in
+the ping's thread, before any approval handling. Bifröst is code, not an agent, so this is the one
+keyword match left. Messages to Huginn, Loki and Heimdall never reach the bridge; each agent hears
+its own mentions and queues an `agent.mention` job (see `agents/README.md`).
+
 ## First-time setup
 
 `python -m apps.bridge.setup [--channel NAME] [--env-file PATH] [--secrets-file PATH]
