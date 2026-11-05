@@ -24,10 +24,12 @@ def test_mcp_server_registers_reproduction_tools() -> None:
     tools = asyncio.run(server.list_tools())
 
     assert {tool.name for tool in tools} == {
+        "get_pr_context",
+        "get_diff",
+        "get_file",
         "start_repro",
         "get_repro",
         "recall",
-        "get_file",
     }
     assert all("installation_id" in tool.input_schema["properties"] for tool in tools)
 
@@ -35,7 +37,17 @@ def test_mcp_server_registers_reproduction_tools() -> None:
 @pytest.mark.parametrize(
     ("agent_name", "expected_tools"),
     [
-        ("huginn", {"start_repro", "get_repro", "recall", "get_file"}),
+        (
+            "huginn",
+            {
+                "get_pr_context",
+                "get_diff",
+                "get_file",
+                "start_repro",
+                "get_repro",
+                "recall",
+            },
+        ),
         (
             "loki",
             {"get_pr_context", "get_diff", "save_findings", "recall", "get_file"},

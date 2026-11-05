@@ -164,10 +164,10 @@ async def _handle_submit[T: BaseModel](
     """Accept a valid submission for the current head, or allow one repair round."""
     checked = run.submit.check(call.arguments)
     if isinstance(checked, InvalidSubmission):
-        if state.repaired:
-            return state, CouldNotFinish("invalid_submission", state.usage, state.turns)
-        state = replace(state, repaired=True, turn_limit=max(state.turn_limit, state.turns + 1))
-        return _with_tool_message(state, call, checked.errors), None
+        return _repair(state, call, checked.errors)
+    refusal = await run.submit.verify(checked)
+    if refusal is not None:
+        return _repair(state, call, refusal.errors)
     blocked = _secret_block(run.agent, call.name, checked.model_dump_json(), state)
     if blocked is not None:
         return state, blocked
@@ -180,6 +180,14 @@ async def _handle_submit[T: BaseModel](
     if not current:
         return state, Stale(state.usage, state.turns)
     return state, Completed(checked, state.usage, state.turns)
+
+
+def _repair[T: BaseModel](state: RunState, call: ToolCall, errors: str) -> Step[T]:
+    """Hand a refused submission back to the model once; a second refusal ends the run."""
+    if state.repaired:
+        return state, CouldNotFinish("invalid_submission", state.usage, state.turns)
+    state = replace(state, repaired=True, turn_limit=max(state.turn_limit, state.turns + 1))
+    return _with_tool_message(state, call, errors), None
 
 
 def _secret_block(agent: str, where: str, text: str, state: RunState) -> CouldNotFinish | None:
