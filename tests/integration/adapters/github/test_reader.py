@@ -49,6 +49,33 @@ async def test_directory_returns_none(reader: GitHubApiReader, fake_github: Fake
     assert await reader.get_file(REPO, "src", "head123") is None
 
 
+# --- file_at_sha -----------------------------------------------------------------------
+
+
+async def test_file_at_sha_reads_the_file_at_that_commit(
+    reader: GitHubApiReader, fake_github: FakeGitHub
+) -> None:
+    path = "/repos/octo-org/demo/contents/src/app.py"
+    fake_github.on_json("GET", path, file_content("print('hi')\n", "src/app.py"))
+
+    text = await reader.file_at_sha(REPO, "src/app.py", "head123")
+
+    assert text == "print('hi')\n"
+    assert fake_github.requests_to(path)[0].url.params["ref"] == "head123"
+
+
+async def test_file_at_sha_returns_none_when_the_file_is_absent(reader: GitHubApiReader) -> None:
+    assert await reader.file_at_sha(REPO, "gone.py", "head123") is None
+
+
+async def test_file_at_sha_returns_none_for_a_directory(
+    reader: GitHubApiReader, fake_github: FakeGitHub
+) -> None:
+    fake_github.on_json("GET", "/repos/octo-org/demo/contents/src", [{"type": "file"}])
+
+    assert await reader.file_at_sha(REPO, "src", "head123") is None
+
+
 # --- pull requests --------------------------------------------------------------------
 
 
@@ -135,6 +162,20 @@ async def test_count_open_prs_by_author_uses_search_total(
     assert await reader.count_open_prs_by_author(REPO, "ravi") == 4
     query = fake_github.requests_to("/search/issues")[0].url.params["q"]
     assert query == "repo:octo-org/demo is:pr is:open author:ravi"
+
+
+async def test_get_issue_returns_the_title_and_body(
+    reader: GitHubApiReader, fake_github: FakeGitHub
+) -> None:
+    """Read the linked issue's goal for Loki's scope review."""
+    path = "/repos/octo-org/demo/issues/7"
+    fake_github.on_json(
+        "GET", path, {"number": 7, "title": "Broken URL", "body": "ws_url is wrong"}
+    )
+
+    issue = await reader.get_issue(REPO, 7)
+
+    assert (issue.number, issue.title, issue.body) == (7, "Broken URL", "ws_url is wrong")
 
 
 async def test_get_issue_assignees_returns_all_assignees(

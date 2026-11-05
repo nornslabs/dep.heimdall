@@ -2,12 +2,12 @@
 
 Everything below the fakes is production code: webhook intake, procrastinate jobs on both
 queues, the outbox senders, the MCP tool server, the agents' own loops and the bridge's
-approval handler. Loki and Heimdall are woken by the queue jobs triage enqueues, exactly as
-their services would be; only Loki's model reply is scripted.
+approval handler. The agents are woken by the queue jobs triage enqueues, exactly as their
+services would be; only Loki's and Huginn's models are scripted.
 """
 
 import uuid
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -56,7 +56,7 @@ from tests.e2e.fake_world import (
     pull_request_webhook,
     workflow_run_webhook,
 )
-from tests.e2e.scripted_model import NO_FINDINGS_REPLY, ScriptedModel
+from tests.e2e.scripted_model import ScriptedHuginnModel, ScriptedLokiModel
 from tests.integration.db.installation_helpers import created_installation
 
 MAX_SETTLE_ROUNDS = 20
@@ -108,8 +108,9 @@ class Pipeline:
         }
         self._main_queue = self._build_main_queue()
         self._huginn_queue = create_queue_app(deps.database_url, schema=deps.db_schema)
-        register_huginn_task(self._huginn_queue, deps.sessions, sleep=self._advance)
-        self._loki_model = ScriptedModel(NO_FINDINGS_REPLY)
+        self._huginn_model = ScriptedHuginnModel(before_reply=self._advance)
+        register_huginn_task(self._huginn_queue, deps.sessions, self.reader, self._huginn_model)
+        self._loki_model = ScriptedLokiModel()
         self._loki_queue = create_queue_app(deps.database_url, schema=deps.db_schema)
         register_loki_task(self._loki_queue, deps.sessions, self.reader, self._loki_model)
         self._heimdall_queue = create_queue_app(deps.database_url, schema=deps.db_schema)
@@ -133,14 +134,16 @@ class Pipeline:
             await self._install()
             yield self
 
-    async def open_pr(self, pr: SeededPr, loki_reply: str = NO_FINDINGS_REPLY) -> None:
+    async def open_pr(
+        self, pr: SeededPr, loki_findings: Sequence[Mapping[str, object]] = ()
+    ) -> None:
         """Deliver ``pull_request.opened`` and run everything it sets off.
 
         Args:
             pr: The recorded PR to open.
-            loki_reply: What Loki's scripted model answers if intake passes and wakes it.
+            loki_findings: Findings Loki's scripted model saves if intake passes and wakes it.
         """
-        self._loki_model.reply = loki_reply
+        self._loki_model.set_findings(loki_findings)
         self._deps.github.seed(pr)
         await self._deliver("pull_request", "opened", pull_request_webhook(pr, "opened"))
         await self.settle()
@@ -224,8 +227,8 @@ class Pipeline:
             default_agent_room_id=AGENT_ROOM_ID,
         )
 
-    async def _advance(self, _seconds: float) -> None:
-        """Huginn's poll wait: let the rest of the system move instead of sleeping."""
+    async def _advance(self) -> None:
+        """Huginn's turn hook: let the rest of the system move instead of sleeping."""
         await self.settle()
 
     async def _deliver(self, event: str, action: str, payload: dict[str, object]) -> None:

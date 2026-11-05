@@ -11,8 +11,10 @@ from agents._job_context import load_pr_job_context
 from agents._mcp_tools import HeimdallMcpTools
 from agents._mention import register_mention_task
 from agents._presence_runner import run_with_presence
+from agents._skills import load_skills
 from agents.heimdall.agent import build_review_card
-from agents.heimdall.config import AGENT_NAME, load_ai_config
+from agents.heimdall.allowed_tools import ALLOWED_TOOLS
+from agents.heimdall.config import AGENT_NAME, REQUIRED_SKILLS, load_ai_config
 from apps.mcp.main import create_server
 from heimdall.adapters.ai import AiAdapter
 from heimdall.adapters.db.engine import create_engine, make_session_factory
@@ -105,6 +107,8 @@ async def run_worker() -> None:
 
     settings = get_settings()
     configure_logging(settings.log_level)
+    # Validated at startup so a broken playbook fails before any job runs.
+    load_skills(AgentName.HEIMDALL, ALLOWED_TOOLS, REQUIRED_SKILLS)
     # Built at startup so a bad LLM_HEIMDALL_* / LLM_DEFAULT_* config fails before any job runs.
     ai = AiAdapter(load_ai_config())
     database_url = settings.database_url.get_secret_value()

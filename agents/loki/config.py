@@ -6,6 +6,9 @@ from heimdall.adapters.switch.agent import AgentConnectionConfig
 from heimdall.adapters.switch.agent.credentials import load_agent_credentials, switch_api_url
 
 AGENT_NAME = "loki"
+REQUIRED_SKILLS: frozenset[str] = frozenset(
+    {"edge_cases", "scope_check", "test_quality", "mechanical_tagging"}
+)
 MAX_TURNS = 8
 MAX_FINDINGS = 5
 CONTEXT_TOKENS = 40_000

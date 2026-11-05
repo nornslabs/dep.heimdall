@@ -1,1 +1,1 @@
-{"assignees":[{"login":"sboy99"}],"number":1}
+{"assignees":[{"login":"sboy99"}],"number":1,"title":"Agent registration raises NameError","body":"Registering an agent fails with a NameError because `http_client.py` refers to model names that do not exist. Use the models defined in `models.py` and cover the registration request with a test."}

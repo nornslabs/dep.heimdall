@@ -14,11 +14,14 @@ from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.modules.approval.api import approve_by_policy
 from heimdall.modules.desk.api import CardContent, create_mechanical_task, save_card, save_draft
 from heimdall.modules.repro.api import get_run, start_run
-from heimdall.modules.review.api import FindingInput, list_findings
+from heimdall.modules.review.api import FindingInput, FindingRef, list_findings
 from heimdall.modules.triage.api import PrSnapshot, get_pr_snapshot
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId
+
+_GET_FILE_LINE_CAP = 400
+"""Maximum lines returned by one get_file call, before the runtime budget trims further."""
 
 
 def create_server(
@@ -37,8 +40,15 @@ def create_server(
         MCP server with reproduction tools and, when wired, review tools.
     """
     allowed_tools = {
-        "huginn": {"start_repro", "get_repro", "recall"},
-        "loki": {"get_pr_context", "get_diff", "save_findings", "recall"},
+        "huginn": {
+            "get_pr_context",
+            "get_diff",
+            "get_file",
+            "start_repro",
+            "get_repro",
+            "recall",
+        },
+        "loki": {"get_pr_context", "get_diff", "save_findings", "recall", "get_file"},
         "heimdall": {
             "list_findings",
             "get_repro",
@@ -152,6 +162,40 @@ def create_server(
             return {"text": diff.text, "truncated": diff.truncated}
 
         @server.tool(
+            name="get_file",
+            description=(
+                "Read a line range of a repository file at the PR head or base. "
+                "path is repo-relative; ref must be this PR's head_sha or base_sha. "
+                f"Lines are 1-based; omit end to read up to {_GET_FILE_LINE_CAP} lines."
+            ),
+            structured_output=True,
+        )
+        async def get_file_tool(
+            installation_id: int,
+            pr_id: str,
+            repo_full_name: str,
+            path: str,
+            ref: str,
+            start: int = 1,
+            end: int | None = None,
+        ) -> dict[str, object]:
+            """Return a capped line slice of the file, or report it absent."""
+            ctx = TenantCtx(
+                installation_id=InstallationId(installation_id),
+                request_id=new_request_id(),
+            )
+            snapshot = await _get_pr_snapshot(sessions, ctx, pr_id)
+            if ref not in (snapshot.head_sha, snapshot.base_sha):
+                return {"error": "ref is not this PR's head or base"}
+            if end is not None and end < start:
+                return {"error": "end must be at or after start"}
+            repo = RepoRef(ctx.installation_id, repo_full_name)
+            text = await github_reader.file_at_sha(repo, path, ref)
+            if text is None:
+                return {"found": False, "path": path, "ref": ref, "reason": "not_found"}
+            return _slice_file(text, path, ref, start, end, _GET_FILE_LINE_CAP)
+
+        @server.tool(
             name="save_findings",
             description=(
                 "Validate and save Loki findings against changed files and the current PR head."
@@ -186,8 +230,10 @@ def create_server(
                 typed_findings,
                 config.review,
             )
+            saved_rows = await list_findings(sessions, ctx, pr_uuid)
             return {
                 "saved": len(batch.accepted),
+                "finding_ids": _finding_ids(batch.accepted, saved_rows),
                 "rejected": [
                     {
                         "index": item.index,
@@ -331,7 +377,7 @@ def create_server(
     registered_tools.add("create_mechanical_task")
 
     if reader is not None:
-        registered_tools.update({"get_pr_context", "get_diff", "save_findings"})
+        registered_tools.update({"get_pr_context", "get_diff", "save_findings", "get_file"})
     for tool_name in registered_tools - allowed_tools[agent_name]:
         server.remove_tool(tool_name)
     missing_tools = allowed_tools[agent_name] - registered_tools
@@ -351,6 +397,30 @@ async def _get_pr_snapshot(
     return snapshot
 
 
+def _finding_ids(accepted: tuple[FindingInput, ...], saved: tuple[FindingRef, ...]) -> list[str]:
+    """Return the id of each accepted finding, matched to what the head now holds.
+
+    Args:
+        accepted: Findings the review module allowed for this head.
+        saved: Every finding stored for the head, with its id.
+
+    Returns:
+        One id per accepted finding, in input order and without repeats. A duplicate the
+        module stored once is cited once.
+    """
+    by_identity = {
+        (finding.file, finding.line, finding.text, finding.severity): str(finding.id)
+        for finding in saved
+    }
+    ids: list[str] = []
+    for finding in accepted:
+        identity = (finding.file, finding.line, finding.text, finding.severity)
+        finding_id = by_identity.get(identity)
+        if finding_id is not None and finding_id not in ids:
+            ids.append(finding_id)
+    return ids
+
+
 def _finding_input(value: dict[str, str | int | None]) -> FindingInput:
     """Validate one MCP finding before passing it to the review module."""
     file = value.get("file")
@@ -365,6 +435,41 @@ def _finding_input(value: dict[str, str | int | None]) -> FindingInput:
     if category is not None and not isinstance(category, str):
         raise ValueError("mechanical_category must be a string")
     return FindingInput(file, line, text, severity, category)
+
+
+def _slice_file(
+    text: str, path: str, ref: str, start: int, end: int | None, line_cap: int
+) -> dict[str, object]:
+    """Extract a capped 1-based line range from decoded file text.
+
+    Reads past the end of the file return no lines and report the file's real last line,
+    so the agent is never handed a shorter file as if it were the requested range.
+
+    Args:
+        text: Full decoded file content.
+        path: File path (echoed in the response).
+        ref: Commit SHA (echoed in the response).
+        start: Requested first line, 1-based; at least 1.
+        end: Requested last line, 1-based, at or after ``start``; None reads ``line_cap`` lines.
+        line_cap: Maximum number of lines one call may return.
+
+    Returns:
+        Response dict with ``found``, ``path``, ``ref``, ``start``, ``end``, ``lines``
+        and ``content``.
+    """
+    lines = text.splitlines(keepends=True)
+    first = max(1, start)
+    requested_last = first + line_cap - 1 if end is None else min(end, first + line_cap - 1)
+    window = lines[first - 1 : requested_last]
+    return {
+        "found": True,
+        "path": path,
+        "ref": ref,
+        "start": first,
+        "end": min(requested_last, len(lines)),
+        "lines": len(window),
+        "content": "".join(window),
+    }
 
 
 async def _serve() -> None:

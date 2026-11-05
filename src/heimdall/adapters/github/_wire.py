@@ -36,8 +36,11 @@ class PullRequestWire(_Wire):
 
 
 class IssueWire(_Wire):
-    """Issue fields needed by intake assignment checks."""
+    """Issue fields needed by intake assignment checks and Loki's scope review."""
 
+    number: int
+    title: str = ""
+    body: str | None = None
     assignees: list[Login] = []
 
 

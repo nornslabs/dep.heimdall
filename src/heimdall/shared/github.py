@@ -46,6 +46,15 @@ class PullRequestInfo:
 
 
 @dataclass(frozen=True)
+class IssueInfo:
+    """What Heimdall reads about an issue. ``title`` and ``body`` are untrusted text."""
+
+    number: int
+    title: str
+    body: str
+
+
+@dataclass(frozen=True)
 class ChangedFile:
     """One file a pull request touches, with its line counts."""
 

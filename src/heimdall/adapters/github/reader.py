@@ -14,7 +14,14 @@ from heimdall.adapters.github._errors import github_errors, is_not_found
 from heimdall.adapters.github._http import get
 from heimdall.adapters.github.auth import GitHubAppClients
 from heimdall.shared.errors import GitHubRequestFailed
-from heimdall.shared.github import ChangedFile, CiState, PrDiff, PullRequestInfo, RepoRef
+from heimdall.shared.github import (
+    ChangedFile,
+    CiState,
+    IssueInfo,
+    PrDiff,
+    PullRequestInfo,
+    RepoRef,
+)
 
 MAX_DIFF_BYTES = 200_000
 """The LLD's cap on the diff handed to agents (get_diff returns at most 200 KB)."""
@@ -50,18 +57,28 @@ class GitHubApiReader:
             GitHubUnavailable: GitHub is down, slow or rate limiting (retryable).
             GitHubRequestFailed: any other refusal, or content that is not base64 text.
         """
-        url = f"/repos/{repo.full_name}/contents/{path}"
-        async with github_errors("get file"):
-            try:
-                params = {"ref": ref} if ref is not None else None
-                reply = await get(self._client(repo), url, params=params)
-            except RequestFailed as error:
-                if is_not_found(error):
-                    return None
-                raise
-            if isinstance(reply.payload, list):
-                return None  # a directory listing, not a file
-            return _decode_file(_wire.FileContentWire.model_validate(reply.payload))
+        return await self._contents(repo, path, ref, "get file")
+
+    async def file_at_sha(self, repo: RepoRef, path: str, sha: str) -> str | None:
+        """Read a text file at an exact commit SHA.
+
+        Unlike ``get_file``, this always passes a ref so it never falls back to the default
+        branch, and accepts only a full or abbreviated SHA (no branch names).
+
+        Args:
+            repo: The repository and its installation.
+            path: File path inside the repository.
+            sha: The exact commit SHA to read the file at.
+
+        Returns:
+            The file's decoded UTF-8 text, or ``None`` when there is no file at that path
+            (missing, a directory, or content GitHub does not inline).
+
+        Raises:
+            GitHubUnavailable: GitHub is down, slow or rate limiting (retryable).
+            GitHubRequestFailed: any other refusal, or content that is not base64 text.
+        """
+        return await self._contents(repo, path, sha, "file at sha")
 
     async def get_pull_request(self, repo: RepoRef, number: int) -> PullRequestInfo:
         """Read a pull request's details.
@@ -143,6 +160,25 @@ class GitHubApiReader:
             )
             return _wire.SearchTotalWire.model_validate(reply.payload).total_count
 
+    async def get_issue(self, repo: RepoRef, issue_number: int) -> IssueInfo:
+        """Read a linked issue's title and body, so a review can check the PR's scope.
+
+        Args:
+            repo: Repository and installation that owns the issue.
+            issue_number: Linked issue number.
+
+        Returns:
+            The issue; ``body`` is ``""`` when GitHub has none.
+
+        Raises:
+            GitHubUnavailable: GitHub is down, slow or rate limiting (retryable).
+            GitHubRequestFailed: the issue does not exist or the reply is malformed.
+        """
+        async with github_errors("get issue"):
+            reply = await get(self._client(repo), f"/repos/{repo.full_name}/issues/{issue_number}")
+            issue = _wire.IssueWire.model_validate(reply.payload)
+        return IssueInfo(number=issue.number, title=issue.title, body=issue.body or "")
+
     async def get_issue_assignees(self, repo: RepoRef, issue_number: int) -> tuple[str, ...]:
         """Read all assignees of a linked issue.
 
@@ -182,6 +218,32 @@ class GitHubApiReader:
         return combine_ci(
             [item.state for item in statuses], [(run.status, run.conclusion) for run in runs]
         )
+
+    async def _contents(self, repo: RepoRef, path: str, ref: str | None, action: str) -> str | None:
+        """Read one file through the contents API, mapping an absent file to ``None``.
+
+        Args:
+            repo: The repository and its installation.
+            path: File path inside the repository.
+            ref: Commit sha or branch; ``None`` reads the default branch.
+            action: Name of the read, used in error messages only.
+
+        Returns:
+            The file's text, or ``None`` when the path is not an inline file.
+        """
+        async with github_errors(action):
+            try:
+                params = {"ref": ref} if ref is not None else None
+                reply = await get(
+                    self._client(repo), f"/repos/{repo.full_name}/contents/{path}", params=params
+                )
+            except RequestFailed as error:
+                if is_not_found(error):
+                    return None
+                raise
+            if isinstance(reply.payload, list):
+                return None  # a directory listing, not a file
+            return _decode_file(_wire.FileContentWire.model_validate(reply.payload))
 
     def _client(self, repo: RepoRef):
         return self._clients.for_installation(repo.installation_id)
