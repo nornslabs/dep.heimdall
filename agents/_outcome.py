@@ -13,7 +13,9 @@ from heimdall.modules.audit.api import UsageRecord
 
 NO_USAGE = Usage(0, 0)
 
-CouldNotFinishReason = Literal["turn_limit", "token_budget", "invalid_submission"]
+CouldNotFinishReason = Literal[
+    "turn_limit", "token_budget", "invalid_submission", "secret_in_output"
+]
 
 
 @dataclass(frozen=True)
@@ -56,7 +58,7 @@ class Completed[T]:
 
 @dataclass(frozen=True)
 class CouldNotFinish:
-    """The run hit a turn, token or repair limit before a valid submission."""
+    """The run hit a turn, token or repair limit, or the secret scan stopped it."""
 
     reason: CouldNotFinishReason
     usage: RunUsage

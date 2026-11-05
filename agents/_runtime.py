@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from pydantic import BaseModel
 
 from agents._budget import AgentBudget
-from agents._guardrails import DATA_RULE
+from agents._guardrails import DATA_RULE, ToneFiltered, secret_audit_entry
 from agents._outcome import (
     Completed,
     CouldNotFinish,
@@ -38,9 +38,11 @@ __all__ = [
     "RunUsage",
     "Stale",
     "SubmitTool",
+    "ToneFiltered",
     "ToolBox",
     "Unavailable",
     "run_agent",
+    "secret_audit_entry",
     "still_current",
 ]
 
