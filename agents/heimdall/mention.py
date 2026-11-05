@@ -8,7 +8,8 @@ from agents._conversation import MENTION_MAX_TURNS, MentionAgent
 from agents._mcp_tools import McpToolClient
 from agents._mention_ports import ActSetup
 from agents._runtime import AgentTool
-from agents.heimdall.allowed_tools import ACT_TOOLS, ASK_TOOLS
+from agents.heimdall._auto_approve import approve_on_save
+from agents.heimdall.allowed_tools import ACT_TOOLS, ASK_TOOLS, DRAFT_TOOLS
 from agents.heimdall.config import BUDGET
 from agents.heimdall.guardrails import DeskGuard, guard_save_draft
 from agents.heimdall.scope import SCOPE
@@ -37,9 +38,14 @@ async def guard_act_tools(setup: ActSetup, tools: tuple[AgentTool, ...]) -> tupl
     """
     finding_ids = await _finding_ids(McpToolClient(setup.server), setup)
     guard = DeskGuard(existing_finding_ids=finding_ids)
-    return tuple(
-        guard_save_draft(guard, tool) if tool.spec.name == "save_draft" else tool for tool in tools
-    )
+    return tuple(_guarded(setup, guard, tool) for tool in tools)
+
+
+def _guarded(setup: ActSetup, guard: DeskGuard, tool: AgentTool) -> AgentTool:
+    """Put the draft cap on a draft tool, with approval-on-save inside it where allowed."""
+    if tool.spec.name not in DRAFT_TOOLS:
+        return tool
+    return guard_save_draft(guard, approve_on_save(setup, tool))
 
 
 async def _finding_ids(client: McpToolClient, setup: ActSetup) -> tuple[str, ...]:

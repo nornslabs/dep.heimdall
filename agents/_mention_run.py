@@ -158,7 +158,8 @@ async def run_mode(
         agent=name.value,
         pr_id=pr.pr_id,
         mode=mode,
-        reason=type(outcome).__name__,
+        reason=getattr(outcome, "reason", type(outcome).__name__),
+        turns=outcome.turns,
     )
     return ModeResult(None, tracker.actions())
 

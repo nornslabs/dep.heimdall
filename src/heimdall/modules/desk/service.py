@@ -118,6 +118,7 @@ async def save_draft(
             kind=kind,
             body=body,
             body_hash=body_hash,
+            head_sha=head_sha,
         )
         prior_drafts = await session.exec(
             select_for_tenant(Draft, ctx.installation_id).where(
@@ -286,6 +287,7 @@ async def get_current_draft_in_transaction(
         draft.body,
         draft.body_hash,
         draft.superseded_by,
+        draft.head_sha,
     )
 
 
@@ -363,4 +365,5 @@ async def get_draft_in_transaction(
         draft.body,
         draft.body_hash,
         draft.superseded_by,
+        draft.head_sha,
     )

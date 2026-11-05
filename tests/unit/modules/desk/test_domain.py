@@ -77,3 +77,40 @@ def test_bare_approve_command_has_no_target() -> None:
 
 def test_approve_with_extra_words_is_not_a_command() -> None:
     assert parse_command("/heimdall approve it please") is None
+
+
+def test_render_card_reads_like_a_note_not_a_form() -> None:
+    card = render_card(
+        CardContent(
+            number=25,
+            title="Update README.md",
+            head_sha="abc123",
+            intake_summary="The PR updates the README.",
+            repro_summary="Tests pass with and without the change.",
+            findings=(),
+        )
+    )
+
+    assert "### Intake" not in card
+    assert "### Reproduction" not in card
+    assert "### Findings" not in card
+    assert "No findings." not in card
+    assert "PR #25" in card
+    assert "The PR updates the README." in card
+    assert "Tests pass with and without the change." in card
+
+
+def test_render_card_lists_findings_under_a_plain_lead_in() -> None:
+    card = render_card(
+        CardContent(
+            number=1,
+            title="t",
+            head_sha="abc",
+            intake_summary="ok",
+            repro_summary="ok",
+            findings=("src/a.py:3 — unchecked input",),
+        )
+    )
+
+    assert "What caught my eye:" in card
+    assert "- src/a.py:3 — unchecked input" in card

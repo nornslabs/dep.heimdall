@@ -14,6 +14,7 @@ from agents._submit import SubmitTool
 from agents._toolbox import AgentTool
 from agents.heimdall.config import MAX_DRAFTS
 from agents.heimdall.schemas import SUBMIT_RESULT, DeskResult, desk_result_problems
+from heimdall.modules.desk.api import PR_ACTION_KINDS
 
 _FINDING_ID_PATTERN = re.compile(
     r"\b(finding-[0-9a-zA-Z_-]+)\b"
@@ -146,6 +147,19 @@ class DeskGuard:
         return None
 
 
+def _action_kind_refusal(arguments: Mapping[str, object]) -> str | None:
+    """Refuse a generic draft whose kind would close, reopen or merge the PR.
+
+    Those actions have their own tools, so the model cannot reach them by naming a kind.
+    """
+    if arguments.get("kind") in PR_ACTION_KINDS:
+        return (
+            "save_draft: use draft_close, draft_reopen or draft_merge to change the pull "
+            "request; save_draft only saves comments"
+        )
+    return None
+
+
 def guard_save_draft(guard: DeskGuard, save_draft: AgentTool) -> AgentTool:
     """Wrap save_draft so draft count and finding citations are verified.
 
@@ -159,6 +173,8 @@ def guard_save_draft(guard: DeskGuard, save_draft: AgentTool) -> AgentTool:
 
     async def handler(arguments: Mapping[str, object]) -> object:
         refusal = guard.draft_refusal(arguments)
+        if refusal is None and save_draft.spec.name == "save_draft":
+            refusal = _action_kind_refusal(arguments)
         if refusal is not None:
             return f"error: {refusal}"
         result = await save_draft.handler(arguments)

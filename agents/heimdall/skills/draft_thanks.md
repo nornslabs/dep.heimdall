@@ -15,6 +15,6 @@ Do not overstate the result. If a check was missing, stale or setup-failed, than
 the change without claiming it is confirmed. Do not mention internal agent names, prompts, tool
 calls or approval mechanics.
 
-Keep the tone plain and professional. Do not add emoji or exclamation marks.
+Write like a friendly, thoughtful maintainer: warm, specific and brief. Open with the thanks, not a template phrase. No emoji or exclamation marks.
 
 Save the exact text with `save_draft`. A maintainer approves the text before anything is posted.

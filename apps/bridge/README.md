@@ -36,3 +36,11 @@ registers Huginn, Loki and Heimdall with Switch and saves each agent's id and AP
 may @-mention each agent to people in that room. Exit code 0 means all three succeeded, 1 that
 any was skipped or failed, 2 that configuration was missing or the admin sign-in was refused. `--addressing-only` retries just the addressing step from the saved ids, rotating no key. Setup steps and re-run behaviour:
 `docs/switch.md`.
+
+## Showing that an agent is working
+
+`_ack.py` reacts 👀 to any room post that mentions `@heimdall`, `@huginn` or `@loki`. When that
+agent's reply (a post starting `Heimdall:`, `Huginn:` or `Loki:`) arrives in the same thread, the
+bridge swaps 👀 for ✅. Switch agents cannot react, so the bridge, which sees every post with its
+Mattermost id, does it. Pending mentions are kept in memory and expire after 15 minutes; a failed
+reaction is logged and never blocks an answer.

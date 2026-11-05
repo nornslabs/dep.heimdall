@@ -56,4 +56,6 @@ async def get_approved_draft(
             body_hash=draft.body_hash,
             approver=approval.approver,
             via=approval.via,
+            kind=draft.kind,
+            head_sha=draft.head_sha,
         )

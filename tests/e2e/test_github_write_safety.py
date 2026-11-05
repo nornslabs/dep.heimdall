@@ -27,6 +27,11 @@ GOOD_FIX = dataclasses.replace(
 )
 # Words a tool that writes to GitHub would carry; no agent tool may name one.
 GITHUB_WRITE_WORDS = ("comment", "review_pr", "merge", "approve", "label", "push", "close", "post")
+# These only save a draft of a fixed kind; GitHub is written by the outbox sender after approval.
+# Listed by exact name so a new tool with a write word in its name still fails this test.
+DRAFT_ONLY_TOOLS = frozenset(
+    {"draft_close", "draft_reopen", "draft_merge", "draft_ask_contributor"}
+)
 MEMORY_WRITE_TOOLS = frozenset({"remember", "forget"})
 AGENT_RUN_TOOLS = {"huginn": HUGINN_TOOLS, "loki": LOKI_TOOLS, "heimdall": HEIMDALL_TOOLS}
 AGENT_ACT_TOOLS = {
@@ -41,7 +46,11 @@ def test_no_agent_has_a_github_write_tool(agent: str) -> None:
     """No tool an agent can call, in a PR run or in act mode, is named for a GitHub write."""
     tools = AGENT_RUN_TOOLS[agent] | AGENT_ACT_TOOLS[agent]
 
-    offenders = {tool for tool in tools if any(word in tool for word in GITHUB_WRITE_WORDS)}
+    offenders = {
+        tool
+        for tool in tools - DRAFT_ONLY_TOOLS
+        if any(word in tool for word in GITHUB_WRITE_WORDS)
+    }
 
     assert offenders == set()
 

@@ -269,3 +269,16 @@ async def test_unverifiable_evidence_falls_back_after_repair() -> None:
     answer = await _huginn(FakePorts(), ScriptedAi([invented, invented]), "@huginn ok?")
 
     assert answer.text == f"Huginn: {FAILED_REPLY}"
+
+
+async def test_an_unfinished_run_logs_why_it_did_not_finish() -> None:
+    from structlog.testing import capture_logs
+
+    no_evidence = _submit(in_scope=True, answer="It is fine.", evidence=[])
+
+    with capture_logs() as logs:
+        await _huginn(FakePorts(), ScriptedAi([no_evidence, no_evidence]), "@huginn ok?")
+
+    unanswered = [entry for entry in logs if entry["event"] == "mention_not_answered"]
+    assert [entry["reason"] for entry in unanswered] == ["invalid_submission"]
+    assert unanswered[0]["turns"] > 0

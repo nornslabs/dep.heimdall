@@ -38,7 +38,10 @@ again, so every `ChannelSender` must be idempotent per `idempotency_key`.
 - **After the last retry**, or on a non-retryable error: `status = dead`, plus a `switch`
   message `alert.outbox_dead` in the dead message's own room (its `channel_id`), in words that
   name the outbox id, channel, kind and error type but never the message content. A dead row with
-  no `channel_id` (a GitHub comment) is logged as `outbox_alert_skipped` and raises no alert.
+  no `channel_id` and no `notify` block is logged as `outbox_alert_skipped` and raises no alert.
+  A GitHub row queued by an approval carries `notify` (agent room, PR, agent, draft kind); when
+  such a row dies, the PR's thread is told in plain words, as that agent, that GitHub refused the
+  action (for example a merge on a PR that changed), without GitHub's own reply.
   Alerts never raise alerts.
 - **`last_error`** stores only the error type, since error text can quote PR content.
 - **No sender for a channel:** the message stays `pending`.

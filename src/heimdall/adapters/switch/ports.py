@@ -57,6 +57,10 @@ class RoomPort(Protocol):
         """Add the bot's reaction to a post."""
         ...
 
+    async def unreact(self, post_id: str, emoji_name: str) -> None:
+        """Remove the bot's reaction from a post."""
+        ...
+
     def listen(self, stop: asyncio.Event) -> AsyncIterator[RoomEvent]:
         """Yield room events and reconnect until ``stop`` is set."""
         ...

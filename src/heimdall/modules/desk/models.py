@@ -32,6 +32,7 @@ class Draft(TenantScoped, table=True):
     body: str
     body_hash: str
     superseded_by: uuid.UUID | None = None
+    head_sha: str | None = None
     created_at: datetime = set_on_insert()
 
 

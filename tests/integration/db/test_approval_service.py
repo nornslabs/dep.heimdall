@@ -18,6 +18,7 @@ from heimdall.modules.approval.api import (
 from heimdall.modules.audit.api import list_for_pr
 from heimdall.modules.desk.api import get_draft, save_draft
 from heimdall.modules.tenancy.api import on_installation_event
+from heimdall.modules.tenancy.models import Repo
 from heimdall.modules.triage.api import EventKind, Facts, PrEvent, handle_event
 from heimdall.modules.triage.models import Pr
 from heimdall.shared.context import PrRef, TenantCtx
@@ -109,6 +110,58 @@ async def test_record_approval_checks_maintainer_and_exact_hash(
         messages = queued.all()
     assert len(messages) == 1
     assert messages[0].payload["draft_hash"] == draft.body_hash
+
+
+async def _queued_comment(
+    sessions: async_sessionmaker[AsyncSession], ctx: TenantCtx
+) -> OutboxMessage:
+    async with unit_of_work(sessions) as session:
+        rows = await session.exec(
+            select_for_tenant(OutboxMessage, ctx.installation_id).where(
+                OutboxMessage.kind == "github.pr_comment"
+            )
+        )
+        return rows.one()
+
+
+async def test_the_queued_github_message_names_the_thread_to_tell_if_it_is_refused(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    ctx, repo, pr_id, _ = await draft_context(sessions)
+    close = await save_draft(sessions, ctx, pr_id, "head-1", "pr_close", "Closing, thanks.")
+    async with unit_of_work(sessions) as session:
+        stored = (
+            await session.exec(
+                select_for_tenant(Repo, ctx.installation_id).where(Repo.full_name == repo.full_name)
+            )
+        ).one()
+        stored.switch_agent_room_id = "switch-room-1"
+        session.add(stored)
+
+    await record_approval(
+        sessions, MaintainerConfigReader(), ctx, repo, close.id, "reviewer", close.body_hash
+    )
+
+    notify = (await _queued_comment(sessions, ctx)).payload["notify"]
+    assert notify == {
+        "channel_id": "switch-room-1",
+        "pr_id": str(pr_id),
+        "agent": "heimdall",
+        "action": "pr_close",
+    }
+
+
+async def test_a_repo_with_no_agent_room_queues_no_notice(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    ctx, repo, _, draft_id = await draft_context(sessions)
+    draft = await get_draft(sessions, ctx, draft_id)
+
+    await record_approval(
+        sessions, MaintainerConfigReader(), ctx, repo, draft_id, "reviewer", draft.body_hash
+    )
+
+    assert "notify" not in (await _queued_comment(sessions, ctx)).payload
 
 
 def _pr_of(ctx: TenantCtx) -> PrRef:

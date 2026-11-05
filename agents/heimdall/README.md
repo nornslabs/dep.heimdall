@@ -67,3 +67,13 @@ All six skills are required (`REQUIRED_SKILLS` in `config.py`).
 
 The server renders card text and hashes drafts. Posting to GitHub still needs maintainer approval
 with a matching hash.
+
+## Acting on the PR from chat
+
+In act mode Heimdall has four draft tools: `draft_close`, `draft_reopen`, `draft_merge` and
+`draft_ask_contributor`. Each only saves a draft of a fixed kind; the GitHub sender acts on the
+approved draft's kind. `_auto_approve.py` approves close, reopen and ask-contributor drafts from
+the maintainer's own message (recorded as `via="message"`, still through `record_approval`, so
+the maintainer list and draft hash are checked). A merge is never approved this way: it waits for
+a 👍 or an "approve" reply on its exact text. The tool result carries a `status` so the reply
+reports what really happened.

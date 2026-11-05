@@ -31,7 +31,7 @@ DEMO_MAIN_SHA = "3159115d345ebd5d809fa347da45d3bf6e9b1cfe"
 ROOM_ID = "triage-room"
 # Switch's own id for the same room; the bot and the agents are given different ids for it.
 AGENT_ROOM_ID = "switch-room-uuid"
-APPROVAL_MARKER = "<!-- heimdall-approval "
+APPROVAL_MARKER = "[//]: # (heimdall-approval "
 REPRO_WORKFLOW = "heimdall-repro.yml"
 REPRO_WORKFLOW_PATH = f".github/workflows/{REPRO_WORKFLOW}"
 DIFF_MEDIA_TYPE = "application/vnd.github.diff"
@@ -283,6 +283,9 @@ class FakeSwitch:
     async def post_to_role(self, channel_id: str, role: str, message: str) -> str:
         """Post a message addressed to an agent role."""
         return self.post(channel_id, message)
+
+    async def unreact(self, post_id: str, emoji_name: str) -> None:
+        return None
 
     async def react(self, post_id: str, emoji_name: str) -> None:
         """Accept a reaction; the replay never reads Heimdall's own reactions."""

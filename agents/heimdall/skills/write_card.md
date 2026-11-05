@@ -14,13 +14,15 @@ Load the accepted findings with `list_findings` and the latest paired result wit
 Use only those saved records. Do not infer a result from the PR description, a comment or an
 earlier head.
 
-Build a short card with:
+Write the card the way a colleague would summarise the PR to a maintainer in chat: plain
+sentences, first person is fine, no form fields. Cover:
 
-- the PR number and title;
-- the house-rule summary;
-- the fix status from the saved reproduction verdict;
-- the most important gaps, each tied to a cited finding or a saved failing assertion;
-- one suggested next action for the maintainer.
+- what the PR does, in one sentence of your own words (the intake summary);
+- what the tests showed, from the saved reproduction verdict (the repro summary);
+- only the gaps that matter, each tied to a cited finding or a saved failing assertion.
+
+Leave findings empty when there are none. Never write filler such as "No specific gaps
+identified" or "Suggested action:"; if there is nothing to flag, say what looks fine instead.
 
 If the head moved, drop the stale result and say that a fresh check is needed. If a check is still
 running or timed out, say so and do not claim success or failure.

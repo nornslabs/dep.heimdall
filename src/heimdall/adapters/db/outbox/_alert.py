@@ -20,3 +20,31 @@ def render_dead_alert(outbox_id: str, channel: str, kind: str, last_error: str |
         f"Heimdall could not deliver a `{kind}` message to {channel} and has stopped retrying "
         f"({reason}). Outbox id: {outbox_id}."
     )
+
+
+_ACTION_WORDS = {
+    "pr_close": "close this pull request",
+    "pr_reopen": "reopen this pull request",
+    "pr_merge": "merge this pull request",
+}
+_DEFAULT_ACTION_WORDS = "post that comment"
+
+
+def render_action_alert(action: str) -> str:
+    """Say in plain words that GitHub did not take an approved action, and what to do.
+
+    GitHub's own reply is left out: it can quote PR content. The usual causes are a PR that
+    changed after it was approved, required checks that have not passed, or missing
+    permissions, so the advice is to look at the PR and ask again.
+
+    Args:
+        action: The approved draft's kind, such as ``pr_merge``.
+
+    Returns:
+        A short, friendly message for the PR's thread.
+    """
+    what = _ACTION_WORDS.get(action, _DEFAULT_ACTION_WORDS)
+    return (
+        f"GitHub wouldn't let me {what}. The PR may have changed since you approved it, or it "
+        "may be waiting on checks or permissions. Have a look, then ask me again."
+    )

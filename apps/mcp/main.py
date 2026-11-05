@@ -8,6 +8,7 @@ from mcp.server.mcpserver import MCPServer
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from apps.mcp._action_tools import register_action_draft_tools
 from apps.mcp._memory_tools import register_memory_tools
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.github.reader import GitHubApiReader
@@ -55,6 +56,10 @@ def create_server(
             "get_repro",
             "save_card",
             "save_draft",
+            "draft_close",
+            "draft_reopen",
+            "draft_merge",
+            "draft_ask_contributor",
             "create_mechanical_task",
             "recall",
         },
@@ -344,6 +349,7 @@ def create_server(
             return {"draft_id": str(draft.id), "body_hash": draft.body_hash}
 
         registered_tools.update({"list_findings", "save_card", "save_draft"})
+        registered_tools |= register_action_draft_tools(server, sessions)
 
     @server.tool(
         name="create_mechanical_task",

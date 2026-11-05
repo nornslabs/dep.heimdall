@@ -24,7 +24,7 @@ def test_the_approval_marker_still_follows_the_card() -> None:
 
     assert result.startswith("@alice, your review is needed:")
     assert result.endswith(message)
-    assert result.count("<!-- heimdall-approval") == 1
+    assert result.count("heimdall-approval") == 1
 
 
 def test_a_login_that_is_not_plain_is_never_written_into_the_mention() -> None:
