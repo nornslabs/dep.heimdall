@@ -1,3 +1,3 @@
 """MCP tools that Huginn may call."""
 
-ALLOWED_TOOLS: frozenset[str] = frozenset({"start_repro", "get_repro", "recall"})
+ALLOWED_TOOLS: frozenset[str] = frozenset({"start_repro", "get_repro", "recall", "get_file"})

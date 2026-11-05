@@ -19,6 +19,7 @@ Value types live in `shared/github.py` (`RepoRef`, `PullRequestInfo`, `ChangedFi
 | Method | Returns |
 |---|---|
 | `get_file(repo, path, ref)` | File text at a commit, or `None` (missing file or directory) |
+| `file_at_sha(repo, path, sha)` | File text at an exact commit, never the default branch, or `None` |
 | `get_pull_request(repo, number)` | `PullRequestInfo` (`body` is `""` when empty) |
 | `list_changed_files(repo, number)` | Every changed file, following pages (up to GitHub's 3000) |
 | `get_diff(repo, number)` | Unified diff cut at 200 KB on a character boundary, with `truncated` |

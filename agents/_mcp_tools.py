@@ -66,6 +66,28 @@ class LokiMcpTools(McpToolClient):
         )
         return {"text": str(values["text"]), "truncated": values["truncated"] is True}
 
+    async def get_file(
+        self,
+        installation_id: int,
+        pr_id: str,
+        repo_full_name: str,
+        path: str,
+        ref: str,
+        start: int = 1,
+        end: int | None = None,
+    ) -> dict[str, object]:
+        """Read a capped line range of a file at the PR head or base."""
+        return await self.call(
+            "get_file",
+            installation_id=installation_id,
+            pr_id=pr_id,
+            repo_full_name=repo_full_name,
+            path=path,
+            ref=ref,
+            start=start,
+            end=end,
+        )
+
     async def save_findings(
         self,
         installation_id: int,

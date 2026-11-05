@@ -16,21 +16,30 @@ create_server = runpy.run_path(str(REPOSITORY_ROOT / "apps/mcp/main.py"))["creat
 
 
 def test_mcp_server_registers_reproduction_tools() -> None:
-    """Publish start and retrieval tools with typed schemas."""
+    """Publish start, retrieval and file-reading tools with typed schemas."""
     sessions = cast(async_sessionmaker[AsyncSession], object())
-    server = create_server(sessions)
+    reader = cast(GitHubApiReader, object())
+    server = create_server(sessions, reader)
 
     tools = asyncio.run(server.list_tools())
 
-    assert {tool.name for tool in tools} == {"start_repro", "get_repro", "recall"}
+    assert {tool.name for tool in tools} == {
+        "start_repro",
+        "get_repro",
+        "recall",
+        "get_file",
+    }
     assert all("installation_id" in tool.input_schema["properties"] for tool in tools)
 
 
 @pytest.mark.parametrize(
     ("agent_name", "expected_tools"),
     [
-        ("huginn", {"start_repro", "get_repro", "recall"}),
-        ("loki", {"get_pr_context", "get_diff", "save_findings", "recall"}),
+        ("huginn", {"start_repro", "get_repro", "recall", "get_file"}),
+        (
+            "loki",
+            {"get_pr_context", "get_diff", "save_findings", "recall", "get_file"},
+        ),
         (
             "heimdall",
             {
@@ -73,6 +82,7 @@ def test_loki_server_exposes_only_its_allowlisted_tools() -> None:
         "get_diff",
         "save_findings",
         "recall",
+        "get_file",
     }
 
 

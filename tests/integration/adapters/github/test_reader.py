@@ -49,6 +49,33 @@ async def test_directory_returns_none(reader: GitHubApiReader, fake_github: Fake
     assert await reader.get_file(REPO, "src", "head123") is None
 
 
+# --- file_at_sha -----------------------------------------------------------------------
+
+
+async def test_file_at_sha_reads_the_file_at_that_commit(
+    reader: GitHubApiReader, fake_github: FakeGitHub
+) -> None:
+    path = "/repos/octo-org/demo/contents/src/app.py"
+    fake_github.on_json("GET", path, file_content("print('hi')\n", "src/app.py"))
+
+    text = await reader.file_at_sha(REPO, "src/app.py", "head123")
+
+    assert text == "print('hi')\n"
+    assert fake_github.requests_to(path)[0].url.params["ref"] == "head123"
+
+
+async def test_file_at_sha_returns_none_when_the_file_is_absent(reader: GitHubApiReader) -> None:
+    assert await reader.file_at_sha(REPO, "gone.py", "head123") is None
+
+
+async def test_file_at_sha_returns_none_for_a_directory(
+    reader: GitHubApiReader, fake_github: FakeGitHub
+) -> None:
+    fake_github.on_json("GET", "/repos/octo-org/demo/contents/src", [{"type": "file"}])
+
+    assert await reader.file_at_sha(REPO, "src", "head123") is None
+
+
 # --- pull requests --------------------------------------------------------------------
 
 
