@@ -50,6 +50,7 @@ def create_server(
         },
         "loki": {"get_pr_context", "get_diff", "save_findings", "recall", "get_file"},
         "heimdall": {
+            "get_pr_context",
             "list_findings",
             "get_repro",
             "save_card",
@@ -308,7 +309,19 @@ def create_server(
                     findings=(*gaps, f"Suggested action: {suggested_action}"),
                 ),
             )
-            return {"card_id": str(card.id)}
+            draft = await save_draft(
+                sessions,
+                ctx,
+                UUID(pr_id),
+                head_sha,
+                "switch_card",
+                card.body,
+            )
+            return {
+                "card_id": str(card.id),
+                "draft_id": str(draft.id),
+                "body_hash": draft.body_hash,
+            }
 
         @server.tool(
             name="save_draft",

@@ -56,7 +56,7 @@ from tests.e2e.fake_world import (
     pull_request_webhook,
     workflow_run_webhook,
 )
-from tests.e2e.scripted_model import ScriptedHuginnModel, ScriptedLokiModel
+from tests.e2e.scripted_model import ScriptedHeimdallModel, ScriptedHuginnModel, ScriptedLokiModel
 from tests.integration.db.installation_helpers import created_installation
 
 MAX_SETTLE_ROUNDS = 20
@@ -113,8 +113,11 @@ class Pipeline:
         self._loki_model = ScriptedLokiModel()
         self._loki_queue = create_queue_app(deps.database_url, schema=deps.db_schema)
         register_loki_task(self._loki_queue, deps.sessions, self.reader, self._loki_model)
+        self._heimdall_model = ScriptedHeimdallModel()
         self._heimdall_queue = create_queue_app(deps.database_url, schema=deps.db_schema)
-        register_heimdall_task(self._heimdall_queue, deps.sessions, self.reader)
+        register_heimdall_task(
+            self._heimdall_queue, deps.sessions, self.reader, self._heimdall_model
+        )
         self._deliveries = 0
         self._started_at = datetime.now(UTC)
         self._since_job = 0

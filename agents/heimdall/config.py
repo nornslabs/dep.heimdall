@@ -19,17 +19,32 @@ REQUIRED_SKILLS: frozenset[str] = frozenset(
 MAX_TURNS = 8
 CONTEXT_TOKENS = 24_000
 RUN_TOKEN_BUDGET = 100_000
+# At most 2 drafts per command; enforced by the budget's call_caps.
 MAX_DRAFTS = 2
+# No diff or file access: Heimdall writes the card from other agents' stored results.
 NO_CALLS = 0
 
-# Heimdall writes the card from other agents' results, so it has no diff or file access.
 # Starting points; tune on the seeded PRs.
 BUDGET = AgentBudget(
     context_tokens=CONTEXT_TOKENS,
     run_tokens=RUN_TOKEN_BUDGET,
     max_turns=MAX_TURNS,
-    call_caps={"get_diff": NO_CALLS, "get_file": NO_CALLS, "save_draft": MAX_DRAFTS},
+    call_caps={
+        "get_diff": NO_CALLS,
+        "get_file": NO_CALLS,
+        "save_draft": MAX_DRAFTS,
+    },
 )
+
+__all__ = [
+    "AGENT_NAME",
+    "BUDGET",
+    "MAX_DRAFTS",
+    "MAX_TURNS",
+    "REQUIRED_SKILLS",
+    "load_ai_config",
+    "load_switch_config",
+]
 
 
 def load_switch_config(rooms: tuple[str, ...]) -> AgentConnectionConfig:

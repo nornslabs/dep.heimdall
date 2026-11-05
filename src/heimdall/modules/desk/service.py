@@ -244,11 +244,49 @@ def _mechanical_task_ref(
 
 __all__ = [
     "create_mechanical_task",
+    "get_current_draft_in_transaction",
     "get_draft",
     "get_draft_in_transaction",
     "save_card",
     "save_draft",
 ]
+
+
+async def get_current_draft_in_transaction(
+    session: AsyncSession, ctx: TenantCtx, pr_id: uuid.UUID, kind: str
+) -> DraftRef:
+    """Load the un-superseded draft for a pull request and kind.
+
+    Args:
+        session: Session inside the caller's transaction.
+        ctx: Tenant and request context.
+        pr_id: Pull request identifier.
+        kind: Draft category, such as "switch_card".
+
+    Returns:
+        Exact draft text and stored approval hash.
+
+    Raises:
+        ValueError: No current draft of this kind exists.
+    """
+    result = await session.exec(
+        select_for_tenant(Draft, ctx.installation_id).where(
+            Draft.pr_id == pr_id,
+            Draft.kind == kind,
+            col(Draft.superseded_by).is_(None),
+        )
+    )
+    draft = result.first()
+    if draft is None:
+        raise ValueError(f"no current {kind} draft registered for PR {pr_id}")
+    return DraftRef(
+        draft.id,
+        draft.pr_id,
+        draft.kind,
+        draft.body,
+        draft.body_hash,
+        draft.superseded_by,
+    )
 
 
 async def get_draft(

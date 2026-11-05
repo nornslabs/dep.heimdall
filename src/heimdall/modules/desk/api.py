@@ -16,6 +16,7 @@ from heimdall.modules.desk.domain import (
 )
 from heimdall.modules.desk.service import (
     create_mechanical_task,
+    get_current_draft_in_transaction,
     get_draft,
     get_draft_in_transaction,
     save_card,
@@ -31,6 +32,7 @@ __all__ = [
     "MechanicalTaskRef",
     "create_mechanical_task",
     "format_approval_message",
+    "get_current_draft_in_transaction",
     "get_draft",
     "get_draft_in_transaction",
     "hash_draft",
