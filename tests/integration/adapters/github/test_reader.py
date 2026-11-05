@@ -164,6 +164,20 @@ async def test_count_open_prs_by_author_uses_search_total(
     assert query == "repo:octo-org/demo is:pr is:open author:ravi"
 
 
+async def test_get_issue_returns_the_title_and_body(
+    reader: GitHubApiReader, fake_github: FakeGitHub
+) -> None:
+    """Read the linked issue's goal for Loki's scope review."""
+    path = "/repos/octo-org/demo/issues/7"
+    fake_github.on_json(
+        "GET", path, {"number": 7, "title": "Broken URL", "body": "ws_url is wrong"}
+    )
+
+    issue = await reader.get_issue(REPO, 7)
+
+    assert (issue.number, issue.title, issue.body) == (7, "Broken URL", "ws_url is wrong")
+
+
 async def test_get_issue_assignees_returns_all_assignees(
     reader: GitHubApiReader, fake_github: FakeGitHub
 ) -> None:
