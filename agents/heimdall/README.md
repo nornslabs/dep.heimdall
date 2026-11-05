@@ -1,7 +1,9 @@
 # Heimdall
 
-Heimdall assembles a current-head review card and approval-bound draft from stored findings and
-reproduction results. Valid slash commands are parsed as data and dispatched to trusted handlers.
+Heimdall runs on the shared runtime (`agents/_runtime.py`): the model decides what to do next;
+its ToolBox, budgets, guardrails and `submit_result` decide what it may do. It assembles a
+current-head review card or drafts answers to maintainer commands using stored triage findings and
+reproduction results.
 
 ## Skills
 
@@ -18,19 +20,16 @@ All six skills are required (`REQUIRED_SKILLS` in `config.py`).
 
 | File | Role |
 |---|---|
-| `agent.py` | Card assembly and command routing |
-| `runner.py` | Consumer of the `heimdall` queue only: runs `heimdall.build_card`, then queues the approval message for the repo's room, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it answers a maintainer's `ping`/`hello`, and tells anyone else to ask an admin to add them to `maintainers` in `heimdall.yml` |
-| `prompt.md` | Trust boundaries, allowed tools, and output format |
+| `agent.py` | `run_heimdall`: thin entry point running Heimdall on `_runtime.py` |
+| `runner.py` | Consumer of the `heimdall` queue: runs `heimdall.build_card` and `heimdall.run_command`, queues room posts, and maintains Switch presence |
+| `context.py` | `build_desk_brief` and `build_messages`: pre-fetches repro and finding data into a `pr_data` brief |
+| `guardrails.py` | `CommandGuard` (maintainers only), `DeskGuard` (at most 2 drafts, valid finding citations only), `SavedIdTracker`, and `submit_desk_result_tool` |
+| `prompt.md` | Role prompt, rules, and output format |
 | `allowed_tools.py` | Heimdall's scoped MCP tool allowlist |
-| `schemas.py` | `DeskResult` submit schema and `SUBMIT_RESULT`, plus `desk_result_problems` (the id must be work this run saved) |
-| `_message.py` | `render_desk_result`: the room message built from a validated result |
-| `config.py` | `AGENT_NAME`, `MAX_TURNS = 8`, `BUDGET` (24k context, 100k run tokens, no diff or file reads, 2 drafts), `REQUIRED_SKILLS`, `load_ai_config()` (`LLM_HEIMDALL_*`) |
+| `schemas.py` | `DeskResult` submit schema and `SUBMIT_RESULT`, plus `desk_result_problems` |
+| `_message.py` | `render_desk_result`: room message built from a validated result |
+| `config.py` | `AGENT_NAME`, `MAX_TURNS = 8`, `BUDGET` (24k context, 100k run tokens, no diff or file reads, 2 drafts), `REQUIRED_SKILLS`, `load_ai_config()` |
 | `skills/` | Six required playbooks (see table above) |
 
-The card and command flows are deterministic today. The worker builds Heimdall's `AiAdapter` from
-its own config at startup, so a bad model setting fails before any job runs.
-
-`build_review_card` returns `approval_message`, which adds hidden draft identity and hash metadata
-for the bridge. The marker is outside the saved draft body, so the approval hash still covers
-only the exact text Gjallarhorn may post. Heimdall's MCP scope includes `create_mechanical_task`,
-which saves a policy-gated task draft and returns its `heimdall-task` block.
+The server renders card text and hashes drafts. Posting to GitHub still needs maintainer approval
+with a matching hash.
