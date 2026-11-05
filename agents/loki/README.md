@@ -8,7 +8,7 @@ head again and drops its findings if the head has moved.
 | File | Role |
 |---|---|
 | `agent.py` | Review flow and trust-boundary messages |
-| `runner.py` | Consumer of the `loki` queue only: runs `loki.run_review`, dropping jobs for an old head, then queues one room post as Loki through the outbox, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it answers a maintainer's `ping`/`hello` and `remember`/`forget` commands (`../_memory_handler.py`), and tells anyone else to ask an admin to add them to `maintainers` in `heimdall.yml` |
+| `runner.py` | Consumer of the `loki` queue only: runs `loki.run_review`, dropping jobs for an old head, then queues one room post as Loki through the outbox, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it queues an `agent.mention` for each message a maintainer addresses to it and carries out `remember`/`forget` commands (`../_memory_handler.py`), and tells anyone else to ask an admin to add them to `maintainers` in `heimdall.yml` |
 | `_message.py` | Private: the room post, counts only (no PR or model text), so nothing untrusted is posted under Loki's name |
 | `_findings.py` | Private parsing of the model reply into findings (capped at `MAX_FINDINGS`) |
 | `_notes.py` | Reads the notes maintainers kept for Loki on the repo (`recall`) and wraps them as one `<pr_data source="recall">` block in the review's user turn; a failing `recall` means no notes, never a failed review |

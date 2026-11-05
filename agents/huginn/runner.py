@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from agents._job_context import load_agent_room_id
+from agents._mention import register_mention_task
 from agents._presence_runner import run_with_presence
 from agents.huginn.agent import run_huginn
 from agents.huginn.config import load_ai_config
@@ -70,6 +71,7 @@ def register_huginn_task(
         sessions: Tenant-scoped database sessions.
         sleep: Wait between status polls; the e2e replay passes one that advances its fakes.
     """
+    register_mention_task(queue_app)
 
     @queue_app.task(name="huginn.run_repro")
     async def run_repro_task(

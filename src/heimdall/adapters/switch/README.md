@@ -28,8 +28,8 @@ reactions and approvals because agent events carry no reactions.
 `/agents/{id}/connection/ws`, answers each `ping` with a `pong` carrying the processed
 cursor, delivers addressed `message` events to a handler, and posts with
 `POST /agents/{id}/message`. It is wired only in `apps/*/main.py`; the worker's use of posting
-is described below. Inbound mentions are handled by `agents/_presence_*.py`, which only answers
-maintainers' `ping`/`hello`; no mention starts a job yet.
+is described below. Inbound mentions are handled by `agents/_presence_*.py`, which queues one
+`agent.mention` job per message a maintainer addresses to the agent (see `agents/README.md`).
 
 Concurrency rules:
 

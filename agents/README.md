@@ -85,7 +85,25 @@ A maintainer keeps a fact for an agent with `@<agent> remember <key>: <note>` an
 `_memory_commands.py` parses the command and words the fixed replies; `_memory_handler.py`
 checks the sender is a maintainer, changes the note through `heimdall.modules.memory` and
 queues the reply in the same transaction. `_presence_runner.room_message_handler` tries memory
-commands before presence prompts.
+commands before turning the message into an `agent.mention`.
+
+## Mentions (`agent.mention`)
+
+Every message addressed to an agent is a question for that agent, not a keyword lookup. After
+memory commands, `_presence_handler.MentionHandler` queues one `agent.mention` job on the
+agent's own queue, in the same transaction as the sender lookup:
+
+```
+agent.mention {agent, pr_ref | null, thread_id | null, sender, sender_role, text, message_id}
+```
+
+`pr_ref` is the PR whose Switch thread the message is in. `sender_role` is always `maintainer`
+today: someone who is not one gets the fixed "ask an admin" reply and no job. `hello` and `ping`
+get no special handling. Heimdall's `parse_command` verbs (`/heimdall approve|revise|fix|retry`,
+`@heimdall pause auto`) keep their own path and queue nothing. `text` is untrusted data: it is
+carried verbatim and never logged or acted on. A queueing lock drops a repeat delivery while the
+first job is still waiting, so delivery is at-least-once. Until the conversation work answers
+them (HEI-94), the registered `agent.mention` task (`_mention.py`) only logs ids.
 
 No model ever writes a note: agents get only the read-only MCP tool `recall`, so PR text cannot
 plant an instruction that outlives the PR. Loki puts its notes for the PR's repo into its review

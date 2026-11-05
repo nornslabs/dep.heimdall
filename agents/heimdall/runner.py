@@ -9,6 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from agents._job_context import load_pr_job_context
 from agents._mcp_tools import HeimdallMcpTools
+from agents._mention import register_mention_task
 from agents._presence_runner import run_with_presence
 from agents.heimdall.agent import build_review_card
 from agents.heimdall.config import AGENT_NAME, load_ai_config
@@ -49,6 +50,7 @@ def register_heimdall_task(
         sessions: Tenant-scoped database sessions.
         reader: Authenticated read-only GitHub adapter, used for the PR title.
     """
+    register_mention_task(queue_app)
 
     @queue_app.task(name="heimdall.build_card")
     async def build_card_task(installation_id: int, pr_id: str, head_sha: str) -> None:

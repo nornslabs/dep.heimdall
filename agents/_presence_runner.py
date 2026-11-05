@@ -1,4 +1,4 @@
-"""Hold an agent's Switch connection beside its job worker, so it can answer a ping."""
+"""Hold an agent's Switch connection beside its job worker, so it can hear its mentions."""
 
 import asyncio
 import dataclasses
@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from agents._memory_handler import MemoryCommandHandler
-from agents._presence_handler import PresenceHandler
+from agents._presence_handler import MentionHandler
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.switch.agent import AgentConnectionConfig, AgentMessage, SwitchAgentClient
 from heimdall.adapters.switch.agent.credentials import load_agent_credentials, switch_api_url
@@ -121,22 +121,23 @@ async def _build_client(
 
 
 def room_message_handler(agent: AgentName, sessions: async_sessionmaker[AsyncSession]) -> OnMessage:
-    """Build the callback that answers room messages: memory commands first, then presence.
+    """Build the callback for room messages: memory commands first, then the mention event.
 
     Args:
         agent: The agent the messages are addressed to.
         sessions: Tenant database session factory.
 
     Returns:
-        A callback for the Switch client; a message no handler takes gets no answer.
+        A callback for the Switch client; every addressed message that is not a memory command
+        or a Heimdall command becomes one ``agent.mention`` job.
     """
     memory = MemoryCommandHandler(agent, sessions)
-    presence = PresenceHandler(agent, sessions)
+    mentions = MentionHandler(agent, sessions)
 
     async def on_message(message: AgentMessage) -> None:
         if await memory.handle(message):
             return
-        await presence.handle(message)
+        await mentions.handle(message)
 
     return on_message
 

@@ -247,7 +247,7 @@ async def test_the_same_message_delivered_twice_stores_once_and_replies_once(
     assert len(await _replies(sessions, message.message_id)) == 1
 
 
-async def test_other_messages_are_left_for_the_presence_handler(
+async def test_other_messages_are_left_for_the_mention_handler(
     sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
 ) -> None:
     pr = await _pr_thread(sessions, engine, ["alice"])
@@ -273,20 +273,29 @@ async def test_a_thread_is_only_found_for_its_own_tenant(
     assert foreign is None
 
 
-async def test_the_room_callback_sends_commands_to_memory_and_pings_to_presence(
+async def _mention_jobs(engine: AsyncEngine, message_id: str) -> int:
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                "SELECT count(*) FROM procrastinate_jobs "
+                "WHERE task_name = 'agent.mention' AND args->>'message_id' = :message_id"
+            ),
+            {"message_id": message_id},
+        )
+        return result.scalar_one()
+
+
+async def test_the_room_callback_sends_commands_to_memory_and_everything_else_to_a_mention(
     sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
 ) -> None:
     pr = await _pr_thread(sessions, engine, ["alice"])
     on_message = room_message_handler(AgentName.LOKI, sessions)
     command = _message(pr.room, "alice", "@loki remember scope: docs/ is out", pr.thread_id)
-    ping = _message(pr.room, "alice", "@loki ping", pr.thread_id)
+    question = _message(pr.room, "alice", "@loki what did you note?", pr.thread_id)
 
     await on_message(command)
-    await on_message(ping)
+    await on_message(question)
 
     assert await _notes(sessions, pr) == ["scope=docs/ is out"]
-    async with unit_of_work(sessions) as session:
-        statement = select(OutboxMessage).where(
-            col(OutboxMessage.idempotency_key) == f"presence:loki:{ping.message_id}"
-        )
-        assert (await session.exec(statement)).first() is not None
+    assert await _mention_jobs(engine, command.message_id) == 0
+    assert await _mention_jobs(engine, question.message_id) == 1
