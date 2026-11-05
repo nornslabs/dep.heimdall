@@ -64,6 +64,10 @@ class InvalidNote(HeimdallError):
     """An agent note's key or value breaks the memory rules (format or length)."""
 
 
+class NoteLimitReached(InvalidNote):
+    """An agent already keeps the most notes it may for this repository."""
+
+
 class NoteNotFound(HeimdallError):
     """No agent note with this key exists for the repository and agent."""
 

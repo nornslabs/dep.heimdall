@@ -11,6 +11,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from agents._memory_commands import (
     Forget,
+    ListNotes,
     MemoryCommand,
     Remember,
     Usage,
@@ -18,6 +19,7 @@ from agents._memory_commands import (
     format_invalid_reply,
     format_no_such_note_reply,
     format_noted_reply,
+    format_notes_reply,
     format_outside_thread_reply,
     format_usage_reply,
     parse_memory_command,
@@ -30,6 +32,7 @@ from heimdall.adapters.switch.agent.protocol import AgentMessage
 from heimdall.modules.memory.api import (
     NoteScope,
     forget_note_in_transaction,
+    recall_notes_in_transaction,
     remember_note_in_transaction,
     validate_key,
 )
@@ -105,13 +108,16 @@ class MemoryCommandHandler:
         message: AgentMessage,
         command: MemoryCommand,
     ) -> str:
-        """Change the note the command names and return the reply text."""
+        """Run the command, changing a note or listing them, and return the reply text."""
         if isinstance(command, Usage):
             return format_usage_reply(self._agent)
         if pr is None:
             return format_outside_thread_reply(self._agent)
         scope = NoteScope(pr.repo_id, self._agent)
         try:
+            if isinstance(command, ListNotes):
+                notes = await recall_notes_in_transaction(session, ctx, scope)
+                return format_notes_reply(self._agent, notes)
             if isinstance(command, Remember):
                 return await self._remember(session, ctx, scope, message, command)
             return await self._forget(session, ctx, scope, message, command)

@@ -16,7 +16,12 @@ from agents._presence_runner import room_message_handler
 from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.switch.agent.protocol import AgentMessage
-from heimdall.modules.memory.api import NoteScope, recall_notes, remember_note
+from heimdall.modules.memory.api import (
+    MAX_NOTES_PER_AGENT,
+    NoteScope,
+    recall_notes,
+    remember_note,
+)
 from heimdall.modules.tenancy.api import get_tenant, link_repo_room, on_installation_event
 from heimdall.modules.triage.api import (
     EventKind,
@@ -283,6 +288,112 @@ async def _mention_jobs(engine: AsyncEngine, message_id: str) -> int:
             {"message_id": message_id},
         )
         return result.scalar_one()
+
+
+async def test_asking_what_the_agent_remembers_lists_the_notes_in_the_thread(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    scope = NoteScope(pr.repo_id, AgentName.LOKI)
+    await remember_note(sessions, pr.ctx, scope, "scope", "docs/ is out", "alice", "m-1")
+    await remember_note(sessions, pr.ctx, scope, "test-cmd", "pytest -q", "alice", "m-2")
+    message = _message(pr.room, "alice", "@loki what do you remember?", pr.thread_id)
+
+    taken = await MemoryCommandHandler(AgentName.LOKI, sessions).handle(message)
+
+    assert taken
+    (reply,) = await _replies(sessions, message.message_id)
+    assert reply.payload["pr_id"] == str(pr.pr_id)
+    assert reply.payload["channel_id"] == pr.room
+    assert reply.payload["message"] == (
+        "Loki: I have 2 notes for this repo:\n- `scope`: docs/ is out\n- `test-cmd`: pytest -q"
+    )
+
+
+async def test_listing_notes_changes_nothing(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    await remember_note(
+        sessions, pr.ctx, NoteScope(pr.repo_id, AgentName.LOKI), "scope", "docs/", "alice", "m-1"
+    )
+
+    await MemoryCommandHandler(AgentName.LOKI, sessions).handle(
+        _message(pr.room, "alice", "@loki what do you remember", pr.thread_id)
+    )
+
+    assert await _notes(sessions, pr) == ["scope=docs/"]
+
+
+async def test_listing_with_no_notes_says_how_to_add_one(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    message = _message(pr.room, "alice", "@loki what do you remember", pr.thread_id)
+
+    await MemoryCommandHandler(AgentName.LOKI, sessions).handle(message)
+
+    (reply,) = await _replies(sessions, message.message_id)
+    assert "I have no notes for this repo" in str(reply.payload["message"])
+
+
+async def test_each_agent_lists_only_its_own_notes(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    await remember_note(
+        sessions, pr.ctx, NoteScope(pr.repo_id, AgentName.LOKI), "scope", "docs/", "alice", "m-1"
+    )
+    message = _message(pr.room, "alice", "@huginn what do you remember", pr.thread_id)
+
+    await MemoryCommandHandler(AgentName.HUGINN, sessions).handle(message)
+
+    (reply,) = await _replies(sessions, message.message_id)
+    assert "no notes" in str(reply.payload["message"])
+
+
+async def test_listing_outside_a_pr_thread_asks_for_the_thread(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    message = _message(pr.room, "alice", "@loki what do you remember", None)
+
+    await MemoryCommandHandler(AgentName.LOKI, sessions).handle(message)
+
+    (reply,) = await _replies(sessions, message.message_id)
+    assert "PR's thread" in str(reply.payload["message"])
+
+
+async def test_a_non_maintainer_cannot_list_the_notes(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    await remember_note(
+        sessions, pr.ctx, NoteScope(pr.repo_id, AgentName.LOKI), "scope", "docs/", "alice", "m-1"
+    )
+    message = _message(pr.room, "mallory", "@loki what do you remember", pr.thread_id)
+
+    await MemoryCommandHandler(AgentName.LOKI, sessions).handle(message)
+
+    (reply,) = await _replies(sessions, message.message_id)
+    assert "only maintainers can use me" in str(reply.payload["message"])
+    assert "docs/" not in str(reply.payload["message"])
+
+
+async def test_the_note_after_the_cap_is_refused_with_a_reply_that_names_the_limit(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    scope = NoteScope(pr.repo_id, AgentName.LOKI)
+    for index in range(MAX_NOTES_PER_AGENT):
+        await remember_note(sessions, pr.ctx, scope, f"n{index:02d}", "fact", "alice", "m-1")
+    message = _message(pr.room, "alice", "@loki remember extra: one too many", pr.thread_id)
+
+    await MemoryCommandHandler(AgentName.LOKI, sessions).handle(message)
+
+    (reply,) = await _replies(sessions, message.message_id)
+    assert "50 notes" in str(reply.payload["message"])
+    assert len(await _notes(sessions, pr)) == MAX_NOTES_PER_AGENT
 
 
 async def test_the_room_callback_sends_commands_to_memory_and_everything_else_to_a_mention(

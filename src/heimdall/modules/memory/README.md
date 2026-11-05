@@ -5,8 +5,8 @@ or "`docs/` is out of scope for review". A note outlives the PR it was made on, 
 recall it on the next PR in the same repo.
 
 Public functions: `remember_note`, `recall_notes`, `forget_note`, the
-`remember_note_in_transaction` / `forget_note_in_transaction` variants for a caller that
-writes its reply in the same transaction, plus the pure rules
+`remember_note_in_transaction` / `forget_note_in_transaction` / `recall_notes_in_transaction`
+variants for a caller that writes its reply in the same transaction, plus the pure rules
 `validate_note`, `validate_key` and `matches_query`.
 
 | File | Role |
@@ -15,7 +15,7 @@ writes its reply in the same transaction, plus the pure rules
 | `service.py` | Use cases |
 | `_write.py` | Remember and forget; the maintainer check |
 | `_read.py` | Recall and row-to-value mapping |
-| `domain.py` | Pure rules: key format, 300-character value limit, query matching |
+| `domain.py` | Pure rules: key format, 300-character value limit, 50-note cap, query matching |
 | `models.py` | Persistence models |
 
 Tables (`models.py`): `agent_memory` (one value per `(repo_id, agent, key)`; indexed on
@@ -30,6 +30,10 @@ model steered by PR text cannot write or drop a note on its own.
   asked and from which message.
 - `recall_notes` returns unexpired notes ordered by key; a query matches the key or value,
   ignoring case. `expires_at` is never set yet; it exists for a later TTL.
+- `remember_note` raises `NoteLimitReached` (an `InvalidNote`) when an agent already keeps
+  `MAX_NOTES_PER_AGENT` (50) notes for the repo and the key is new; replacing a key at the cap
+  still works. Expired notes count, since they still hold a slot. The scope is locked for the
+  transaction, so two notes written together cannot both take the last slot.
 - `forget_note` raises `NoteNotFound` when no note has that key.
 
 Note values are written by maintainers but are still shown to models as data, never as

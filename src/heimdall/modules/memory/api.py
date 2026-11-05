@@ -3,6 +3,7 @@
 from heimdall.modules.memory.domain import (
     MAX_NOTE_KEY_CHARS,
     MAX_NOTE_VALUE_CHARS,
+    MAX_NOTES_PER_AGENT,
     AgentNote,
     NoteInput,
     NoteScope,
@@ -14,11 +15,13 @@ from heimdall.modules.memory.service import (
     forget_note,
     forget_note_in_transaction,
     recall_notes,
+    recall_notes_in_transaction,
     remember_note,
     remember_note_in_transaction,
 )
 
 __all__ = [
+    "MAX_NOTES_PER_AGENT",
     "MAX_NOTE_KEY_CHARS",
     "MAX_NOTE_VALUE_CHARS",
     "AgentNote",
@@ -28,6 +31,7 @@ __all__ = [
     "forget_note_in_transaction",
     "matches_query",
     "recall_notes",
+    "recall_notes_in_transaction",
     "remember_note",
     "remember_note_in_transaction",
     "validate_key",
