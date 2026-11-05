@@ -12,7 +12,7 @@ from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.db.outbox.sender import ChannelSender, run_outbox_loop, send_due_messages
 from heimdall.adapters.db.outbox.writer import write_outbox
 from heimdall.adapters.db.unit_of_work import unit_of_work
-from heimdall.shared.errors import DraftChanged, GitHubUnavailable
+from heimdall.shared.errors import DraftChanged, GitHubRequestFailed, GitHubUnavailable
 from heimdall.shared.ids import InstallationId
 
 pytestmark = pytest.mark.integration
@@ -220,3 +220,28 @@ async def test_outbox_loop_sends_messages_and_stops_when_asked(
     await asyncio.wait_for(loop, timeout=3)
 
     assert key in sender.sent
+
+
+async def test_a_refused_github_action_tells_the_pr_thread_as_heimdall(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    notify = {"channel_id": "room-9", "pr_id": "pr-1", "agent": "heimdall", "action": "pr_merge"}
+    key = await _write(sessions, "github", {"draft_id": "d", "notify": notify})
+
+    await _send(
+        sessions,
+        {"github": RecordingSender([GitHubRequestFailed("405")], fail_key=key)},
+        now=datetime.now(UTC) + timedelta(seconds=1),
+    )
+
+    message = await _load(sessions, key)
+    alert = await _load(sessions, f"alert:{message.id}")
+    assert message.status == "dead"
+    assert alert.channel == "switch"
+    assert alert.payload["channel_id"] == "room-9"
+    assert alert.payload["pr_id"] == "pr-1"
+    assert alert.payload["agent"] == "heimdall"
+    text = alert.payload["message"]
+    assert isinstance(text, str)
+    assert "merge" in text
+    assert str(message.id) not in text

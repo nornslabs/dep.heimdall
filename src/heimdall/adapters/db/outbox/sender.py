@@ -10,7 +10,7 @@ from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from heimdall.adapters.db.columns import utc_now
-from heimdall.adapters.db.outbox._alert import render_dead_alert
+from heimdall.adapters.db.outbox._alert import render_action_alert, render_dead_alert
 from heimdall.adapters.db.outbox._retry import Dead, after_failure
 from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.db.outbox.writer import PENDING, write_outbox
@@ -178,6 +178,10 @@ async def _alert_room(session: AsyncSession, message: OutboxMessage) -> None:
     """
     if message.kind == ALERT_KIND:
         return
+    notify = _notify_block(message)
+    if notify is not None:
+        await _alert_pr_thread(session, message, notify)
+        return
     room_id = message.payload.get("channel_id")
     if not isinstance(room_id, str) or not room_id:
         log.warning("outbox_alert_skipped", outbox_id=str(message.id), channel=message.channel)
@@ -194,5 +198,39 @@ async def _alert_room(session: AsyncSession, message: OutboxMessage) -> None:
             ),
             "outbox_id": str(message.id),
         },
+        idempotency_key=f"alert:{message.id}",
+    )
+
+
+def _notify_block(message: OutboxMessage) -> dict[str, object] | None:
+    """Return the room, PR and action a GitHub row asked to be told about, if it named them."""
+    notify = message.payload.get("notify")
+    if not isinstance(notify, dict):
+        return None
+    fields: dict[str, object] = dict(notify)  # pyright: ignore[reportUnknownArgumentType]
+    if not isinstance(fields.get("channel_id"), str) or not fields["channel_id"]:
+        return None
+    return fields
+
+
+async def _alert_pr_thread(
+    session: AsyncSession, message: OutboxMessage, notify: dict[str, object]
+) -> None:
+    """Tell the PR's thread, as the agent that asked, that GitHub refused an approved action."""
+    action = notify.get("action")
+    payload: dict[str, object] = {
+        "channel_id": notify["channel_id"],
+        "message": render_action_alert(action if isinstance(action, str) else ""),
+        "outbox_id": str(message.id),
+    }
+    for field in ("agent", "pr_id"):
+        if isinstance(notify.get(field), str):
+            payload[field] = notify[field]
+    await write_outbox(
+        session,
+        installation_id=InstallationId(message.installation_id),
+        channel=ALERT_CHANNEL,
+        kind=ALERT_KIND,
+        payload=payload,
         idempotency_key=f"alert:{message.id}",
     )

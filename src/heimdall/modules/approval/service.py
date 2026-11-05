@@ -20,6 +20,7 @@ from heimdall.modules.tenancy.api import (
     ConfigFileReader,
     get_repo_id_in_transaction,
     load_config_in_transaction,
+    repo_agent_room_id,
     repo_auto_suggest_paused,
     set_auto_suggest_paused_in_transaction,
 )
@@ -380,20 +381,46 @@ async def _enqueue_approved_comment(
     draft_id: uuid.UUID,
     draft_hash: str,
 ) -> None:
-    """Queue only the exact approved draft as an idempotent GitHub comment."""
+    """Queue only the exact approved draft as an idempotent GitHub comment or PR action."""
+    payload: dict[str, object] = {
+        "draft_id": str(draft_id),
+        "draft_hash": draft_hash,
+        "repo_full_name": repo.full_name,
+        "pr_number": pr_number,
+    }
+    notify = await _refusal_notice(session, ctx, draft_id)
+    if notify is not None:
+        payload["notify"] = notify
     await write_outbox(
         session,
         installation_id=ctx.installation_id,
         channel="github",
         kind="github.pr_comment",
-        payload={
-            "draft_id": str(draft_id),
-            "draft_hash": draft_hash,
-            "repo_full_name": repo.full_name,
-            "pr_number": pr_number,
-        },
+        payload=payload,
         idempotency_key=f"github:draft:{draft_id}",
     )
+
+
+async def _refusal_notice(
+    session: AsyncSession, ctx: TenantCtx, draft_id: uuid.UUID
+) -> dict[str, str] | None:
+    """Name where to tell the maintainer if GitHub refuses this draft's delivery.
+
+    Returns None when the PR's repository has no agent room, so nothing can be told.
+    """
+    draft = await get_draft_in_transaction(session, ctx, draft_id)
+    snapshot = await get_pr_snapshot(session, ctx, draft.pr_id)
+    if snapshot is None:
+        return None
+    room_id = await repo_agent_room_id(session, ctx, snapshot.repo_id)
+    if room_id is None:
+        return None
+    return {
+        "channel_id": room_id,
+        "pr_id": str(draft.pr_id),
+        "agent": "heimdall",
+        "action": draft.kind,
+    }
 
 
 __all__ = [

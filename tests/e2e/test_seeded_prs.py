@@ -129,7 +129,7 @@ async def test_fake_fix_card_says_not_reproduced_with_loki_finding(
     card = switch.posts_by_id[post_id].message
     assert "Issue not reproduced" in card
     # The card escapes Markdown in text that came from the PR or from Loki.
-    assert r"switch\_agent/config\.py:3" in card
+    assert r"switch\_agent/config.py:3" in card
 
     await pipeline.react_thumbs_up(post_id, OUTSIDER)
     assert switch.thread_replies == [NON_MAINTAINER_REPLY]
