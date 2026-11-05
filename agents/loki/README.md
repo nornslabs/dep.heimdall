@@ -20,7 +20,8 @@ All four skills are required (`REQUIRED_SKILLS` in `config.py`).
 |---|---|
 | `agent.py` | Review flow and trust-boundary messages |
 | `runner.py` | Consumer of the `loki` queue only: runs `loki.run_review`, dropping jobs for an old head, then queues one room post as Loki through the outbox, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it answers a maintainer's `ping`/`hello` and `remember`/`forget` commands (`../_memory_handler.py`), and tells anyone else to ask an admin to add them to `maintainers` in `heimdall.yml` |
-| `_message.py` | Private: the room post, counts only (no PR or model text), so nothing untrusted is posted under Loki's name |
+| `_message.py` | Private: the room post from a validated review — counts plus its bounded summary, never PR text |
+| `schemas.py` | `LokiReview` submit schema and `SUBMIT_REVIEW`, plus `review_problems` (every id must have been saved for this head) |
 | `_findings.py` | Private parsing of the model reply into findings (capped at `MAX_FINDINGS`) |
 | `config.py` | `AGENT_NAME`, `MAX_TURNS = 8`, `MAX_FINDINGS = 5`, `BUDGET` (40k context, 250k run tokens, 80 KB per `get_diff`, 8 file reads), `REQUIRED_SKILLS`, `load_ai_config()` (`LLM_LOKI_*`) |
 | `../_mcp_tools.py` | In-process clients for the scoped MCP tool servers (shared with Heimdall) |

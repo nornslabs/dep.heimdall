@@ -20,6 +20,8 @@ All three skills are required (`REQUIRED_SKILLS` in `config.py`).
 | `runner.py` | Consumer of the `huginn` queue only, and tenant-scoped repro tool adapter, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it answers a maintainer's `ping`/`hello`, and tells anyone else to ask an admin to add them to `maintainers` in `heimdall.yml` |
 | `prompt.md` | Role, untrusted-data rules, and output format |
 | `allowed_tools.py` | Huginn's `start_repro`, `get_repro` and `get_file` MCP allowlist |
+| `schemas.py` | `HuginnVerdict` submit schema and `SUBMIT_VERDICT`, plus `verdict_problems` (counts and ids checked against `get_repro`) |
+| `_message.py` | `render_verdict`: the room message built from a validated verdict |
 | `config.py` | `AGENT_NAME`, `MAX_TURNS = 12`, `MAX_REPRO_RUNS`, `BUDGET` (24k context, 150k run tokens, 40 KB per `get_diff`, 4 file reads, 3 repro runs), `REQUIRED_SKILLS`, `load_ai_config()` (`LLM_HUGINN_*`) |
 | `skills/` | Three required playbooks (see table above) |
 

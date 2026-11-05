@@ -22,6 +22,8 @@ All six skills are required (`REQUIRED_SKILLS` in `config.py`).
 | `runner.py` | Consumer of the `heimdall` queue only: runs `heimdall.build_card`, then queues the approval message for the repo's room, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it answers a maintainer's `ping`/`hello`, and tells anyone else to ask an admin to add them to `maintainers` in `heimdall.yml` |
 | `prompt.md` | Trust boundaries, allowed tools, and output format |
 | `allowed_tools.py` | Heimdall's scoped MCP tool allowlist |
+| `schemas.py` | `DeskResult` submit schema and `SUBMIT_RESULT`, plus `desk_result_problems` (the id must be work this run saved) |
+| `_message.py` | `render_desk_result`: the room message built from a validated result |
 | `config.py` | `AGENT_NAME`, `MAX_TURNS = 8`, `BUDGET` (24k context, 100k run tokens, no diff or file reads, 2 drafts), `REQUIRED_SKILLS`, `load_ai_config()` (`LLM_HEIMDALL_*`) |
 | `skills/` | Six required playbooks (see table above) |
 
