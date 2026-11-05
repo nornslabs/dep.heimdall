@@ -1,14 +1,15 @@
 """Remember and forget agent notes; only for a maintainer of the note's repo."""
 
-from sqlalchemy import delete, func
+from sqlalchemy import delete, func, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from heimdall.adapters.db.unit_of_work import unit_of_work
-from heimdall.modules.memory._read import read_note
+from heimdall.modules.memory._read import count_notes, read_note
 from heimdall.modules.memory.domain import (
+    MAX_NOTES_PER_AGENT,
     AgentNote,
     NoteInput,
     NoteScope,
@@ -18,7 +19,15 @@ from heimdall.modules.memory.domain import (
 from heimdall.modules.memory.models import AgentMemory
 from heimdall.modules.tenancy.api import repo_is_enabled, repo_maintainers
 from heimdall.shared.context import TenantCtx
-from heimdall.shared.errors import InvalidNote, NotAMaintainer, NoteNotFound, RepoNotFound
+from heimdall.shared.errors import (
+    InvalidNote,
+    NotAMaintainer,
+    NoteLimitReached,
+    NoteNotFound,
+    RepoNotFound,
+)
+
+_LOCK_NOTES = text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))")
 
 
 async def remember_note(
@@ -74,6 +83,7 @@ async def remember_note_in_transaction(
     if not source_message_id.strip():
         raise InvalidNote("a note needs the id of the message that asked for it")
     await _require_maintainer(session, ctx, scope, requested_by)
+    await _require_free_slot(session, ctx, scope, note.key)
     await _upsert(session, ctx, scope, note, requested_by, source_message_id)
     stored = await read_note(session, ctx, scope, note.key)
     if stored is None:
@@ -152,6 +162,28 @@ async def _require_maintainer(
     maintainers = {login.casefold() for login in configured}
     if requested_by.strip().casefold() not in maintainers:
         raise NotAMaintainer("only a repo maintainer can change an agent's notes")
+
+
+async def _require_free_slot(
+    session: AsyncSession, ctx: TenantCtx, scope: NoteScope, key: str
+) -> None:
+    """Refuse a new note once the agent already keeps the most it may for this repository.
+
+    Replacing a note that exists never needs a slot. The scope is locked until the transaction
+    ends, so two notes written together cannot both take the last slot.
+
+    Raises:
+        NoteLimitReached: The agent keeps ``MAX_NOTES_PER_AGENT`` notes and ``key`` is new.
+    """
+    connection = await session.connection()
+    lock_key = f"notes:{ctx.installation_id}:{scope.repo_id}:{scope.agent.value}"
+    await connection.execute(_LOCK_NOTES, {"key": lock_key})
+    if await read_note(session, ctx, scope, key) is not None:
+        return
+    if await count_notes(session, ctx, scope) >= MAX_NOTES_PER_AGENT:
+        raise NoteLimitReached(
+            f"an agent keeps at most {MAX_NOTES_PER_AGENT} notes per repo; forget one first"
+        )
 
 
 async def _upsert(

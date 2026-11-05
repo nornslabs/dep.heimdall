@@ -14,6 +14,9 @@ MAX_NOTE_VALUE_CHARS = 300
 MAX_NOTE_KEY_CHARS = 64
 """Longest note key."""
 
+MAX_NOTES_PER_AGENT = 50
+"""Most notes one agent keeps for one repository, so recalled notes stay a small, curated list."""
+
 _KEY_PATTERN = re.compile(rf"[a-z0-9][a-z0-9_.-]{{0,{MAX_NOTE_KEY_CHARS - 1}}}")
 
 

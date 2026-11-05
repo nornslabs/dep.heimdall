@@ -1,8 +1,14 @@
 """Helpers for messages addressed to an agent: mention stripping, refusals and room claiming."""
 
+from datetime import UTC, datetime, timedelta, timezone
+
 import pytest
 
-from agents._presence import format_not_maintainer_reply, strip_leading_mentions
+from agents._presence import (
+    format_not_maintainer_reply,
+    format_rate_limited_reply,
+    strip_leading_mentions,
+)
 from agents._presence_runner import claimable_rooms
 from heimdall.shared.agents import AgentName
 
@@ -66,6 +72,32 @@ def test_the_sender_name_is_cleaned_before_it_goes_into_the_reply(
     assert f"@{expected}," in reply
     assert f"add `{expected}` to" in reply
     assert reply.count("@") == 1
+
+
+def test_the_rate_limit_notice_names_the_agent_and_the_time_to_try_again() -> None:
+    retry_after = datetime(2026, 11, 5, 13, 7, 45, tzinfo=UTC)
+
+    reply = format_rate_limited_reply(AgentName.LOKI, retry_after)
+
+    assert reply == (
+        "Loki: you're rate-limited for now, so I'll stay quiet; try again after 13:07 UTC."
+    )
+
+
+def test_the_rate_limit_notice_mentions_nobody() -> None:
+    reply = format_rate_limited_reply(AgentName.HUGINN, datetime(2026, 11, 5, 9, 0, tzinfo=UTC))
+
+    assert "@" not in reply
+
+
+def test_the_rate_limit_notice_shows_the_time_in_utc() -> None:
+    plus_two = timezone(timedelta(hours=2))
+
+    reply = format_rate_limited_reply(
+        AgentName.LOKI, datetime(2026, 11, 5, 15, 30, tzinfo=plus_two)
+    )
+
+    assert "13:30 UTC" in reply
 
 
 @pytest.mark.parametrize("sender_name", ["", "@@@", "`  `", "名前"])

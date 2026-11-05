@@ -2,7 +2,7 @@
 
 from sqlalchemy import func, or_
 from sqlalchemy.ext.asyncio import async_sessionmaker
-from sqlmodel import col
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel.sql.expression import SelectOfScalar
 
@@ -30,6 +30,24 @@ async def recall_notes(
     Returns:
         Matching notes ordered by key; empty when none exist for this tenant.
     """
+    async with unit_of_work(sessions) as session:
+        return await recall_notes_in_transaction(session, ctx, scope, query)
+
+
+async def recall_notes_in_transaction(
+    session: AsyncSession, ctx: TenantCtx, scope: NoteScope, query: str = ""
+) -> tuple[AgentNote, ...]:
+    """List an agent's unexpired notes inside the caller's transaction.
+
+    Args:
+        session: Session inside the caller's transaction.
+        ctx: Tenant and request context.
+        scope: The repository and agent whose notes are read.
+        query: Text to find in a key or value, ignoring case; empty returns every note.
+
+    Returns:
+        Matching notes ordered by key; empty when none exist for this tenant.
+    """
     statement = (
         scoped_notes(ctx, scope)
         .where(
@@ -40,9 +58,22 @@ async def recall_notes(
         )
         .order_by(col(AgentMemory.key))
     )
-    async with unit_of_work(sessions) as session:
-        notes = tuple(to_note(row) for row in await session.exec(statement))
+    notes = tuple(to_note(row) for row in await session.exec(statement))
     return tuple(note for note in notes if matches_query(note, query))
+
+
+async def count_notes(session: AsyncSession, ctx: TenantCtx, scope: NoteScope) -> int:
+    """Count every note an agent keeps for a repository, expired or not, since each holds a slot."""
+    statement = (
+        select(func.count())
+        .select_from(AgentMemory)
+        .where(
+            col(AgentMemory.installation_id) == ctx.installation_id,
+            col(AgentMemory.repo_id) == scope.repo_id,
+            col(AgentMemory.agent) == scope.agent.value,
+        )
+    )
+    return (await session.exec(statement)).one()
 
 
 async def read_note(

@@ -9,11 +9,23 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from heimdall.modules.memory.api import NoteScope, forget_note, recall_notes, remember_note
+from heimdall.modules.memory.api import (
+    MAX_NOTES_PER_AGENT,
+    NoteScope,
+    forget_note,
+    recall_notes,
+    remember_note,
+)
 from heimdall.modules.tenancy.api import on_installation_event
 from heimdall.shared.agents import AgentName
 from heimdall.shared.context import TenantCtx
-from heimdall.shared.errors import InvalidNote, NotAMaintainer, NoteNotFound, RepoNotFound
+from heimdall.shared.errors import (
+    InvalidNote,
+    NotAMaintainer,
+    NoteLimitReached,
+    NoteNotFound,
+    RepoNotFound,
+)
 from heimdall.shared.ids import InstallationId, RepoId
 from tests.integration.db.installation_helpers import created_installation
 
@@ -200,3 +212,85 @@ async def test_an_expired_note_is_not_recalled(
         )
 
     assert [note.key for note in await recall_notes(sessions, ctx, scope)] == ["fresh"]
+
+
+async def _fill_to_the_cap(
+    sessions: async_sessionmaker[AsyncSession], ctx: TenantCtx, scope: NoteScope
+) -> None:
+    for index in range(MAX_NOTES_PER_AGENT):
+        await _remember(sessions, ctx, scope, f"note-{index:02d}", f"fact {index}")
+
+
+async def test_the_note_after_the_cap_is_refused_and_nothing_is_stored(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    ctx, repo_id = await _repo(sessions, engine)
+    scope = NoteScope(repo_id, AgentName.LOKI)
+    await _fill_to_the_cap(sessions, ctx, scope)
+
+    with pytest.raises(NoteLimitReached):
+        await _remember(sessions, ctx, scope, "one-too-many", "fact")
+
+    notes = await recall_notes(sessions, ctx, scope)
+    assert len(notes) == MAX_NOTES_PER_AGENT
+    assert "one-too-many" not in {note.key for note in notes}
+
+
+async def test_a_refused_note_over_the_cap_is_still_an_invalid_note(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    ctx, repo_id = await _repo(sessions, engine)
+    scope = NoteScope(repo_id, AgentName.LOKI)
+    await _fill_to_the_cap(sessions, ctx, scope)
+
+    with pytest.raises(InvalidNote, match="50 notes"):
+        await _remember(sessions, ctx, scope, "one-too-many", "fact")
+
+
+async def test_replacing_a_note_at_the_cap_still_works(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    ctx, repo_id = await _repo(sessions, engine)
+    scope = NoteScope(repo_id, AgentName.LOKI)
+    await _fill_to_the_cap(sessions, ctx, scope)
+
+    await _remember(sessions, ctx, scope, "note-00", "an updated fact")
+
+    notes = await recall_notes(sessions, ctx, scope, "updated")
+    assert [(note.key, note.value) for note in notes] == [("note-00", "an updated fact")]
+    assert len(await recall_notes(sessions, ctx, scope)) == MAX_NOTES_PER_AGENT
+
+
+async def test_forgetting_a_note_frees_a_slot(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    ctx, repo_id = await _repo(sessions, engine)
+    scope = NoteScope(repo_id, AgentName.LOKI)
+    await _fill_to_the_cap(sessions, ctx, scope)
+    await forget_note(sessions, ctx, scope, "note-00", MAINTAINER)
+
+    await _remember(sessions, ctx, scope, "replacement", "fact")
+
+    assert len(await recall_notes(sessions, ctx, scope)) == MAX_NOTES_PER_AGENT
+
+
+async def test_the_cap_is_per_agent_and_per_repo(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    ctx, repo_id = await _repo(sessions, engine)
+    await _fill_to_the_cap(sessions, ctx, NoteScope(repo_id, AgentName.LOKI))
+
+    await _remember(sessions, ctx, NoteScope(repo_id, AgentName.HUGINN), "first", "fact")
+
+    assert len(await recall_notes(sessions, ctx, NoteScope(repo_id, AgentName.HUGINN))) == 1
+
+
+async def test_a_non_maintainer_is_refused_before_the_cap_is_considered(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    ctx, repo_id = await _repo(sessions, engine)
+    scope = NoteScope(repo_id, AgentName.LOKI)
+    await _fill_to_the_cap(sessions, ctx, scope)
+
+    with pytest.raises(NotAMaintainer):
+        await _remember(sessions, ctx, scope, "one-too-many", "fact", OUTSIDER)

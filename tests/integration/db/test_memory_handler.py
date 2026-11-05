@@ -16,7 +16,12 @@ from agents._presence_runner import room_message_handler
 from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.switch.agent.protocol import AgentMessage
-from heimdall.modules.memory.api import NoteScope, recall_notes, remember_note
+from heimdall.modules.memory.api import (
+    MAX_NOTES_PER_AGENT,
+    NoteScope,
+    recall_notes,
+    remember_note,
+)
 from heimdall.modules.tenancy.api import get_tenant, link_repo_room, on_installation_event
 from heimdall.modules.triage.api import (
     EventKind,
@@ -283,6 +288,272 @@ async def _mention_jobs(engine: AsyncEngine, message_id: str) -> int:
             {"message_id": message_id},
         )
         return result.scalar_one()
+
+
+async def test_asking_what_the_agent_remembers_lists_the_notes_in_the_thread(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    scope = NoteScope(pr.repo_id, AgentName.LOKI)
+    await remember_note(sessions, pr.ctx, scope, "scope", "docs/ is out", "alice", "m-1")
+    await remember_note(sessions, pr.ctx, scope, "test-cmd", "pytest -q", "alice", "m-2")
+    message = _message(pr.room, "alice", "@loki what do you remember?", pr.thread_id)
+
+    taken = await MemoryCommandHandler(AgentName.LOKI, sessions).handle(message)
+
+    assert taken
+    (reply,) = await _replies(sessions, message.message_id)
+    assert reply.payload["pr_id"] == str(pr.pr_id)
+    assert reply.payload["channel_id"] == pr.room
+    assert reply.payload["message"] == (
+        "Loki: I have 2 notes for this repo:\n- `scope`: docs/ is out\n- `test-cmd`: pytest -q"
+    )
+
+
+async def test_listing_notes_changes_nothing(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    await remember_note(
+        sessions, pr.ctx, NoteScope(pr.repo_id, AgentName.LOKI), "scope", "docs/", "alice", "m-1"
+    )
+
+    await MemoryCommandHandler(AgentName.LOKI, sessions).handle(
+        _message(pr.room, "alice", "@loki what do you remember", pr.thread_id)
+    )
+
+    assert await _notes(sessions, pr) == ["scope=docs/"]
+
+
+async def test_listing_with_no_notes_says_how_to_add_one(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    message = _message(pr.room, "alice", "@loki what do you remember", pr.thread_id)
+
+    await MemoryCommandHandler(AgentName.LOKI, sessions).handle(message)
+
+    (reply,) = await _replies(sessions, message.message_id)
+    assert "I have no notes for this repo" in str(reply.payload["message"])
+
+
+async def test_each_agent_lists_only_its_own_notes(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    await remember_note(
+        sessions, pr.ctx, NoteScope(pr.repo_id, AgentName.LOKI), "scope", "docs/", "alice", "m-1"
+    )
+    message = _message(pr.room, "alice", "@huginn what do you remember", pr.thread_id)
+
+    await MemoryCommandHandler(AgentName.HUGINN, sessions).handle(message)
+
+    (reply,) = await _replies(sessions, message.message_id)
+    assert "no notes" in str(reply.payload["message"])
+
+
+async def test_listing_outside_a_pr_thread_asks_for_the_thread(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    message = _message(pr.room, "alice", "@loki what do you remember", None)
+
+    await MemoryCommandHandler(AgentName.LOKI, sessions).handle(message)
+
+    (reply,) = await _replies(sessions, message.message_id)
+    assert "PR's thread" in str(reply.payload["message"])
+
+
+async def test_a_non_maintainer_cannot_list_the_notes(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    await remember_note(
+        sessions, pr.ctx, NoteScope(pr.repo_id, AgentName.LOKI), "scope", "docs/", "alice", "m-1"
+    )
+    message = _message(pr.room, "mallory", "@loki what do you remember", pr.thread_id)
+
+    await MemoryCommandHandler(AgentName.LOKI, sessions).handle(message)
+
+    (reply,) = await _replies(sessions, message.message_id)
+    assert "only maintainers can use me" in str(reply.payload["message"])
+    assert "docs/" not in str(reply.payload["message"])
+
+
+async def test_the_note_after_the_cap_is_refused_with_a_reply_that_names_the_limit(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    scope = NoteScope(pr.repo_id, AgentName.LOKI)
+    for index in range(MAX_NOTES_PER_AGENT):
+        await remember_note(sessions, pr.ctx, scope, f"n{index:02d}", "fact", "alice", "m-1")
+    message = _message(pr.room, "alice", "@loki remember extra: one too many", pr.thread_id)
+
+    await MemoryCommandHandler(AgentName.LOKI, sessions).handle(message)
+
+    (reply,) = await _replies(sessions, message.message_id)
+    assert "50 notes" in str(reply.payload["message"])
+    assert len(await _notes(sessions, pr)) == MAX_NOTES_PER_AGENT
+
+
+async def _audit(
+    engine: AsyncEngine, message_id: str
+) -> list[tuple[str, str, str, dict[str, object]]]:
+    """Return (actor, action, subject, payload) of every memory audit entry for a message."""
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                "SELECT actor, action, subject, payload FROM audit_log "
+                "WHERE action LIKE 'memory.%' AND payload->>'message_id' = :id ORDER BY id"
+            ),
+            {"id": message_id},
+        )
+        return [(row[0], row[1], row[2], dict(row[3])) for row in result.all()]
+
+
+async def _run(
+    sessions: async_sessionmaker[AsyncSession], pr: PrThread, sender: str, body: str, thread: bool
+) -> AgentMessage:
+    message = _message(pr.room, sender, body, pr.thread_id if thread else None)
+    await MemoryCommandHandler(AgentName.LOKI, sessions).handle(message)
+    return message
+
+
+async def test_a_remember_is_audited_with_who_what_and_which_message_but_not_the_note(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+
+    message = await _run(sessions, pr, "alice", "@loki remember Scope: secret-ish docs", True)
+
+    ((actor, action, subject, payload),) = await _audit(engine, message.message_id)
+    assert (actor, action) == ("alice", "memory.remembered")
+    assert subject == f"pr:{pr.repo_id}#1"
+    assert payload == {
+        "agent": "loki",
+        "key": "scope",
+        "message_id": message.message_id,
+        "repo_id": pr.repo_id,
+    }
+    assert "secret-ish" not in json.dumps(payload)
+
+
+async def test_a_forget_is_audited(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    await _run(sessions, pr, "alice", "@loki remember scope: docs/", True)
+
+    message = await _run(sessions, pr, "alice", "@loki forget scope", True)
+
+    ((_, action, _, payload),) = await _audit(engine, message.message_id)
+    assert action == "memory.forgot"
+    assert payload["key"] == "scope"
+
+
+@pytest.mark.parametrize(
+    ("body", "reason"),
+    [
+        ("@loki forget missing", "not_found"),
+        ("@loki remember Bad!Key: value", "invalid"),
+        ("@loki remember k: " + "x" * 301, "invalid"),
+    ],
+)
+async def test_a_refused_command_is_audited_with_the_reason_and_changes_nothing(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine, body: str, reason: str
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+
+    message = await _run(sessions, pr, "alice", body, True)
+
+    ((_, action, _, payload),) = await _audit(engine, message.message_id)
+    assert (action, payload["reason"]) == ("memory.refused", reason)
+    assert await _notes(sessions, pr) == []
+
+
+async def test_a_note_refused_at_the_cap_is_audited_as_a_cap_refusal(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    scope = NoteScope(pr.repo_id, AgentName.LOKI)
+    for index in range(MAX_NOTES_PER_AGENT):
+        await remember_note(sessions, pr.ctx, scope, f"n{index:02d}", "fact", "alice", "m-1")
+
+    message = await _run(sessions, pr, "alice", "@loki remember extra: one too many", True)
+
+    ((_, action, _, payload),) = await _audit(engine, message.message_id)
+    assert (action, payload["reason"], payload["key"]) == ("memory.refused", "cap", "extra")
+
+
+@pytest.mark.parametrize("body", ["@loki remember scope: docs/", "@loki forget scope"])
+async def test_a_non_maintainers_write_attempt_is_audited_against_the_room(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine, body: str
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+
+    message = await _run(sessions, pr, "mallory", body, True)
+
+    ((actor, action, subject, payload),) = await _audit(engine, message.message_id)
+    assert (actor, action, subject) == ("mallory", "memory.refused", f"room:{pr.room}")
+    assert payload["reason"] == "not_a_maintainer"
+    assert await _notes(sessions, pr) == []
+
+
+async def test_a_write_command_outside_a_pr_thread_is_audited_against_the_room(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+
+    message = await _run(sessions, pr, "alice", "@loki remember scope: docs/", False)
+
+    ((_, action, subject, payload),) = await _audit(engine, message.message_id)
+    assert (action, subject, payload["reason"]) == (
+        "memory.refused",
+        f"room:{pr.room}",
+        "outside_thread",
+    )
+
+
+@pytest.mark.parametrize("sender", ["alice", "mallory"])
+async def test_listing_and_usage_help_are_not_audited(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine, sender: str
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+
+    listing = await _run(sessions, pr, sender, "@loki what do you remember", True)
+    usage = await _run(sessions, pr, sender, "@loki remember", True)
+
+    assert await _audit(engine, listing.message_id) == []
+    assert await _audit(engine, usage.message_id) == []
+
+
+async def test_the_same_message_delivered_twice_is_audited_once(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    message = _message(pr.room, "alice", "@loki remember scope: docs/", pr.thread_id)
+    handler = MemoryCommandHandler(AgentName.LOKI, sessions)
+
+    await handler.handle(message)
+    await handler.handle(message)
+
+    assert len(await _audit(engine, message.message_id)) == 1
+
+
+async def test_a_repeated_forget_does_not_add_a_refusal_to_the_audit_log(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    await _run(sessions, pr, "alice", "@loki remember scope: docs/", True)
+    message = _message(pr.room, "alice", "@loki forget scope", pr.thread_id)
+    handler = MemoryCommandHandler(AgentName.LOKI, sessions)
+
+    await handler.handle(message)
+    await handler.handle(message)
+
+    assert [action for _, action, _, _ in await _audit(engine, message.message_id)] == [
+        "memory.forgot"
+    ]
 
 
 async def test_the_room_callback_sends_commands_to_memory_and_everything_else_to_a_mention(

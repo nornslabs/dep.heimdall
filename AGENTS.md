@@ -35,7 +35,7 @@ Run `ruff`, `pyright` and `pytest tests/unit` before you say a change is done.
 ```
 apps/            entry points only: api, worker, mcp, bridge. No business logic.
 src/heimdall/
-  modules/       one folder per feature: tenancy, triage, intake, repro, review, desk, approval, audit
+  modules/       one folder per feature: tenancy, triage, intake, repro, review, desk, approval, audit, memory, conversation
   adapters/      the outside world: github, actions, switch, db, ai
   shared/        settings, ids, errors, events, logging
 agents/          huginn, loki, heimdall: prompt.md, agent.py, allowed_tools.py

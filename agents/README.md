@@ -146,6 +146,16 @@ checks the sender is a maintainer, changes the note through `heimdall.modules.me
 queues the reply in the same transaction. `_presence_runner.room_message_handler` tries memory
 commands before turning the message into an `agent.mention`.
 
+`@<agent> what do you remember` lists the agent's notes for the repo in the thread. An agent
+keeps at most 50 notes per repo; a 51st new key is refused (replacing a key still works).
+
+Every note change and every refusal of one adds an audit entry in the same transaction:
+`memory.remembered`, `memory.forgot` or `memory.refused` (reason `not_a_maintainer`,
+`repo_not_enabled`, `outside_thread`, `invalid`, `cap` or `not_found`). `_memory_audit.py` builds
+them from ids and the validated key only, never the note text. Listing and usage help change
+nothing, so they leave no entry. A message Switch delivers twice is recognised by its
+already-queued reply and changes and audits nothing the second time.
+
 ## Mentions (`agent.mention`)
 
 Every message addressed to an agent is a question for that agent, not a keyword lookup. After
@@ -155,6 +165,12 @@ agent's own queue, in the same transaction as the sender lookup:
 ```
 agent.mention {agent, pr_ref | null, room_id, thread_id | null, sender, sender_role, text, message_id}
 ```
+
+Before it queues the job, the handler asks `heimdall.modules.conversation` whether the sender
+is over their allowance (20 questions per agent, per PR, per rolling hour). Over the limit, no
+job is queued and no model is called: the first refused question gets one fixed notice in the
+thread (outbox key `rate-limited:<agent>:<message_id>`, plus a `conversation.rate_limited`
+audit entry), and later ones get nothing until the allowance returns.
 
 `pr_ref` is the PR whose Switch thread the message is in. `sender_role` is always `maintainer`
 today: someone who is not one gets the fixed "ask an admin" reply and no job. `hello` and `ping`

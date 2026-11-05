@@ -5,6 +5,7 @@ after it is cut down to the characters a GitHub login can contain.
 """
 
 import re
+from datetime import UTC, datetime
 
 from heimdall.shared.agents import AgentName
 
@@ -26,6 +27,24 @@ def strip_leading_mentions(body: str) -> str:
         What the sender asked, without the mentions that addressed the agents.
     """
     return _LEADING_MENTIONS.sub("", body, count=1).strip()
+
+
+def format_rate_limited_reply(agent: AgentName, retry_after: datetime) -> str:
+    """Word the one notice a sender gets when they have asked an agent too many questions.
+
+    Args:
+        agent: The agent answering.
+        retry_after: When the sender's allowance comes back; shown in UTC.
+
+    Returns:
+        Fixed text naming the agent and the time to try again. It mentions nobody and repeats
+        nothing from the sender's message.
+    """
+    when = retry_after.astimezone(UTC).strftime("%H:%M")
+    return (
+        f"{agent.value.capitalize()}: you're rate-limited for now, so I'll stay quiet; "
+        f"try again after {when} UTC."
+    )
 
 
 def format_not_maintainer_reply(agent: AgentName, sender_name: str) -> str:
