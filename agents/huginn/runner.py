@@ -10,8 +10,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from agents._job_context import load_agent_room_id
 from agents._presence_runner import run_with_presence
+from agents._skills import load_skills
 from agents.huginn.agent import run_huginn
-from agents.huginn.config import load_ai_config
+from agents.huginn.allowed_tools import ALLOWED_TOOLS
+from agents.huginn.config import REQUIRED_SKILLS, load_ai_config
 from heimdall.adapters.ai import AiAdapter
 from heimdall.adapters.db.engine import create_engine, make_session_factory
 from heimdall.adapters.db.outbox.writer import write_outbox
@@ -115,6 +117,8 @@ async def run_worker() -> None:
 
     settings = get_settings()
     configure_logging(settings.log_level)
+    # Validated at startup so a broken playbook fails before any job runs.
+    load_skills(AgentName.HUGINN, ALLOWED_TOOLS, REQUIRED_SKILLS)
     # Built at startup so a bad LLM_HUGINN_* / LLM_DEFAULT_* config fails before any job runs.
     ai = AiAdapter(load_ai_config())
     database_url = settings.database_url.get_secret_value()
