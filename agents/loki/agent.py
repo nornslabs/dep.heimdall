@@ -9,6 +9,7 @@ from uuid import UUID
 
 from agents._runtime import ChatModel, RunUsage, still_current
 from agents.loki._findings import json_objects, parse_findings
+from agents.loki._notes import notes_block, read_note_lines
 from agents.loki.config import AGENT_NAME, MAX_FINDINGS
 from heimdall.adapters.ai import ChatMessage
 
@@ -37,7 +38,11 @@ class LokiReplyInvalidError(ValueError):
 
 
 class LokiTools(Protocol):
-    """MCP operations Loki may use for review context and findings."""
+    """MCP operations Loki may use for review context, its notes and findings."""
+
+    async def recall(self, installation_id: int, repo_id: int) -> dict[str, object]:
+        """Read the notes maintainers kept for Loki on the repo."""
+        ...
 
     async def get_pr_context(
         self, installation_id: int, pr_id: str, repo_full_name: str
@@ -82,15 +87,19 @@ class LokiResult:
     dropped: bool = False
 
 
-def build_review_prompt(context: dict[str, object], diff: str) -> str:
+def build_review_prompt(
+    context: dict[str, object], diff: str, note_lines: tuple[str, ...] = ()
+) -> str:
     """Wrap PR content as escaped JSON inside a clearly marked untrusted-data block.
 
     Args:
         context: PR metadata returned by the tenant-scoped MCP tool.
         diff: Unified diff returned by the read-only MCP tool.
+        note_lines: ``key: value`` notes maintainers kept for Loki on this repo.
 
     Returns:
-        The user turn: a trust notice followed by the JSON-encoded PR data.
+        The user turn: a trust notice, the JSON-encoded PR data and, when there are notes, a
+        ``pr_data`` block holding them.
     """
     payload = (
         json.dumps({"pull_request": context, "diff": diff}, ensure_ascii=False)
@@ -98,15 +107,20 @@ def build_review_prompt(context: dict[str, object], diff: str) -> str:
         .replace(">", r"\u003e")
         .replace("&", r"\u0026")
     )
-    return f"{UNTRUSTED_NOTICE}\n<untrusted_pr_data>{payload}</untrusted_pr_data>"
+    prompt = f"{UNTRUSTED_NOTICE}\n<untrusted_pr_data>{payload}</untrusted_pr_data>"
+    block = notes_block(note_lines)
+    return f"{prompt}\n{block}" if block else prompt
 
 
-def build_review_messages(context: dict[str, object], diff: str) -> tuple[ChatMessage, ChatMessage]:
-    """Put Loki's rules in the system turn and PR content only in the user turn.
+def build_review_messages(
+    context: dict[str, object], diff: str, note_lines: tuple[str, ...] = ()
+) -> tuple[ChatMessage, ChatMessage]:
+    """Put Loki's rules in the system turn and PR content and notes only in the user turn.
 
     Args:
         context: PR metadata.
         diff: Unified diff.
+        note_lines: Maintainer notes for this repo, as ``key: value`` lines.
 
     Returns:
         The system and user messages for one review call.
@@ -114,7 +128,7 @@ def build_review_messages(context: dict[str, object], diff: str) -> tuple[ChatMe
     instructions = Path(__file__).with_name("prompt.md").read_text(encoding="utf-8")
     return (
         ChatMessage("system", instructions),
-        ChatMessage("user", build_review_prompt(context, diff)),
+        ChatMessage("user", build_review_prompt(context, diff, note_lines)),
     )
 
 
@@ -128,7 +142,7 @@ async def run_loki(
     """Read one PR, run one tool-less model review, and submit findings if the head held.
 
     Args:
-        tools: MCP client restricted to Loki's three allowlisted tools.
+        tools: MCP client restricted to Loki's allowlisted tools.
         ai: Loki's model; it is offered no tools, so it cannot act, only answer.
         installation_id: Tenant owning the PR.
         pr_id: Triage PR row identifier.
@@ -146,9 +160,9 @@ async def run_loki(
     diff_result = await tools.get_diff(
         installation_id, repo_full_name, _int_field(context, "number")
     )
-    reply = await ai.chat(
-        build_review_messages(context, _str_field(diff_result, "text")), tool_choice="none"
-    )
+    note_lines = await read_note_lines(tools, installation_id, context)
+    messages = build_review_messages(context, _str_field(diff_result, "text"), note_lines)
+    reply = await ai.chat(messages, tool_choice="none")
     usage = RunUsage().add(reply)
     try:
         findings = parse_findings(reply.text or "", MAX_FINDINGS)

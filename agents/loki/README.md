@@ -11,11 +11,12 @@ head again and drops its findings if the head has moved.
 | `runner.py` | Consumer of the `loki` queue only: runs `loki.run_review`, dropping jobs for an old head, then queues one room post as Loki through the outbox, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it answers a maintainer's `ping`/`hello` and `remember`/`forget` commands (`../_memory_handler.py`), and tells anyone else to ask an admin to add them to `maintainers` in `heimdall.yml` |
 | `_message.py` | Private: the room post, counts only (no PR or model text), so nothing untrusted is posted under Loki's name |
 | `_findings.py` | Private parsing of the model reply into findings (capped at `MAX_FINDINGS`) |
+| `_notes.py` | Reads the notes maintainers kept for Loki on the repo (`recall`) and wraps them as one `<pr_data source="recall">` block in the review's user turn; a failing `recall` means no notes, never a failed review |
 | `config.py` | `AGENT_NAME`, `MAX_TURNS = 8`, `MAX_FINDINGS = 5`, `BUDGET` (40k context, 250k run tokens, 80 KB per `get_diff`, 8 file reads), `load_ai_config()` (`LLM_LOKI_*`) |
 | `../_mcp_tools.py` | In-process clients for the scoped MCP tool servers (shared with Heimdall) |
 | `../_runtime.py` | Shared agent runtime (`run_agent`, `ToolBox`, `RunUsage`, `still_current`); see `../README.md` |
 | `../_lifecycle.py` | The `loki_same_model_as_other_agents` warning |
-| `prompt.md` | Review rules and JSON output contract |
+| `prompt.md` | Review rules (including how to use maintainer notes) and JSON output contract |
 | `allowed_tools.py` | Exact `get_pr_context`, `get_diff`, `save_findings` and read-only `recall` allowlist |
 
 At startup Loki logs `loki_same_model_as_other_agents` when its model string matches Huginn's or

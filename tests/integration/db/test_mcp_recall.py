@@ -1,4 +1,4 @@
-"""The MCP ``recall`` tool returns only the bound agent's notes for the caller's own repo."""
+"""Loki's MCP memory path: ``get_pr_context`` names the repo, ``recall`` reads its notes."""
 
 import json
 import uuid
@@ -9,13 +9,15 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from agents._mcp_tools import as_object
+from agents._mcp_tools import LokiMcpTools, as_object
 from apps.mcp.main import create_server
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.modules.memory.api import NoteScope, remember_note
 from heimdall.modules.tenancy.api import on_installation_event
+from heimdall.modules.triage.api import EventKind, Facts, PrEvent, handle_event
 from heimdall.shared.agents import AgentName
 from heimdall.shared.context import TenantCtx
+from heimdall.shared.github import PullRequestInfo, RepoRef
 from heimdall.shared.ids import InstallationId, RepoId
 from tests.integration.db.installation_helpers import created_installation
 
@@ -76,3 +78,70 @@ async def test_recall_never_returns_another_installations_notes(
     other_installation, _ = await _repo_with_notes(sessions, engine)
 
     assert await _recall(sessions, "loki", other_installation, repo_id) == []
+
+
+class PullRequestReader:
+    """Answer ``get_pull_request`` with fixed details, as GitHub would."""
+
+    async def get_pull_request(self, repo: RepoRef, number: int) -> PullRequestInfo:
+        """Return the PR details for any number."""
+        return PullRequestInfo(
+            number=number,
+            title="Fix pager",
+            body="",
+            author="octocat",
+            head_sha="head-1",
+            base_sha="base-1",
+            labels=(),
+            assignees=(),
+            state="open",
+            draft=False,
+        )
+
+
+async def test_get_pr_context_names_the_prs_repo_for_recall(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    installation_id, repo_id = await _repo_with_notes(sessions, engine)
+    ctx = TenantCtx(InstallationId(installation_id), "recall-test")
+    full_name = f"octo-org/r{repo_id}"
+    await handle_event(
+        sessions,
+        ctx,
+        PrEvent(
+            event_id=f"open-{repo_id}",
+            repo_id=RepoId(repo_id),
+            repo_full_name=full_name,
+            number=3,
+            author="octocat",
+            head_sha="head-1",
+            base_sha="base-1",
+            kind=EventKind.PR_OPENED,
+            facts=Facts(),
+        ),
+    )
+    async with engine.connect() as conn:
+        pr_id = (
+            await conn.execute(text("SELECT id FROM prs WHERE repo_id = :id"), {"id": repo_id})
+        ).scalar_one()
+    reader = cast(GitHubApiReader, PullRequestReader())
+    server = create_server(sessions, reader, agent_name="loki")
+
+    result = await server.call_tool(
+        "get_pr_context",
+        {"installation_id": installation_id, "pr_id": str(pr_id), "repo_full_name": full_name},
+    )
+
+    assert as_object(getattr(result, "structured_content", None))["repo_id"] == repo_id
+
+
+async def test_lokis_mcp_client_recalls_its_notes(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    installation_id, repo_id = await _repo_with_notes(sessions, engine)
+    reader = cast(GitHubApiReader, PullRequestReader())
+    tools = LokiMcpTools(create_server(sessions, reader, agent_name="loki"))
+
+    result = await tools.recall(installation_id, repo_id)
+
+    assert result["notes"] == [{"key": "scope", "value": "scope note", "created_by": "alice"}]
