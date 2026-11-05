@@ -29,7 +29,7 @@ All three skills are required (`REQUIRED_SKILLS` in `config.py`).
 | `agent.py` | `run_huginn`: one runtime run with Huginn's config and verdict schema |
 | `context.py` | The brief: PR metadata, changed test files, then the source they cover |
 | `guardrails.py` | `ReproGuard`: allowed runner, only the command changes between runs, three runs |
-| `runner.py` | Consumer of the `huginn` queue only, and the outbox write for a finished verdict, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it answers a maintainer's `ping`/`hello`, and tells anyone else to ask an admin to add them to `maintainers` in `heimdall.yml` |
+| `runner.py` | Consumer of the `huginn` queue only, and the outbox write for a finished verdict, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it queues an `agent.mention` for each message a maintainer addresses to it, and tells anyone else to ask an admin to add them to `maintainers` in `heimdall.yml` |
 | `prompt.md` | Role, untrusted-data rules, limits, and the skill index the runtime adds |
 | `allowed_tools.py` | Huginn's MCP allowlist: `get_pr_context`, `get_diff`, `get_file`, `start_repro`, `get_repro`, `recall` |
 | `schemas.py` | `HuginnVerdict`, `submit_verdict_tool` (whose cross-check reads the saved runs) and `verdict_problems` |

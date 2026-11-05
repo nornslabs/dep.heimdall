@@ -39,7 +39,7 @@ All four skills are required (`REQUIRED_SKILLS` in `config.py`).
 | `context.py` | The brief: PR metadata, changed test files, then source, then the linked issue |
 | `guardrails.py` | `FindingGuard`: a finding must cite an added line in the diff, a docs-only PR is skipped; `guard_save_findings`, `submit_review_tool` |
 | `_diff.py` | Private: which new-side lines each changed path adds, so a citation can be checked |
-| `runner.py` | Consumer of the `loki` queue only: builds the run, then queues one room post as Loki through the outbox, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it answers a maintainer's `ping`/`hello` and `remember`/`forget` commands (`../_memory_handler.py`), and tells anyone else to ask an admin to add them to `maintainers` in `heimdall.yml` |
+| `runner.py` | Consumer of the `loki` queue only: builds the run, then queues one room post as Loki through the outbox, and holds the agent's Switch connection beside the worker (`../_presence_runner.py`) so it queues an `agent.mention` for each message a maintainer addresses to it and carries out `remember`/`forget` commands (`../_memory_handler.py`), and tells anyone else to ask an admin to add them to `maintainers` in `heimdall.yml` |
 | `_message.py` | Private: the room post from a validated review — counts plus its bounded summary, never PR text |
 | `_notes.py` | Private: maintainer notes for the repo, read through `recall` and wrapped as PR data |
 | `schemas.py` | `LokiReview` submit schema and `SUBMIT_REVIEW`, plus `review_problems` (every id must have been saved for this head) |

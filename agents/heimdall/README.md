@@ -21,7 +21,7 @@ All six skills are required (`REQUIRED_SKILLS` in `config.py`).
 | File | Role |
 |---|---|
 | `agent.py` | `run_heimdall`: thin entry point running Heimdall on `_runtime.py` |
-| `runner.py` | Consumer of the `heimdall` queue: runs `heimdall.build_card` and `heimdall.run_command`, queues room posts, and maintains Switch presence |
+| `runner.py` | Consumer of the `heimdall` queue: runs `heimdall.build_card` and `heimdall.run_command`, queues room posts, and holds its Switch connection so it queues an `agent.mention` for each message a maintainer addresses to it (its `parse_command` verbs excepted) |
 | `context.py` | `build_desk_brief` and `build_messages`: pre-fetches repro and finding data into a `pr_data` brief |
 | `guardrails.py` | `CommandGuard` (maintainers only), `DeskGuard` (at most 2 drafts, valid finding citations only), `SavedIdTracker`, and `submit_desk_result_tool` |
 | `prompt.md` | Role prompt, rules, and output format |

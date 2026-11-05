@@ -1,0 +1,126 @@
+"""The ``agent.mention`` event: a maintainer's message to one agent, queued as a job.
+
+The event only carries the message. Nothing here reads, parses or acts on ``text``; the agent
+that receives the job treats it as untrusted data.
+"""
+
+from dataclasses import dataclass
+from typing import Final
+
+from procrastinate import App
+
+from heimdall.adapters.db.columns import JsonObject
+from heimdall.adapters.queue.enqueue import HEIMDALL_QUEUE, HUGINN_QUEUE, LOKI_QUEUE
+from heimdall.shared.agents import AgentName
+from heimdall.shared.logging import get_logger
+
+log = get_logger(__name__)
+
+AGENT_MENTION_TASK: Final = "agent.mention"
+# Only maintainers reach the event today. The field exists so a later change can let other
+# roles in without changing the event's shape.
+SENDER_ROLE_MAINTAINER: Final = "maintainer"
+_QUEUES: Final = {
+    AgentName.HUGINN: HUGINN_QUEUE,
+    AgentName.LOKI: LOKI_QUEUE,
+    AgentName.HEIMDALL: HEIMDALL_QUEUE,
+}
+
+
+@dataclass(frozen=True)
+class AgentMention:
+    """One message that addressed one agent.
+
+    Attributes:
+        agent: The agent that was addressed.
+        pr_ref: Id of the PR whose thread the message is in, or None outside a PR thread.
+        thread_id: Switch thread the message was posted in, or None for a room-level message.
+        sender: The sender's name as Switch reports it (a GitHub login for a maintainer).
+        sender_role: What the sender is allowed to do; ``SENDER_ROLE_MAINTAINER`` for now.
+        text: The message body. Untrusted data: never log it and never act on it.
+        message_id: Switch's id for the message; one message gives one event per agent.
+    """
+
+    agent: AgentName
+    pr_ref: str | None
+    thread_id: str | None
+    sender: str
+    sender_role: str
+    text: str
+    message_id: str
+
+    def to_job_args(self, installation_id: int) -> JsonObject:
+        """Build the queue job's keyword arguments for this event.
+
+        Args:
+            installation_id: Tenant the room belongs to; every job carries one.
+
+        Returns:
+            JSON-ready arguments matching the ``agent.mention`` task's signature.
+        """
+        return {
+            "installation_id": installation_id,
+            "agent": self.agent.value,
+            "pr_ref": self.pr_ref,
+            "thread_id": self.thread_id,
+            "sender": self.sender,
+            "sender_role": self.sender_role,
+            "text": self.text,
+            "message_id": self.message_id,
+        }
+
+
+def mention_queue(agent: AgentName) -> str:
+    """Return the queue only this agent's worker claims.
+
+    Args:
+        agent: The agent that was addressed.
+
+    Returns:
+        The queue name its job goes to.
+    """
+    return _QUEUES[agent]
+
+
+def mention_lock(agent: AgentName, message_id: str) -> str:
+    """Name the lock that keeps one waiting job per message and agent.
+
+    Args:
+        agent: The agent that was addressed.
+        message_id: Switch's id for the message.
+
+    Returns:
+        A queueing lock; a second job with the same value is refused while the first waits.
+    """
+    return f"mention:{agent.value}:{message_id}"
+
+
+def register_mention_task(queue_app: App) -> None:
+    """Register the ``agent.mention`` task so a queued mention does not fail as unknown.
+
+    The task only records that the event arrived, by ids. Answering it is a later change.
+
+    Args:
+        queue_app: Procrastinate app used by one agent's worker.
+    """
+
+    @queue_app.task(name=AGENT_MENTION_TASK)
+    async def agent_mention_task(  # pyright: ignore[reportUnusedFunction]
+        installation_id: int,
+        agent: str,
+        pr_ref: str | None,
+        thread_id: str | None,
+        sender: str,
+        sender_role: str,
+        text: str,
+        message_id: str,
+    ) -> None:
+        """Note that a mention arrived; the body (``text``) is deliberately not touched."""
+        log.info(
+            "agent_mention_received",
+            installation_id=installation_id,
+            agent=agent,
+            pr_ref=pr_ref,
+            message_id=message_id,
+            sender_role=sender_role,
+        )

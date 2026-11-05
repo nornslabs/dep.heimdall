@@ -1,31 +1,42 @@
-"""Answer a maintainer's ping or greeting to an agent, through the outbox."""
+"""Turn a maintainer's message to an agent into one ``agent.mention`` job on the queue."""
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from agents._presence import (
-    format_not_maintainer_reply,
-    format_presence_reply,
-    parse_presence_prompt,
+from agents._mention import (
+    AGENT_MENTION_TASK,
+    SENDER_ROLE_MAINTAINER,
+    AgentMention,
+    mention_lock,
+    mention_queue,
 )
+from agents._presence import format_not_maintainer_reply
 from heimdall.adapters.db.outbox.writer import write_outbox
 from heimdall.adapters.db.unit_of_work import unit_of_work
+from heimdall.adapters.queue.enqueue import enqueue
 from heimdall.adapters.switch.agent.protocol import AgentMessage
+from heimdall.modules.desk.api import parse_command
 from heimdall.modules.tenancy.api import find_room_maintainer, find_room_tenant
+from heimdall.modules.triage.api import find_pr_by_switch_thread
 from heimdall.shared.agents import AgentName
+from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.errors import RoomTenantAmbiguous
 from heimdall.shared.logging import get_logger
 
 log = get_logger(__name__)
 
+NOT_A_MAINTAINER_KEY_PREFIX = "mention-denied"
 
-class PresenceHandler:
-    """Turns an addressed "ping" or "hello" from a maintainer into one outbox reply.
 
-    The agent never posts from the event itself: the reply goes through the outbox, where the
-    worker sends it under this agent's own Switch key. Someone who is not a maintainer gets a
-    fixed reply telling them to ask an admin to add them to ``heimdall.yml``. Everything else is
-    ignored: other requests, and rooms no single tenant owns.
+class MentionHandler:
+    """Queues one ``agent.mention`` job for each message a maintainer addresses to this agent.
+
+    The agent never answers from the event itself. Hello, ping and every other message are
+    treated alike: the job carries the message, and whatever picks it up decides what to do.
+    Heimdall's structured commands are the exception: ``parse_command`` owns them, so they
+    queue nothing. Someone who is not a maintainer gets a fixed reply through the outbox
+    telling them to ask an admin, and no job. Rooms no single tenant owns are ignored.
     """
 
     def __init__(self, agent: AgentName, sessions: async_sessionmaker[AsyncSession]) -> None:
@@ -33,22 +44,21 @@ class PresenceHandler:
 
         Args:
             agent: The agent this handler speaks for.
-            sessions: Session factory for the lookup and the outbox write.
+            sessions: Session factory for the lookups, the job and any refusal.
         """
         self._agent = agent
         self._sessions = sessions
 
     async def handle(self, message: AgentMessage) -> None:
-        """Answer a presence prompt: a pong or hello for a maintainer, a refusal for anyone else.
+        """Queue the mention, or refuse, or ignore the message.
 
         Args:
             message: An event from Switch. Its body is untrusted and is never logged or echoed.
         """
         if not message.addressed:
             return
-        prompt = parse_presence_prompt(message.body)
-        if prompt is None:
-            self._ignored(message, "not_a_presence_prompt")
+        if self._agent is AgentName.HEIMDALL and parse_command(message.body) is not None:
+            log_ignored(self._agent, message, "heimdall_command")
             return
         async with unit_of_work(self._sessions) as session:
             try:
@@ -56,27 +66,54 @@ class PresenceHandler:
                     session, message.room_id, message.sender_name
                 )
             except RoomTenantAmbiguous:
-                self._ignored(message, "ambiguous_room")
+                log_ignored(self._agent, message, "ambiguous_room")
                 return
             if maintainer is None:
-                await refuse_non_maintainer(session, self._agent, message, "presence-denied")
+                await refuse_non_maintainer(
+                    session, self._agent, message, NOT_A_MAINTAINER_KEY_PREFIX
+                )
                 return
-            await write_outbox(
-                session,
-                installation_id=maintainer.installation_id,
-                channel="switch",
-                kind="room.message",
-                payload={
-                    "agent": self._agent.value,
-                    "channel_id": message.room_id,
-                    "message": format_presence_reply(self._agent, prompt),
-                },
-                idempotency_key=f"presence:{self._agent.value}:{message.message_id}",
-            )
+            ctx = TenantCtx(installation_id=maintainer.installation_id, request_id=new_request_id())
+            await self._queue_mention(session, ctx, message)
 
-    def _ignored(self, message: AgentMessage, reason: str) -> None:
-        """Log that a message got no reply, by ids only."""
-        log_ignored(self._agent, message, reason)
+    async def _queue_mention(
+        self, session: AsyncSession, ctx: TenantCtx, message: AgentMessage
+    ) -> None:
+        """Enqueue the event, unless a job for this message is already waiting.
+
+        Switch can deliver a message again after a gap. A queueing lock drops the repeat while
+        the first job is still waiting; once it has run, a late repeat would queue a second
+        job, so delivery is at-least-once.
+        """
+        pr_ref = await self._pr_ref(session, ctx, message)
+        mention = AgentMention(
+            agent=self._agent,
+            pr_ref=pr_ref,
+            thread_id=message.thread_id,
+            sender=message.sender_name,
+            sender_role=SENDER_ROLE_MAINTAINER,
+            text=message.body,
+            message_id=message.message_id,
+        )
+        try:
+            async with session.begin_nested():
+                await enqueue(
+                    session,
+                    AGENT_MENTION_TASK,
+                    mention.to_job_args(ctx.installation_id),
+                    queue=mention_queue(self._agent),
+                    queueing_lock=mention_lock(self._agent, message.message_id),
+                )
+        except IntegrityError:
+            log_ignored(self._agent, message, "duplicate_mention")
+
+    @staticmethod
+    async def _pr_ref(session: AsyncSession, ctx: TenantCtx, message: AgentMessage) -> str | None:
+        """Return the id of the PR that owns the message's thread, if there is one."""
+        if message.thread_id is None:
+            return None
+        pr = await find_pr_by_switch_thread(session, ctx, message.thread_id)
+        return None if pr is None else str(pr.id)
 
 
 async def refuse_non_maintainer(
