@@ -22,6 +22,7 @@ LLD_TABLES = {
     "audit_log",
     "usage",
     "agent_memory",
+    "agent_question",
 }
 
 LLD_INDEXES = {
@@ -31,6 +32,7 @@ LLD_INDEXES = {
     ("findings", ("pr_id", "head_sha")),
     ("usage", ("installation_id", "at")),
     ("agent_memory", ("installation_id", "repo_id", "agent")),
+    ("agent_question", ("installation_id", "agent", "sender", "asked_at")),
 }
 
 TEST_TABLE_PREFIXES = ("test_", "unit_test_")
@@ -74,6 +76,7 @@ def test_lld_indexes_exist() -> None:
         ("repro_runs", {"pr_id", "head_sha", "attempt"}),
         ("approvals", {"draft_id"}),
         ("agent_memory", {"repo_id", "agent", "key"}),
+        ("agent_question", {"installation_id", "agent", "message_id"}),
     ],
 )
 def test_lld_unique_constraints_exist(table_name: str, columns: set[str]) -> None:

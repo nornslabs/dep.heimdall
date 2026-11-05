@@ -3,6 +3,7 @@ from heimdall.adapters.db.metadata import import_all_models, metadata
 MODULES = {
     "approval",
     "audit",
+    "conversation",
     "desk",
     "intake",
     "memory",

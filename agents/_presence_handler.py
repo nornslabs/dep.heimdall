@@ -1,5 +1,7 @@
 """Turn a maintainer's message to an agent into one ``agent.mention`` job on the queue."""
 
+from datetime import UTC, datetime
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -11,22 +13,26 @@ from agents._mention import (
     mention_lock,
     mention_queue,
 )
-from agents._presence import format_not_maintainer_reply
+from agents._presence import format_not_maintainer_reply, format_rate_limited_reply
 from heimdall.adapters.db.outbox.writer import write_outbox
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.queue.enqueue import enqueue
 from heimdall.adapters.switch.agent.protocol import AgentMessage
+from heimdall.modules.audit.api import AuditEntry, append_in_transaction, pr_subject
+from heimdall.modules.conversation.api import Limited, QuestionScope, admit_question_in_transaction
 from heimdall.modules.desk.api import parse_command
 from heimdall.modules.tenancy.api import find_room_maintainer, find_room_tenant
-from heimdall.modules.triage.api import find_pr_by_switch_thread
+from heimdall.modules.triage.api import PrSnapshot, find_pr_by_switch_thread
 from heimdall.shared.agents import AgentName
-from heimdall.shared.context import TenantCtx, new_request_id
+from heimdall.shared.context import PrRef, TenantCtx, new_request_id
 from heimdall.shared.errors import RoomTenantAmbiguous
 from heimdall.shared.logging import get_logger
 
 log = get_logger(__name__)
 
 NOT_A_MAINTAINER_KEY_PREFIX = "mention-denied"
+RATE_LIMITED_KEY_PREFIX = "rate-limited"
+RATE_LIMITED_ACTION = "conversation.rate_limited"
 
 
 class MentionHandler:
@@ -79,16 +85,86 @@ class MentionHandler:
     async def _queue_mention(
         self, session: AsyncSession, ctx: TenantCtx, message: AgentMessage
     ) -> None:
+        """Queue the event, unless the sender is over the question limit.
+
+        A sender over the limit costs no model call: the first refused question gets one
+        notice, the rest get nothing.
+        """
+        pr = await self._find_pr(session, ctx, message)
+        scope = QuestionScope(
+            agent=self._agent,
+            sender=message.sender_name,
+            pr_id=None if pr is None else pr.id,
+            room_id=message.room_id,
+        )
+        decision = await admit_question_in_transaction(
+            session, ctx, scope, message.message_id, datetime.now(UTC)
+        )
+        if isinstance(decision, Limited):
+            await self._refuse_over_limit(session, ctx, message, pr, decision)
+            return
+        await self._enqueue_mention(session, ctx, message, pr)
+
+    async def _refuse_over_limit(
+        self,
+        session: AsyncSession,
+        ctx: TenantCtx,
+        message: AgentMessage,
+        pr: PrSnapshot | None,
+        decision: Limited,
+    ) -> None:
+        """Send the one rate-limit notice and audit it; later refusals only get logged."""
+        if not decision.send_notice:
+            log_ignored(self._agent, message, "rate_limited")
+            return
+        payload: dict[str, object] = {
+            "agent": self._agent.value,
+            "channel_id": message.room_id,
+            "message": format_rate_limited_reply(self._agent, decision.retry_after),
+        }
+        if pr is not None:
+            payload["pr_id"] = str(pr.id)
+        await write_outbox(
+            session,
+            installation_id=ctx.installation_id,
+            channel="switch",
+            kind="room.message",
+            payload=payload,
+            idempotency_key=f"{RATE_LIMITED_KEY_PREFIX}:{self._agent.value}:{message.message_id}",
+        )
+        await append_in_transaction(session, ctx, self._limit_audit_entry(message, pr))
+        log_ignored(self._agent, message, "rate_limited_replied")
+
+    def _limit_audit_entry(self, message: AgentMessage, pr: PrSnapshot | None) -> AuditEntry:
+        """Build the audit entry for a notice: who, where and which message, never the text."""
+        subject = (
+            f"room:{message.room_id}"
+            if pr is None
+            else pr_subject(PrRef(repo_id=pr.repo_id, number=pr.number))
+        )
+        return AuditEntry(
+            actor=message.sender_name,
+            action=RATE_LIMITED_ACTION,
+            subject=subject,
+            payload={"agent": self._agent.value, "message_id": message.message_id},
+        )
+
+    async def _enqueue_mention(
+        self,
+        session: AsyncSession,
+        ctx: TenantCtx,
+        message: AgentMessage,
+        pr: PrSnapshot | None,
+    ) -> None:
         """Enqueue the event, unless a job for this message is already waiting.
 
         Switch can deliver a message again after a gap. A queueing lock drops the repeat while
         the first job is still waiting; once it has run, a late repeat would queue a second
         job, so delivery is at-least-once.
         """
-        pr_ref = await self._pr_ref(session, ctx, message)
         mention = AgentMention(
             agent=self._agent,
-            pr_ref=pr_ref,
+            pr_ref=None if pr is None else str(pr.id),
             room_id=message.room_id,
             thread_id=message.thread_id,
             sender=message.sender_name,
@@ -109,12 +185,13 @@ class MentionHandler:
             log_ignored(self._agent, message, "duplicate_mention")
 
     @staticmethod
-    async def _pr_ref(session: AsyncSession, ctx: TenantCtx, message: AgentMessage) -> str | None:
-        """Return the id of the PR that owns the message's thread, if there is one."""
+    async def _find_pr(
+        session: AsyncSession, ctx: TenantCtx, message: AgentMessage
+    ) -> PrSnapshot | None:
+        """Return the PR that owns the message's thread, if there is one."""
         if message.thread_id is None:
             return None
-        pr = await find_pr_by_switch_thread(session, ctx, message.thread_id)
-        return None if pr is None else str(pr.id)
+        return await find_pr_by_switch_thread(session, ctx, message.thread_id)
 
 
 async def refuse_non_maintainer(

@@ -16,6 +16,7 @@ from agents._presence_handler import MentionHandler
 from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.switch.agent.protocol import AgentMessage
+from heimdall.modules.conversation.api import MAX_QUESTIONS_PER_WINDOW
 from heimdall.modules.tenancy.api import get_tenant, link_repo_room, on_installation_event
 from heimdall.modules.triage.api import EventKind, Facts, PrEvent, handle_event
 from heimdall.shared.agents import AgentName
@@ -354,6 +355,142 @@ async def test_a_message_not_addressed_to_the_agent_queues_nothing(
     await MentionHandler(AgentName.HUGINN, sessions).handle(message)
 
     assert await _mentions(engine, message.message_id) == []
+
+
+async def _notice_rows(
+    sessions: async_sessionmaker[AsyncSession], message_id: str
+) -> list[OutboxMessage]:
+    async with unit_of_work(sessions) as session:
+        statement = select(OutboxMessage).where(
+            col(OutboxMessage.idempotency_key).like(f"rate-limited:%:{message_id}")
+        )
+        return list((await session.exec(statement)).all())
+
+
+async def _limit_audit_rows(engine: AsyncEngine, message_id: str) -> list[tuple[str, str]]:
+    """Return (actor, subject) of every rate-limit audit entry written for a message."""
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text(
+                "SELECT actor, subject FROM audit_log "
+                "WHERE action = 'conversation.rate_limited' AND payload->>'message_id' = :id"
+            ),
+            {"id": message_id},
+        )
+        return [(row[0], row[1]) for row in result.all()]
+
+
+async def _ask_until_limited(
+    handler: MentionHandler, room: str, thread_id: str | None
+) -> tuple[AgentMessage, AgentMessage]:
+    """Send the allowed number of questions, then two more; return those two."""
+    for _ in range(MAX_QUESTIONS_PER_WINDOW):
+        await handler.handle(_message(room, "alice", "@loki why?", thread_id=thread_id))
+    first_over = _message(room, "alice", "@loki and again?", thread_id=thread_id)
+    second_over = _message(room, "alice", "@loki once more?", thread_id=thread_id)
+    await handler.handle(first_over)
+    await handler.handle(second_over)
+    return first_over, second_over
+
+
+async def test_a_question_past_the_limit_gets_one_notice_in_the_thread_and_no_event(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    handler = MentionHandler(AgentName.LOKI, sessions)
+
+    first_over, _ = await _ask_until_limited(handler, pr.room, pr.thread_id)
+
+    assert await _mentions(engine, first_over.message_id) == []
+    (notice,) = await _notice_rows(sessions, first_over.message_id)
+    assert notice.installation_id == pr.installation_id
+    assert notice.payload["agent"] == "loki"
+    assert notice.payload["channel_id"] == pr.room
+    assert notice.payload["pr_id"] == str(pr.pr_id)
+    assert "rate-limited" in str(notice.payload["message"])
+    assert "try again after" in str(notice.payload["message"])
+    assert notice.idempotency_key == f"rate-limited:loki:{first_over.message_id}"
+    assert len(await _limit_audit_rows(engine, first_over.message_id)) == 1
+
+
+async def test_questions_after_the_notice_get_no_event_no_reply_and_no_audit_entry(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    handler = MentionHandler(AgentName.LOKI, sessions)
+
+    _, second_over = await _ask_until_limited(handler, pr.room, pr.thread_id)
+
+    assert await _mentions(engine, second_over.message_id) == []
+    assert await _notice_rows(sessions, second_over.message_id) == []
+    assert await _limit_audit_rows(engine, second_over.message_id) == []
+
+
+async def test_the_notice_audit_entry_names_the_sender_and_the_pr_and_no_question_text(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    handler = MentionHandler(AgentName.LOKI, sessions)
+
+    first_over, _ = await _ask_until_limited(handler, pr.room, pr.thread_id)
+
+    ((actor, subject),) = await _limit_audit_rows(engine, first_over.message_id)
+    assert actor == "alice"
+    assert subject.startswith("pr:")
+    async with engine.connect() as conn:
+        payload = (
+            await conn.execute(
+                text("SELECT payload FROM audit_log WHERE payload->>'message_id' = :id"),
+                {"id": first_over.message_id},
+            )
+        ).scalar_one()
+    assert "again" not in json.dumps(payload)
+    assert payload["agent"] == "loki"
+
+
+async def test_a_question_outside_a_pr_thread_is_counted_per_room(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    room, _ = await _room_with_maintainers(sessions, engine, ["alice"])
+    handler = MentionHandler(AgentName.LOKI, sessions)
+
+    first_over, _ = await _ask_until_limited(handler, room, None)
+
+    assert await _mentions(engine, first_over.message_id) == []
+    (notice,) = await _notice_rows(sessions, first_over.message_id)
+    assert "pr_id" not in notice.payload
+    ((_, subject),) = await _limit_audit_rows(engine, first_over.message_id)
+    assert subject == f"room:{room}"
+
+
+async def test_one_agents_limit_does_not_silence_another_agent(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    await _ask_until_limited(MentionHandler(AgentName.LOKI, sessions), pr.room, pr.thread_id)
+    message = _message(pr.room, "alice", "@huginn status?", thread_id=pr.thread_id)
+
+    await MentionHandler(AgentName.HUGINN, sessions).handle(message)
+
+    assert len(await _mentions(engine, message.message_id)) == 1
+
+
+async def test_a_redelivered_message_does_not_use_up_the_allowance(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    pr = await _pr_thread(sessions, engine, ["alice"])
+    handler = MentionHandler(AgentName.LOKI, sessions)
+    repeated = _message(pr.room, "alice", "@loki why?", thread_id=pr.thread_id)
+    await handler.handle(repeated)
+    await handler.handle(repeated)
+    for _ in range(MAX_QUESTIONS_PER_WINDOW - 1):
+        await handler.handle(_message(pr.room, "alice", "@loki why?", thread_id=pr.thread_id))
+    one_too_many = _message(pr.room, "alice", "@loki one more?", thread_id=pr.thread_id)
+
+    await handler.handle(one_too_many)
+
+    assert await _mentions(engine, one_too_many.message_id) == []
+    assert len(await _notice_rows(sessions, one_too_many.message_id)) == 1
 
 
 async def test_a_sender_who_maintains_in_two_installations_of_a_room_queues_nothing(
