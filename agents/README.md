@@ -88,4 +88,5 @@ queues the reply in the same transaction. `_presence_runner.room_message_handler
 commands before presence prompts.
 
 No model ever writes a note: agents get only the read-only MCP tool `recall`, so PR text cannot
-plant an instruction that outlives the PR.
+plant an instruction that outlives the PR. Loki puts its notes for the PR's repo into its review
+prompt, inside a `pr_data` block (`loki/_notes.py`).

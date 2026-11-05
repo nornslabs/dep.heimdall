@@ -118,7 +118,7 @@ def create_server(
             pr_id: str,
             repo_full_name: str,
         ) -> dict[str, object]:
-            """Return PR metadata and head for the requested tenant-scoped PR."""
+            """Return PR metadata, head and repo id for the requested tenant-scoped PR."""
             ctx = TenantCtx(
                 installation_id=InstallationId(installation_id),
                 request_id=new_request_id(),
@@ -128,6 +128,7 @@ def create_server(
             info = await github_reader.get_pull_request(repo, snapshot.number)
             return {
                 "pr_id": str(snapshot.id),
+                "repo_id": snapshot.repo_id,
                 "number": snapshot.number,
                 "head_sha": snapshot.head_sha,
                 "title": info.title,
