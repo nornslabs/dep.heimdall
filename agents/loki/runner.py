@@ -12,7 +12,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from agents._job_context import PrJobContext, load_pr_job_context
 from agents._lifecycle import warn_if_shared_model
 from agents._mcp_tools import LokiMcpTools, mcp_agent_tools
-from agents._mention import register_mention_task
+from agents._mention_ports import MentionDeps
+from agents._mention_task import register_mention_task
 from agents._presence_runner import run_with_presence
 from agents._runtime import ChatModel, Completed, ToolBox
 from agents._skills import LOAD_SKILL_TOOL, SkillSet, load_skills
@@ -31,6 +32,7 @@ from agents.loki.guardrails import (
     is_docs_only,
     submit_review_tool,
 )
+from agents.loki.mention import MENTION_AGENT, guard_act_tools
 from agents.loki.schemas import LokiReview
 from apps.mcp.main import create_server
 from heimdall.adapters.ai import AiAdapter, AiConfig
@@ -81,7 +83,9 @@ def register_loki_task(
         reader: Authenticated read-only GitHub adapter.
         model: Loki's model; the e2e replay passes a scripted one.
     """
-    register_mention_task(queue_app)
+    register_mention_task(
+        queue_app, MentionDeps(MENTION_AGENT, sessions, reader, lambda: model, guard_act_tools)
+    )
 
     @queue_app.task(name="loki.run_review")
     async def run_review_task(installation_id: int, pr_id: str, head_sha: str) -> None:

@@ -15,6 +15,7 @@ def _mention(**overrides: object) -> AgentMention:
     fields: dict[str, object] = {
         "agent": AgentName.LOKI,
         "pr_ref": "pr-1",
+        "room_id": "room-1",
         "thread_id": "thread-1",
         "sender": "alice",
         "sender_role": SENDER_ROLE_MAINTAINER,
@@ -31,6 +32,7 @@ def test_job_args_carry_every_field_of_the_event_and_the_tenant() -> None:
         "installation_id": 7,
         "agent": "loki",
         "pr_ref": "pr-1",
+        "room_id": "room-1",
         "thread_id": "thread-1",
         "sender": "alice",
         "sender_role": "maintainer",

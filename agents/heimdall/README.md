@@ -5,6 +5,14 @@ its ToolBox, budgets, guardrails and `submit_result` decide what it may do. It a
 current-head review card or drafts answers to maintainer commands using stored triage findings and
 reproduction results.
 
+## Conversations
+
+When mentioned, Heimdall answers about the card, intake rules, drafts and next steps only
+(`scope.py`, `conversation.md`). Ask mode uses `ASK_TOOLS`; a maintainer's request to act opens
+`save_draft` only, with the usual `DeskGuard` (`mention.py`); a mention never opens `save_card`
+or `create_mechanical_task`. A saved draft still waits for the 👍. See
+`../README.md#conversations-answering-agentmention`.
+
 ## Skills
 
 | Skill | When | Allowed tools | Outcome |

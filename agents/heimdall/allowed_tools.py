@@ -16,3 +16,9 @@ ALLOWED_TOOLS: frozenset[str] = frozenset(
         "recall",
     }
 )
+
+ASK_TOOLS: frozenset[str] = frozenset({"get_pr_context", "get_repro", "list_findings", "recall"})
+"""Read-only tools a mention may use in ask mode."""
+
+ACT_TOOLS: frozenset[str] = ASK_TOOLS | {"save_draft"}
+"""Ask tools plus ``save_draft``; a mention never opens ``save_card`` or a mechanical task."""

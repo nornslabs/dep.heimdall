@@ -10,7 +10,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from agents._job_context import PrJobContext, load_pr_job_context
 from agents._mcp_tools import McpToolClient, mcp_agent_tools
-from agents._mention import register_mention_task
+from agents._mention_ports import MentionDeps
+from agents._mention_task import register_mention_task
 from agents._presence_runner import run_with_presence
 from agents._runtime import ChatModel, Completed, ToolBox
 from agents._skills import LOAD_SKILL_TOOL, SkillSet, load_skills
@@ -20,6 +21,7 @@ from agents.huginn.allowed_tools import ALLOWED_TOOLS
 from agents.huginn.config import AGENT_NAME, REQUIRED_SKILLS, load_ai_config
 from agents.huginn.context import build_messages, build_repro_brief
 from agents.huginn.guardrails import ReproGuard, guard_start_repro
+from agents.huginn.mention import MENTION_AGENT, guard_act_tools
 from agents.huginn.schemas import HuginnVerdict, submit_verdict_tool
 from apps.mcp.main import create_server
 from heimdall.adapters.ai import AiAdapter
@@ -57,7 +59,9 @@ def register_huginn_task(
         reader: Authenticated read-only GitHub adapter.
         model: Huginn's model; the e2e replay passes a scripted one.
     """
-    register_mention_task(queue_app)
+    register_mention_task(
+        queue_app, MentionDeps(MENTION_AGENT, sessions, reader, lambda: model, guard_act_tools)
+    )
 
     @queue_app.task(name="huginn.run_repro")
     async def run_repro_task(

@@ -14,6 +14,13 @@ its own path, the toolbox decides what it may call, and only `submit_verdict` en
 4. The runner checks the verdict against the runs the tools returned, renders the room message
    from the validated fields and queues it through the Switch outbox, once per PR head.
 
+## Conversations
+
+When mentioned, Huginn answers about this PR's tests and reproductions only (`scope.py`,
+`conversation.md`). Ask mode uses `ASK_TOOLS`; a maintainer's request to act (for example
+"@huginn rerun with `-k pager`") opens `start_repro` with the usual `ReproGuard`
+(`mention.py`). See `../README.md#conversations-answering-agentmention`.
+
 ## Skills
 
 | Skill | When | Allowed tools | Outcome |

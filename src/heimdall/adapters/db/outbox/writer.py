@@ -3,6 +3,7 @@
 import uuid
 
 from sqlalchemy.dialects.postgresql import insert
+from sqlmodel import col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from heimdall.adapters.db.columns import JsonObject
@@ -49,3 +50,23 @@ async def write_outbox(
         .on_conflict_do_nothing(index_elements=["idempotency_key"])
     )
     await session.exec(statement)
+
+
+async def outbox_message_exists(
+    session: AsyncSession, *, installation_id: InstallationId, idempotency_key: str
+) -> bool:
+    """Say whether a message with this key was already queued, so a redelivered job can stop.
+
+    Args:
+        session: A session inside ``unit_of_work``.
+        installation_id: The tenant the message belongs to.
+        idempotency_key: The key the message was written with.
+
+    Returns:
+        True when the tenant already has a message with this key.
+    """
+    statement = select(OutboxMessage.id).where(
+        col(OutboxMessage.installation_id) == installation_id,
+        col(OutboxMessage.idempotency_key) == idempotency_key,
+    )
+    return (await session.exec(statement)).first() is not None
