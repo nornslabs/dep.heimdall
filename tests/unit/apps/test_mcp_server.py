@@ -22,15 +22,15 @@ def test_mcp_server_registers_reproduction_tools() -> None:
 
     tools = asyncio.run(server.list_tools())
 
-    assert {tool.name for tool in tools} == {"start_repro", "get_repro"}
+    assert {tool.name for tool in tools} == {"start_repro", "get_repro", "recall"}
     assert all("installation_id" in tool.input_schema["properties"] for tool in tools)
 
 
 @pytest.mark.parametrize(
     ("agent_name", "expected_tools"),
     [
-        ("huginn", {"start_repro", "get_repro"}),
-        ("loki", {"get_pr_context", "get_diff", "save_findings"}),
+        ("huginn", {"start_repro", "get_repro", "recall"}),
+        ("loki", {"get_pr_context", "get_diff", "save_findings", "recall"}),
         (
             "heimdall",
             {
@@ -39,6 +39,7 @@ def test_mcp_server_registers_reproduction_tools() -> None:
                 "save_card",
                 "save_draft",
                 "create_mechanical_task",
+                "recall",
             },
         ),
     ],
@@ -67,4 +68,22 @@ def test_loki_server_exposes_only_its_allowlisted_tools() -> None:
 
     tools = asyncio.run(server.list_tools())
 
-    assert {tool.name for tool in tools} == {"get_pr_context", "get_diff", "save_findings"}
+    assert {tool.name for tool in tools} == {
+        "get_pr_context",
+        "get_diff",
+        "save_findings",
+        "recall",
+    }
+
+
+@pytest.mark.parametrize("agent_name", ["huginn", "loki", "heimdall"])
+def test_no_agent_is_offered_a_memory_write_tool(agent_name: str) -> None:
+    """Notes are written only by a maintainer's chat command, never by a model's tool call."""
+    sessions = cast(async_sessionmaker[AsyncSession], object())
+    reader = cast(GitHubApiReader, object())
+    server = create_server(sessions, reader, agent_name=agent_name)
+
+    names = {tool.name for tool in asyncio.run(server.list_tools())}
+
+    assert "recall" in names
+    assert not names & {"remember", "forget"}

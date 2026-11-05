@@ -7,7 +7,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
+from heimdall.modules.triage.domain import PrSnapshot
 from heimdall.modules.triage.models import Pr
+from heimdall.modules.triage.service import get_pr_snapshot
 from heimdall.shared.context import TenantCtx
 
 
@@ -55,3 +57,28 @@ async def save_switch_thread_id(
         ).first()
         if pr is not None and pr.switch_thread_id is None:
             pr.switch_thread_id = thread_id
+
+
+async def find_pr_by_switch_thread(
+    session: AsyncSession,
+    ctx: TenantCtx,
+    thread_id: str,
+) -> PrSnapshot | None:
+    """Find the PR whose Switch thread a room message was posted in.
+
+    A message in a PR's thread is about that PR, so this is how a chat command learns which
+    repository it applies to.
+
+    Args:
+        session: Session inside the caller's transaction.
+        ctx: Tenant context; another installation's PR is never returned.
+        thread_id: Switch event id of the thread's root post, as a message reports it.
+
+    Returns:
+        The PR, or None when no PR of this tenant owns that thread.
+    """
+    statement = select_for_tenant(Pr, ctx.installation_id).where(Pr.switch_thread_id == thread_id)
+    pr = (await session.exec(statement)).first()
+    if pr is None:
+        return None
+    return await get_pr_snapshot(session, ctx, pr.id)
