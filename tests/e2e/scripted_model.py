@@ -5,6 +5,7 @@ import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import cast
 
+from agents._conversation import SUBMIT_INTENT_NAME, SUBMIT_REPLY_NAME
 from heimdall.adapters.ai import ChatMessage, ChatResponse, ToolCall, ToolChoice, ToolSpec, Usage
 from tests.e2e.fake_world import REPO_FULL_NAME
 
@@ -13,6 +14,31 @@ TEST_COMMAND = "pytest -q"
 REVIEW_SUMMARY = "Scripted review for the e2e replay."
 _RESULT = re.compile(r'^<pr_data source="([^"]+)">\n(.*)\n</pr_data>$', re.DOTALL)
 _SCOPE = re.compile(r"installation_id (\d+) and pr_id ([0-9a-f-]{36})")
+
+
+class MentionScript:
+    """Scripted answers for mention runs, taken in order by whichever run asks for one.
+
+    A mention run is recognised by its submit tool, so a review run is never given a reply.
+    """
+
+    def __init__(self) -> None:
+        """Start with nothing scripted."""
+        self._steps: list[ToolCall] = []
+        self.calls = 0
+
+    def script(self, name: str, arguments: dict[str, object]) -> None:
+        """Queue the next submission a mention run makes, by tool name and arguments."""
+        self._steps.append(ToolCall(f"mention-{len(self._steps)}", name, arguments))
+
+    def answer(self, tools: Sequence[ToolSpec]) -> ChatResponse | None:
+        """Return the next scripted submission when this is a mention run, else None."""
+        if not any(tool.name in {SUBMIT_REPLY_NAME, SUBMIT_INTENT_NAME} for tool in tools):
+            return None
+        self.calls += 1
+        if not self._steps:
+            raise AssertionError("a mention run asked for more model turns than were scripted")
+        return _tool_reply(self._steps.pop(0))
 
 
 class ScriptedLokiModel:
@@ -29,6 +55,7 @@ class ScriptedLokiModel:
         self._head_sha = ""
         self._pr_number = 0
         self.calls: list[tuple[ChatMessage, ...]] = []
+        self.mentions = MentionScript()
 
     def set_findings(self, findings: Sequence[Mapping[str, object]]) -> None:
         """Use these findings for the next review; empty means a clean pass."""
@@ -48,6 +75,9 @@ class ScriptedLokiModel:
     ) -> ChatResponse:
         """Record the prompt and take the next review step from the last tool result."""
         self.calls.append(tuple(messages))
+        scripted = self.mentions.answer(tools)
+        if scripted is not None:
+            return scripted
         if not self._pr_id:
             self._installation_id, self._pr_id = _tool_scope(messages)
         return self._reply(_last_result(messages))
@@ -218,6 +248,7 @@ class ScriptedHeimdallModel:
     def __init__(self) -> None:
         """Start with no calls recorded."""
         self.calls: list[tuple[ChatMessage, ...]] = []
+        self.mentions = MentionScript()
         self._installation_id = 0
         self._pr_id = ""
 
@@ -235,6 +266,9 @@ class ScriptedHeimdallModel:
     ) -> ChatResponse:
         """Record the prompt, save the card, and finish by submitting the card id."""
         self.calls.append(tuple(messages))
+        scripted = self.mentions.answer(tools)
+        if scripted is not None:
+            return scripted
         if not self._pr_id:
             self._installation_id, self._pr_id = _tool_scope(messages)
         result = _last_result(messages)

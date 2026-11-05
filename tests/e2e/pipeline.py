@@ -17,6 +17,8 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from agents._memory_handler import MemoryCommandHandler
+from agents._mention import AGENT_MENTION_TASK, SENDER_ROLE_MAINTAINER, AgentMention
 from agents.heimdall.runner import register_heimdall_task
 from agents.huginn.runner import register_huginn_task
 from agents.loki.runner import register_loki_task
@@ -29,6 +31,7 @@ from apps.worker.tasks import (
     register_triage_task,
 )
 from heimdall.adapters.db.outbox.sender import ChannelSender, send_due_messages
+from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.github.actions import GitHubActionsResults
 from heimdall.adapters.github.auth import GitHubAppClients
 from heimdall.adapters.github.reader import GitHubApiReader
@@ -39,10 +42,15 @@ from heimdall.adapters.queue.enqueue import (
     HEIMDALL_QUEUE,
     HUGINN_QUEUE,
     LOKI_QUEUE,
+    enqueue,
 )
+from heimdall.adapters.switch.agent.protocol import AgentMessage
 from heimdall.adapters.switch.ports import RoomEvent
 from heimdall.modules.tenancy.api import on_installation_event
-from heimdall.modules.triage.api import receive_webhook
+from heimdall.modules.triage.api import receive_webhook, save_switch_thread_id
+from heimdall.shared.agents import AgentName
+from heimdall.shared.context import TenantCtx, new_request_id
+from heimdall.shared.ids import InstallationId
 from tests.e2e.fake_world import (
     AGENT_ROOM_ID,
     DEMO_MAIN_SHA,
@@ -70,6 +78,28 @@ _LATEST_RUN = (
     "WHERE p.installation_id = :installation_id AND p.repo_id = :repo_id "
     "AND p.number = :number AND r.head_sha = p.head_sha ORDER BY r.attempt DESC LIMIT 1"
 )
+_MENTION_QUEUES = {AgentName.LOKI: LOKI_QUEUE, AgentName.HEIMDALL: HEIMDALL_QUEUE}
+_PR_ID = (
+    "(SELECT id FROM prs WHERE installation_id = :installation_id "
+    "AND repo_id = :repo_id AND number = :number)"
+)
+_LATEST_VERDICT = (
+    "SELECT verdict FROM repro_runs WHERE installation_id = :installation_id "
+    f"AND pr_id = {_PR_ID} ORDER BY attempt DESC LIMIT 1"
+)
+_FINDINGS = (
+    "SELECT id, file, line FROM findings WHERE installation_id = :installation_id "
+    f"AND pr_id = {_PR_ID} ORDER BY created_at"
+)
+_CARD_BODY = (
+    "SELECT body FROM cards WHERE installation_id = :installation_id "
+    f"AND pr_id = {_PR_ID} ORDER BY created_at DESC LIMIT 1"
+)
+_THREAD_ID = (
+    "SELECT switch_thread_id FROM prs WHERE installation_id = :installation_id "
+    "AND repo_id = :repo_id AND number = :number"
+)
+_MEMORY_COUNT = "SELECT count(*) FROM agent_memory WHERE installation_id = :installation_id"
 # The schema is shared by the whole session, so failures are read only past this test's start.
 _LAST_JOB_ID = "SELECT coalesce(max(id), 0) FROM procrastinate_jobs"
 _FAILED_JOBS = (
@@ -119,6 +149,8 @@ class Pipeline:
             self._heimdall_queue, deps.sessions, self.reader, self._heimdall_model
         )
         self._deliveries = 0
+        self._mentions = 0
+        self._messages = 0
         self._started_at = datetime.now(UTC)
         self._since_job = 0
 
@@ -190,6 +222,117 @@ class Pipeline:
         """Return the triage row id for a seeded PR."""
         return uuid.UUID(str(await self._scalar(_PR_COLUMN.format(column="id"), pr)))
 
+    @property
+    def loki_model(self) -> ScriptedLokiModel:
+        """Loki's scripted model, so a test can script what it answers to a mention."""
+        return self._loki_model
+
+    @property
+    def heimdall_model(self) -> ScriptedHeimdallModel:
+        """Heimdall's scripted model, so a test can script what it answers to a mention."""
+        return self._heimdall_model
+
+    async def mention(
+        self,
+        agent: AgentName,
+        pr: SeededPr,
+        sender: str,
+        text: str,
+        *,
+        sender_role: str = SENDER_ROLE_MAINTAINER,
+    ) -> int:
+        """Send ``@agent text`` in the PR's thread as the bridge would, then let the system settle.
+
+        Args:
+            agent: Loki or Heimdall; Huginn's queue is only run by ``run_huginn``.
+            pr: The seeded PR whose thread the message is in.
+            sender: Login of the person writing.
+            text: The message body.
+            sender_role: The role the bridge would give the sender.
+
+        Returns:
+            How many room posts exist after the reply, so a test can read what came after it.
+        """
+        self._mentions += 1
+        event = AgentMention(
+            agent=agent,
+            pr_ref=str(await self.pr_id(pr)),
+            room_id=AGENT_ROOM_ID,
+            thread_id=None,
+            sender=sender,
+            sender_role=sender_role,
+            text=text,
+            message_id=f"e2e-mention-{self._mentions}-{uuid.uuid4().hex[:8]}",
+        )
+        async with unit_of_work(self.sessions) as session:
+            await enqueue(
+                session,
+                AGENT_MENTION_TASK,
+                event.to_job_args(INSTALLATION_ID),
+                queue=_MENTION_QUEUES[agent],
+            )
+        await self.settle()
+        return len(self._deps.switch.room_posts)
+
+    async def chat(self, agent: AgentName, pr: SeededPr, sender: str, body: str) -> None:
+        """Type ``body`` in the PR's thread as ``sender``, the way the agent's bridge hears it.
+
+        Goes through the agent's memory command handler, the only code that writes notes.
+        """
+        self._messages += 1
+        thread_id = await self._thread_id(pr)
+        message = AgentMessage(
+            sequence=self._messages,
+            room_id=AGENT_ROOM_ID,
+            message_id=f"e2e-chat-{self._messages}-{uuid.uuid4().hex[:8]}",
+            sender=f"@switch-mattermost-x-{sender}:localhost",
+            sender_name=sender,
+            body=body,
+            thread_id=thread_id,
+            addressed=True,
+        )
+        assert await MemoryCommandHandler(agent, self.sessions).handle(message)
+        await self.settle()
+
+    async def _thread_id(self, pr: SeededPr) -> str:
+        """Return the PR's Switch thread, saving its heading post as the thread when unsaved.
+
+        The replay delivers outbox rows straight to ``FakeSwitch``, so the worker's
+        ``SessionThreadStore`` never records a thread; this does what it does in production.
+        """
+        rows = await self._query(_THREAD_ID, self._pr_params(pr))
+        if rows[0][0] is not None:
+            return str(rows[0][0])
+        heading = f"New PR #{pr.number} "
+        post_id = next(
+            id_
+            for id_, post in self._deps.switch.posts_by_id.items()
+            if post.message.startswith(heading)
+        )
+        ctx = TenantCtx(InstallationId(INSTALLATION_ID), new_request_id())
+        await save_switch_thread_id(self.sessions, ctx, await self.pr_id(pr), post_id)
+        return post_id
+
+    async def repro_verdict(self, pr: SeededPr) -> str | None:
+        """Return the verdict stored on the PR's newest repro run, or None without a run."""
+        rows = await self._query(_LATEST_VERDICT, self._pr_params(pr))
+        return str(rows[0][0]) if rows and rows[0][0] is not None else None
+
+    async def findings(self, pr: SeededPr) -> list[tuple[str, str, int]]:
+        """Return ``(id, file, line)`` for every finding saved for the PR."""
+        rows = await self._query(_FINDINGS, self._pr_params(pr))
+        return [(str(row[0]), str(row[1]), int(str(row[2]))) for row in rows]
+
+    async def card_body(self, pr: SeededPr) -> str | None:
+        """Return the newest card text saved for the PR, or None when there is none."""
+        rows = await self._query(_CARD_BODY, self._pr_params(pr))
+        return str(rows[0][0]) if rows else None
+
+    async def memory_note_count(self) -> int:
+        """Count the agent notes stored for the demo installation."""
+        rows = await self._query(_MEMORY_COUNT, {"installation_id": INSTALLATION_ID})
+        return int(str(rows[0][0]))
+
     async def pr_state(self, pr: SeededPr) -> str:
         """Return the stored triage state for a seeded PR."""
         return str(await self._scalar(_PR_COLUMN.format(column="state"), pr))
@@ -240,10 +383,14 @@ class Pipeline:
         delivery_id = f"e2e-{self._deliveries}-{uuid.uuid4().hex[:8]}"
         await receive_webhook(self.sessions, delivery_id, event, action, payload)  # pyright: ignore[reportArgumentType]
 
+    @staticmethod
+    def _pr_params(pr: SeededPr) -> dict[str, object]:
+        """Bind the demo installation, repo and a PR number."""
+        return {"installation_id": INSTALLATION_ID, "repo_id": REPO_ID, "number": pr.number}
+
     async def _scalar(self, sql: str, pr: SeededPr) -> object:
         """Run a one-value query scoped to the demo installation and a PR number."""
-        params = {"installation_id": INSTALLATION_ID, "repo_id": REPO_ID, "number": pr.number}
-        rows = await self._query(sql, params)
+        rows = await self._query(sql, self._pr_params(pr))
         return rows[0][0] if rows else None
 
     async def _query(self, sql: str, params: Mapping[str, object]) -> list[tuple[object, ...]]:

@@ -4,6 +4,20 @@ The shared loop Huginn, Loki and Heimdall run on. The model decides what to do n
 decides what it may do and what a finished answer looks like. Agents import it from
 `agents/_runtime.py` only.
 
+## The six parts of an agent
+
+Every agent is the same six parts; only the content differs. Each agent's own README fills in
+its row.
+
+| Part | Where it lives | Rule |
+|---|---|---|
+| Model | `<agent>/config.py` | `LLM_<AGENT>_*`, falling back to `LLM_DEFAULT_*`; the agent calls `ai.chat(...)` and never a vendor SDK. |
+| Context | `<agent>/context.py`, `prompt.md` | A staged brief; every tool result and all PR text reaches the model wrapped as data. |
+| Tools | `<agent>/allowed_tools.py` | An allow-list of MCP tools; no GitHub write tool exists. `remember` and `forget` are not agent tools: notes change only through a maintainer's chat command. |
+| Skills | `<agent>/skills/*.md` | Playbooks loaded on demand with `load_skill`. |
+| Guardrails | `_guardrails.py`, `<agent>/guardrails.py` | Shared data wrapping, tone filter and secret scan, plus the agent's own checks. |
+| Output | `<agent>/schemas.py` | One `submit_*` schema with one repair round; the runner renders it and queues it through the outbox. |
+
 ## Contract
 
 ```python

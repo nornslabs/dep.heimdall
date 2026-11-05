@@ -4,6 +4,17 @@ Huginn consumes the transactional `huginn.run_repro` job created when intake emi
 `ROOM_READY_FOR_REPRO`. It runs on the shared runtime (`agents/_runtime.py`): the model chooses
 its own path, the toolbox decides what it may call, and only `submit_verdict` ends the run.
 
+## Six-part contract
+
+| Part | What this agent has |
+|---|---|
+| Model | Its own `AiAdapter`, built from `config.py` (`LLM_HUGINN_*`, falling back to `LLM_DEFAULT_*`); no vendor SDK. |
+| Context | `context.py`: the PR, its changed test files, then the source they cover. |
+| Tools | `get_pr_context`, `get_diff`, `get_file`, `start_repro`, `get_repro`, `recall` (`allowed_tools.py`), plus the runtime's local `load_skill` and `submit_*`. |
+| Skills | `pick_test_command`, `judge_repro`, `fix_setup_failure`; the index is in the system prompt and `load_skill` reads one on demand. |
+| Guardrails | `ReproGuard` (one runner, only the command changes, three runs) and a verdict cross-check against the saved runs; the runtime adds the secret scan, tone filter, `pr_data` wrapping, budgets and one repair round. |
+| Output | `submit_verdict` with a `HuginnVerdict` (`schemas.py`), rendered by `_message.py` and posted through the outbox. |
+
 ## How a run goes
 
 1. `context.py` builds the brief: the PR, then its changed test files, then the source they cover.

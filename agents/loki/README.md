@@ -4,6 +4,17 @@ Loki consumes the transactional `loki.run_review` job queued for a PR head. It r
 runtime (`agents/_runtime.py`): the model chooses what to read, the toolbox decides what it may
 call, and only `submit_review` ends the run.
 
+## Six-part contract
+
+| Part | What this agent has |
+|---|---|
+| Model | Its own `AiAdapter`, built from `config.py` (`LLM_LOKI_*`, falling back to `LLM_DEFAULT_*`); no vendor SDK. |
+| Context | `context.py`: the PR, its changed test files, then the source, then the linked issue. |
+| Tools | `get_pr_context`, `get_diff`, `get_file`, `save_findings`, `recall` (`allowed_tools.py`); no GitHub write tool, plus the runtime's local `load_skill` and `submit_*`. |
+| Skills | `edge_cases`, `scope_check`, `test_quality`, `mechanical_tagging`; the index is in the system prompt and `load_skill` reads one on demand. |
+| Guardrails | `FindingGuard` (a finding must cite an added `file:line`; docs-only PRs are skipped) and a cross-check that every submitted id was saved for this head; the runtime adds the secret scan, tone filter, `pr_data` wrapping, budgets and one repair round. |
+| Output | `submit_review` with a `LokiReview` (`schemas.py`), at most `MAX_FINDINGS = 5` cited findings or a clean pass, rendered by `_message.py`. |
+
 ## How a run goes
 
 1. `context.py` builds the brief: the PR, then its changed test files, then the source they
