@@ -4,14 +4,17 @@ Durable notes each agent keeps per repository, such as "tests run with `pytest -
 or "`docs/` is out of scope for review". A note outlives the PR it was made on, so the agent can
 recall it on the next PR in the same repo.
 
-Public functions: `remember_note`, `recall_notes`, `forget_note`, plus the pure rules
+Public functions: `remember_note`, `recall_notes`, `forget_note`, the
+`remember_note_in_transaction` / `forget_note_in_transaction` variants for a caller that
+writes its reply in the same transaction, plus the pure rules
 `validate_note`, `validate_key` and `matches_query`.
 
 | File | Role |
 |---|---|
 | `api.py` | Public interface (the only file other modules import) |
 | `service.py` | Use cases |
-| `_notes.py` | Remember, recall and forget; the maintainer check |
+| `_write.py` | Remember and forget; the maintainer check |
+| `_read.py` | Recall and row-to-value mapping |
 | `domain.py` | Pure rules: key format, 300-character value limit, query matching |
 | `models.py` | Persistence models |
 

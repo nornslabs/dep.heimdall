@@ -1,19 +1,17 @@
-"""Remember, recall and forget agent notes; writes only for a repo maintainer."""
+"""Remember and forget agent notes; only for a maintainer of the note's repo."""
 
-from sqlalchemy import delete, func, or_
+from sqlalchemy import delete, func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel import col
 from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel.sql.expression import SelectOfScalar
 
-from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
+from heimdall.modules.memory._read import read_note
 from heimdall.modules.memory.domain import (
     AgentNote,
     NoteInput,
     NoteScope,
-    matches_query,
     validate_key,
     validate_note,
 )
@@ -32,10 +30,31 @@ async def remember_note(
     requested_by: str,
     source_message_id: str,
 ) -> AgentNote:
+    """Store a note a maintainer asked an agent to keep, in its own transaction.
+
+    See ``remember_note_in_transaction`` for the arguments and errors.
+    """
+    async with unit_of_work(sessions) as session:
+        return await remember_note_in_transaction(
+            session, ctx, scope, key, value, requested_by, source_message_id
+        )
+
+
+async def remember_note_in_transaction(
+    session: AsyncSession,
+    ctx: TenantCtx,
+    scope: NoteScope,
+    key: str,
+    value: str,
+    requested_by: str,
+    source_message_id: str,
+) -> AgentNote:
     """Store a note a maintainer asked an agent to keep, replacing any note with the same key.
 
+    Every check runs before anything is written, so a refused note leaves the transaction clean.
+
     Args:
-        sessions: Tenant database session factory.
+        session: Session inside the caller's transaction.
         ctx: Tenant and request context.
         scope: The repository and agent the note belongs to.
         key: Note key as the maintainer gave it.
@@ -54,45 +73,12 @@ async def remember_note(
     note = validate_note(key, value)
     if not source_message_id.strip():
         raise InvalidNote("a note needs the id of the message that asked for it")
-    async with unit_of_work(sessions) as session:
-        await _require_maintainer(session, ctx, scope, requested_by)
-        await _upsert(session, ctx, scope, note, requested_by, source_message_id)
-        stored = await _read_note(session, ctx, scope, note.key)
+    await _require_maintainer(session, ctx, scope, requested_by)
+    await _upsert(session, ctx, scope, note, requested_by, source_message_id)
+    stored = await read_note(session, ctx, scope, note.key)
     if stored is None:
         raise RepoNotFound("the note's key is held by another installation")
     return stored
-
-
-async def recall_notes(
-    sessions: async_sessionmaker[AsyncSession],
-    ctx: TenantCtx,
-    scope: NoteScope,
-    query: str = "",
-) -> tuple[AgentNote, ...]:
-    """List an agent's unexpired notes for a repository that match a query.
-
-    Args:
-        sessions: Tenant database session factory.
-        ctx: Tenant and request context.
-        scope: The repository and agent whose notes are read.
-        query: Text to find in a key or value, ignoring case; empty returns every note.
-
-    Returns:
-        Matching notes ordered by key; empty when none exist for this tenant.
-    """
-    statement = (
-        _scoped(ctx, scope)
-        .where(
-            or_(
-                col(AgentMemory.expires_at).is_(None),
-                col(AgentMemory.expires_at) > func.now(),
-            )
-        )
-        .order_by(col(AgentMemory.key))
-    )
-    async with unit_of_work(sessions) as session:
-        notes = tuple(_to_note(row) for row in await session.exec(statement))
-    return tuple(note for note in notes if matches_query(note, query))
 
 
 async def forget_note(
@@ -102,14 +88,32 @@ async def forget_note(
     key: str,
     requested_by: str,
 ) -> None:
+    """Delete one note a maintainer asked an agent to drop, in its own transaction.
+
+    See ``forget_note_in_transaction`` for the arguments and errors.
+    """
+    async with unit_of_work(sessions) as session:
+        await forget_note_in_transaction(session, ctx, scope, key, requested_by)
+
+
+async def forget_note_in_transaction(
+    session: AsyncSession,
+    ctx: TenantCtx,
+    scope: NoteScope,
+    key: str,
+    requested_by: str,
+) -> str:
     """Delete one note a maintainer asked an agent to drop.
 
     Args:
-        sessions: Tenant database session factory.
+        session: Session inside the caller's transaction.
         ctx: Tenant and request context.
         scope: The repository and agent the note belongs to.
         key: Key of the note to delete.
         requested_by: GitHub login of the person who asked; must be a repo maintainer.
+
+    Returns:
+        The normalised key that was deleted.
 
     Raises:
         InvalidNote: The key is malformed.
@@ -118,6 +122,7 @@ async def forget_note(
         NoteNotFound: No note with this key exists for the repository and agent.
     """
     normalised_key = validate_key(key)
+    await _require_maintainer(session, ctx, scope, requested_by)
     statement = (
         delete(AgentMemory)
         .where(
@@ -128,11 +133,9 @@ async def forget_note(
         )
         .returning(col(AgentMemory.id))
     )
-    async with unit_of_work(sessions) as session:
-        await _require_maintainer(session, ctx, scope, requested_by)
-        deleted = (await session.exec(statement)).first()
-        if deleted is None:
-            raise NoteNotFound(f"no note named {normalised_key!r}")
+    if (await session.exec(statement)).first() is None:
+        raise NoteNotFound(f"no note named {normalised_key!r}")
+    return normalised_key
 
 
 async def _require_maintainer(
@@ -178,31 +181,3 @@ async def _upsert(
         where=col(AgentMemory.installation_id) == ctx.installation_id,
     )
     await session.exec(statement)
-
-
-async def _read_note(
-    session: AsyncSession, ctx: TenantCtx, scope: NoteScope, key: str
-) -> AgentNote | None:
-    """Read one note by key inside the caller's transaction."""
-    row = (await session.exec(_scoped(ctx, scope).where(AgentMemory.key == key))).first()
-    return None if row is None else _to_note(row)
-
-
-def _scoped(ctx: TenantCtx, scope: NoteScope) -> SelectOfScalar[AgentMemory]:
-    """Select this tenant's notes for one repo and agent."""
-    return select_for_tenant(AgentMemory, ctx.installation_id).where(
-        AgentMemory.repo_id == scope.repo_id,
-        AgentMemory.agent == scope.agent.value,
-    )
-
-
-def _to_note(row: AgentMemory) -> AgentNote:
-    """Copy a table row into the value other modules see."""
-    return AgentNote(
-        key=row.key,
-        value=row.value,
-        created_by=row.created_by,
-        source_message_id=row.source_message_id,
-        created_at=row.created_at,
-        expires_at=row.expires_at,
-    )
