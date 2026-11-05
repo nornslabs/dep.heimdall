@@ -6,6 +6,7 @@ the room and GitHub. Agents run their real loops; only Loki's model reply is scr
 
 import pytest
 
+from agents.heimdall.guardrails import find_quoted_finding_ids
 from apps.bridge.approval import NON_MAINTAINER_REPLY
 from tests.e2e.fake_world import (
     MAINTAINER,
@@ -61,6 +62,7 @@ async def test_good_fix_card_says_reproduced_and_posts_only_after_approval(
     await pipeline.run_huginn()
     assert any(post.startswith(HUGINN_REPRODUCED) for post in switch.room_posts)
     assert await pipeline.pr_state(GOOD_FIX) == "card_posted"
+    assert await pipeline.repro_verdict(GOOD_FIX) == "fix_confirmed"
 
     post_id = switch.approval_post_id()
     assert "Fix confirmed" in switch.posts_by_id[post_id].message
@@ -98,6 +100,15 @@ async def test_fake_fix_card_says_not_reproduced_with_loki_finding(
     assert any(post.startswith(HUGINN_NOT_COVERED) for post in switch.room_posts)
     assert any("1 finding saved" in post for post in switch.room_posts)
     assert await pipeline.pr_state(FAKE_FIX) == "card_posted"
+    assert await pipeline.repro_verdict(FAKE_FIX) == "not_reproduced"
+    findings = await pipeline.findings(FAKE_FIX)
+    assert [(file, line) for _id, file, line in findings] == [("switch_agent/config.py", 3)]
+    # The card escapes Markdown, so an id shows as "\\[id\\]"; read it as a person would.
+    stored_card = (await pipeline.card_body(FAKE_FIX) or "").replace("\\", "")
+    assert find_quoted_finding_ids(stored_card)
+    assert set(find_quoted_finding_ids(stored_card)) <= {
+        finding_id for finding_id, _, _ in findings
+    }
 
     post_id = switch.approval_post_id()
     card = switch.posts_by_id[post_id].message
@@ -123,5 +134,6 @@ async def test_rule_breaker_fails_intake_and_writes_nothing_to_github(
     assert switch.room_posts[0].startswith(f"New PR #{RULE_BREAKER.number} ")
     assert "Resolve the failed checks" in switch.room_posts[1]
     assert await pipeline.latest_repro_run(RULE_BREAKER) is None
+    assert await pipeline.repro_verdict(RULE_BREAKER) is None
     assert github.writes() == []
     await assert_nothing_failed(pipeline)

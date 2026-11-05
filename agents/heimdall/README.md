@@ -5,6 +5,17 @@ its ToolBox, budgets, guardrails and `submit_result` decide what it may do. It a
 current-head review card or drafts answers to maintainer commands using stored triage findings and
 reproduction results.
 
+## Six-part contract
+
+| Part | What this agent has |
+|---|---|
+| Model | Its own `AiAdapter`, built from `config.py` (`LLM_HEIMDALL_*`, falling back to `LLM_DEFAULT_*`); no vendor SDK. |
+| Context | `context.py`: a `pr_data` brief with the PR, the latest repro result and the accepted findings. |
+| Tools | `get_pr_context`, `get_repro`, `list_findings`, `save_card`, `save_draft`, `create_mechanical_task`, `recall` (`allowed_tools.py`); never a diff or file read, plus the runtime's local `load_skill` and `submit_*`. |
+| Skills | `write_card`, `draft_change_request`, `draft_thanks`, `draft_close`, `explain_why`, `mechanical_task`; the index is in the system prompt and `load_skill` reads one on demand. |
+| Guardrails | `CommandGuard` (maintainers only), `DeskGuard` (at most 2 drafts, cite only existing finding ids) and a check that the result names an artifact this run saved; the runtime adds the secret scan, tone filter, `pr_data` wrapping, budgets and one repair round. |
+| Output | `submit_result` with a `DeskResult` (`schemas.py`), rendered by `_message.py`; nothing posts to GitHub without a maintainer's approval hash. |
+
 ## Conversations
 
 When mentioned, Heimdall answers about the card, intake rules, drafts and next steps only
