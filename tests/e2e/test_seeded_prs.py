@@ -48,6 +48,8 @@ UNUSED_IMPORT_FINDING = json.dumps(
     }
 )
 OUTSIDER = "drive-by-reviewer"
+HUGINN_REPRODUCED = "Huginn: the paired tests reproduce the issue."
+HUGINN_NOT_COVERED = "Huginn: the paired tests do not exercise the change."
 
 
 async def assert_nothing_failed(pipeline: Pipeline) -> None:
@@ -66,7 +68,7 @@ async def test_good_fix_card_says_reproduced_and_posts_only_after_approval(
     assert "Ready for reproduction and review." in switch.room_posts[1]
 
     await pipeline.run_huginn()
-    assert any(post.startswith("Huginn: fix confirmed") for post in switch.room_posts)
+    assert any(post.startswith(HUGINN_REPRODUCED) for post in switch.room_posts)
     assert await pipeline.pr_state(GOOD_FIX) == "card_posted"
 
     post_id = switch.approval_post_id()
@@ -75,7 +77,7 @@ async def test_good_fix_card_says_reproduced_and_posts_only_after_approval(
     assert switch.posts_by_id[post_id].message.startswith(f"@{MAINTAINER}, your review is needed:")
     assert github.comments_posted(GOOD_FIX.number) == []
     # Each agent's own posts name that agent; Heimdall posts the checklist that opens the thread.
-    assert switch.agent_who_posted("Huginn: fix confirmed") == "huginn"
+    assert switch.agent_who_posted(HUGINN_REPRODUCED) == "huginn"
     assert switch.agent_who_posted(switch.posts_by_id[post_id].message[:20]) == "heimdall"
     assert switch.agent_who_posted("Intake checklist for pull request") == "heimdall"
     assert switch.agent_who_posted("Loki: reviewed") == "loki"
@@ -102,7 +104,7 @@ async def test_fake_fix_card_says_not_reproduced_with_loki_finding(
     """PR #4: tests pass with and without the change, and Loki cites the unused import."""
     await pipeline.open_pr(FAKE_FIX, UNUSED_IMPORT_FINDING)
     await pipeline.run_huginn()
-    assert any(post.startswith("Huginn: issue not reproduced") for post in switch.room_posts)
+    assert any(post.startswith(HUGINN_NOT_COVERED) for post in switch.room_posts)
     assert any("1 finding saved" in post for post in switch.room_posts)
     assert await pipeline.pr_state(FAKE_FIX) == "card_posted"
 

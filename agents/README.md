@@ -55,6 +55,10 @@ room card through the outbox:
 - **`submit_*`.** The only way to finish. The payload is validated with pydantic. The first
   failure sends the errors back (field and message, never the submitted values) with one
   reserved extra turn. A second failure ends the run as `invalid_submission`.
+- **Cross-check.** A submit tool may carry an async `cross_check` that reads what the tools
+  returned (for Huginn, the saved runs behind `get_repro`). Its problems use the same repair
+  round as a schema failure, so a count that contradicts the saved data is corrected or the run
+  ends without a posted answer.
 - **Plain text replies.** The model is told to finish by calling `submit_*`; requests use
   `tool_choice="required"`.
 - **Tool errors.** An error marked `retryable` (an outage) is retried twice with backoff, then the

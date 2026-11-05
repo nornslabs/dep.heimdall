@@ -4,9 +4,13 @@ Going through ``apps.mcp.main.create_server`` keeps the per-agent tool allowlist
 server's argument validation in the path, the same way a stdio MCP session would.
 """
 
+from collections.abc import Mapping
 from typing import cast
 
 from mcp.server.mcpserver import MCPServer
+
+from agents._toolbox import AgentTool, ToolHandler
+from heimdall.adapters.ai import ToolSpec
 
 
 def as_object(value: object) -> dict[str, object]:
@@ -15,6 +19,42 @@ def as_object(value: object) -> dict[str, object]:
         raise TypeError("MCP tool result must be a JSON object")
     items: dict[object, object] = value  # pyright: ignore[reportUnknownVariableType]
     return {str(key): item for key, item in items.items()}
+
+
+async def mcp_agent_tools(server: MCPServer, names: frozenset[str]) -> tuple[AgentTool, ...]:
+    """Wrap an agent server's allowlisted tools as tools the runtime can offer the model.
+
+    Args:
+        server: The agent-scoped server built by ``apps.mcp.main.create_server``.
+        names: Tools the agent may call; every one must be registered on ``server``.
+
+    Returns:
+        One runtime tool per name, sorted by name.
+
+    Raises:
+        ValueError: The server does not register one of the named tools.
+    """
+    client = McpToolClient(server)
+    listed = {tool.name: tool for tool in await server.list_tools()}
+    missing = sorted(names - listed.keys())
+    if missing:
+        raise ValueError(f"MCP server is missing tools: {missing}")
+    return tuple(
+        AgentTool(
+            ToolSpec(tool.name, tool.description or tool.name, tool.input_schema),
+            _handler(client, tool.name),
+        )
+        for tool in (listed[name] for name in sorted(names))
+    )
+
+
+def _handler(client: "McpToolClient", name: str) -> ToolHandler:
+    """Return a handler that calls one MCP tool with the model's arguments."""
+
+    async def handler(arguments: Mapping[str, object]) -> object:
+        return await client.call(name, **dict(arguments))
+
+    return handler
 
 
 class McpToolClient:
@@ -34,6 +74,10 @@ class McpToolClient:
         if getattr(result, "is_error", False):
             raise RuntimeError(f"MCP tool {name} failed")
         return as_object(getattr(result, "structured_content", None))
+
+    async def get_repro(self, installation_id: int, run_id: str) -> dict[str, object]:
+        """Read one saved run and its paired outcomes; it must belong to the tenant."""
+        return await self.call("get_repro", installation_id=installation_id, run_id=run_id)
 
 
 class LokiMcpTools(McpToolClient):
@@ -117,10 +161,6 @@ class HeimdallMcpTools(McpToolClient):
         if not isinstance(rows, list):
             raise TypeError("list_findings must return a list")
         return [as_object(row) for row in cast(list[object], rows)]
-
-    async def get_repro(self, installation_id: int, run_id: str) -> dict[str, object]:
-        """Load one paired reproduction result."""
-        return await self.call("get_repro", installation_id=installation_id, run_id=run_id)
 
     async def save_card(
         self,

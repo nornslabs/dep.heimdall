@@ -40,7 +40,14 @@ def create_server(
         MCP server with reproduction tools and, when wired, review tools.
     """
     allowed_tools = {
-        "huginn": {"start_repro", "get_repro", "recall", "get_file"},
+        "huginn": {
+            "get_pr_context",
+            "get_diff",
+            "get_file",
+            "start_repro",
+            "get_repro",
+            "recall",
+        },
         "loki": {"get_pr_context", "get_diff", "save_findings", "recall", "get_file"},
         "heimdall": {
             "list_findings",

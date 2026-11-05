@@ -76,11 +76,8 @@ class HuginnVerdict(BaseModel):
         )
 
 
-SUBMIT_VERDICT = SubmitTool(
-    "submit_verdict",
-    HuginnVerdict,
-    "Finish with the verdict, the run ids it rests on and the paired run counts.",
-)
+TOOL_NAME = "submit_verdict"
+TOOL_DESCRIPTION = "Finish with the verdict, the run ids it rests on and the paired run counts."
 
 
 class ReproRunReader(Protocol):
@@ -89,6 +86,27 @@ class ReproRunReader(Protocol):
     async def get_repro(self, installation_id: int, run_id: str) -> dict[str, object]:
         """Read one saved run and its paired test outcomes."""
         ...
+
+
+def submit_verdict_tool(
+    tools: ReproRunReader, installation_id: int, head_sha: str
+) -> SubmitTool[HuginnVerdict]:
+    """Build Huginn's submit tool with the saved-run cross-check bound to this run.
+
+    Args:
+        tools: Huginn's MCP client; their ``get_repro`` is already tenant-scoped.
+        installation_id: Tenant owning the pull request.
+        head_sha: PR head this run is about.
+
+    Returns:
+        The tool whose cross-check turns a verdict that disagrees with the saved runs into
+        the model's one repair round.
+    """
+
+    async def cross_check(verdict: HuginnVerdict) -> tuple[str, ...]:
+        return await verdict_problems(tools, installation_id, verdict, head_sha)
+
+    return SubmitTool(TOOL_NAME, HuginnVerdict, TOOL_DESCRIPTION, cross_check=cross_check)
 
 
 async def verdict_problems(

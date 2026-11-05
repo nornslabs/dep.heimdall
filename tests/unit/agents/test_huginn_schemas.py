@@ -8,8 +8,8 @@ from agents.huginn._message import render_verdict
 from agents.huginn.schemas import (
     MAX_FAILING_ASSERTION_CHARS,
     MAX_SUMMARY_CHARS,
-    SUBMIT_VERDICT,
     HuginnVerdict,
+    submit_verdict_tool,
     verdict_problems,
 )
 
@@ -97,8 +97,10 @@ def test_counts_must_cover_every_named_run() -> None:
 
 
 def test_submit_tool_publishes_the_forbidden_extras_schema() -> None:
-    assert SUBMIT_VERDICT.name == "submit_verdict"
-    assert SUBMIT_VERDICT.spec.input_schema["additionalProperties"] is False
+    tool = submit_verdict_tool(FakeRuns({}), INSTALLATION_ID, HEAD_SHA)
+
+    assert tool.name == "submit_verdict"
+    assert tool.spec.input_schema["additionalProperties"] is False
 
 
 def test_tone_filter_cleans_the_prose_fields() -> None:
