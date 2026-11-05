@@ -132,6 +132,20 @@ async def test_a_greeting_gets_a_greeting_back(
     assert str(row.payload["message"]).startswith("Heimdall: hello!")
 
 
+async def test_an_awake_check_gets_a_role_aware_reply(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    room, _ = await _room_with_maintainers(sessions, engine, ["alice"])
+    message = _message(room, "alice", "@huginn are you awake?")
+
+    await PresenceHandler(AgentName.HUGINN, sessions).handle(message)
+
+    (row,) = await _rows(sessions, message.message_id)
+    reply = str(row.payload["message"])
+    assert reply.startswith("Huginn: I'm awake.")
+    assert "reproduction" in reply
+
+
 async def _denied_rows(
     sessions: async_sessionmaker[AsyncSession], message_id: str
 ) -> list[OutboxMessage]:
