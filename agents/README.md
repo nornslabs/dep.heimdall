@@ -77,3 +77,15 @@ room card through the outbox:
 
 Each agent's budget is `BUDGET` in `agents/<name>/config.py`. The numbers are starting points
 to tune on the seeded PRs.
+
+## Memory commands
+
+A maintainer keeps a fact for an agent with `@<agent> remember <key>: <note>` and drops it with
+`@<agent> forget <key>`, sent in a PR's thread; the note belongs to that PR's repository.
+`_memory_commands.py` parses the command and words the fixed replies; `_memory_handler.py`
+checks the sender is a maintainer, changes the note through `heimdall.modules.memory` and
+queues the reply in the same transaction. `_presence_runner.room_message_handler` tries memory
+commands before presence prompts.
+
+No model ever writes a note: agents get only the read-only MCP tool `recall`, so PR text cannot
+plant an instruction that outlives the PR.

@@ -3,7 +3,11 @@
 Other modules may import only from this file.
 """
 
-from heimdall.modules.triage._thread import get_switch_thread_id, save_switch_thread_id
+from heimdall.modules.triage._thread import (
+    find_pr_by_switch_thread,
+    get_switch_thread_id,
+    save_switch_thread_id,
+)
 from heimdall.modules.triage._webhooks import receive_webhook
 from heimdall.modules.triage.domain import (
     EventKind,
@@ -30,6 +34,7 @@ __all__ = [
     "PrState",
     "Rejected",
     "Transition",
+    "find_pr_by_switch_thread",
     "get_pr_snapshot",
     "get_switch_thread_id",
     "handle_event",

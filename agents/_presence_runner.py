@@ -8,6 +8,7 @@ from typing import Protocol
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from agents._memory_handler import MemoryCommandHandler
 from agents._presence_handler import PresenceHandler
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.switch.agent import AgentConnectionConfig, AgentMessage, SwitchAgentClient
@@ -115,8 +116,29 @@ async def _build_client(
     if not rooms:
         log.warning("presence_disabled", agent=agent.value, reason="no agent room is linked")
         return None
-    handler = PresenceHandler(agent, sessions)
-    return client_factory(dataclasses.replace(config, rooms=rooms), handler.handle)
+    on_message = room_message_handler(agent, sessions)
+    return client_factory(dataclasses.replace(config, rooms=rooms), on_message)
+
+
+def room_message_handler(agent: AgentName, sessions: async_sessionmaker[AsyncSession]) -> OnMessage:
+    """Build the callback that answers room messages: memory commands first, then presence.
+
+    Args:
+        agent: The agent the messages are addressed to.
+        sessions: Tenant database session factory.
+
+    Returns:
+        A callback for the Switch client; a message no handler takes gets no answer.
+    """
+    memory = MemoryCommandHandler(agent, sessions)
+    presence = PresenceHandler(agent, sessions)
+
+    async def on_message(message: AgentMessage) -> None:
+        if await memory.handle(message):
+            return
+        await presence.handle(message)
+
+    return on_message
 
 
 async def _run_jobs_then_stop(run_jobs: Callable[[], Awaitable[None]], stop: asyncio.Event) -> None:

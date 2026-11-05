@@ -1,4 +1,4 @@
-"""The table models match the LLD: 15 tables, tenant column everywhere, LLD indexes."""
+"""The table models match the LLD: 16 tables, tenant column everywhere, LLD indexes."""
 
 import pytest
 from sqlalchemy import BigInteger, Table, UniqueConstraint
@@ -21,6 +21,7 @@ LLD_TABLES = {
     "outbox",
     "audit_log",
     "usage",
+    "agent_memory",
 }
 
 LLD_INDEXES = {
@@ -29,6 +30,7 @@ LLD_INDEXES = {
     ("audit_log", ("installation_id", "subject", "at")),
     ("findings", ("pr_id", "head_sha")),
     ("usage", ("installation_id", "at")),
+    ("agent_memory", ("installation_id", "repo_id", "agent")),
 }
 
 TEST_TABLE_PREFIXES = ("test_", "unit_test_")
@@ -71,6 +73,7 @@ def test_lld_indexes_exist() -> None:
         ("prs", {"repo_id", "number"}),
         ("repro_runs", {"pr_id", "head_sha", "attempt"}),
         ("approvals", {"draft_id"}),
+        ("agent_memory", {"repo_id", "agent", "key"}),
     ],
 )
 def test_lld_unique_constraints_exist(table_name: str, columns: set[str]) -> None:

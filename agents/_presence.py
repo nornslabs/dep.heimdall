@@ -35,6 +35,18 @@ class PresencePrompt(Enum):
     HELLO = "hello"
 
 
+def strip_leading_mentions(body: str) -> str:
+    """Drop the run of agent @mentions that opens a message, and surrounding whitespace.
+
+    Args:
+        body: Untrusted message text.
+
+    Returns:
+        What the sender asked, without the mentions that addressed the agents.
+    """
+    return _LEADING_MENTIONS.sub("", body, count=1).strip()
+
+
 def parse_presence_prompt(body: str) -> PresencePrompt | None:
     """Decide whether a message is a bare ping or greeting, ignoring leading agent mentions.
 
@@ -47,8 +59,7 @@ def parse_presence_prompt(body: str) -> PresencePrompt | None:
     """
     if len(body) > MAX_PROMPT_LENGTH:
         return None
-    rest = _LEADING_MENTIONS.sub("", body, count=1)
-    word = rest.strip().rstrip(_TRAILING_PUNCTUATION).casefold()
+    word = strip_leading_mentions(body).rstrip(_TRAILING_PUNCTUATION).casefold()
     if word in _PING_WORDS:
         return PresencePrompt.PING
     if word in _HELLO_WORDS:
