@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from pydantic import BaseModel
 
 from agents._budget import AgentBudget
+from agents._guardrails import DATA_RULE
 from agents._outcome import (
     Completed,
     CouldNotFinish,
@@ -26,6 +27,7 @@ from heimdall.adapters.ai import ChatMessage
 from heimdall.shared.logging import get_logger
 
 __all__ = [
+    "DATA_RULE",
     "AgentBudget",
     "AgentRun",
     "AgentTool",
@@ -59,7 +61,7 @@ async def run_agent[T: BaseModel](
         token budget or the one repair round ran out; ``Unavailable`` when the model or a
         tool stayed down; ``Stale`` when the head moved before the answer was submitted.
     """
-    state = RunState(tuple(messages), turn_limit=run.budget.max_turns)
+    state = RunState(_with_data_rule(messages), turn_limit=run.budget.max_turns)
     outcome: RunOutcome[T] | None = None
     while outcome is None:
         limit = _limit_reached(run.budget, state)
@@ -69,6 +71,18 @@ async def run_agent[T: BaseModel](
             state, outcome = await take_turn(run, state)
     _log_finished(run.agent, outcome)
     return outcome
+
+
+def _with_data_rule(messages: Sequence[ChatMessage]) -> tuple[ChatMessage, ...]:
+    """Return the prompt with the ``pr_data`` rule leading the system turn, adding one if absent.
+
+    The runtime wraps every tool result, so the runtime states what the wrapper means; no
+    agent prompt can leave it out.
+    """
+    if messages and messages[0].role == "system":
+        system = ChatMessage("system", f"{DATA_RULE}\n\n{messages[0].content}")
+        return (system, *messages[1:])
+    return (ChatMessage("system", DATA_RULE), *messages)
 
 
 def _limit_reached(budget: AgentBudget, state: RunState) -> CouldNotFinishReason | None:

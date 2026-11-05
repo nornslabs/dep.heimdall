@@ -3,16 +3,24 @@
 Every step returns a new ``RunState``; an outcome alongside it means the run is over.
 """
 
+import math
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Protocol
 
 from pydantic import BaseModel
 
-from agents._budget import AgentBudget, CallCounts, estimate_tokens, fit_to_budget
+from agents._budget import (
+    CHARS_PER_TOKEN,
+    AgentBudget,
+    CallCounts,
+    estimate_tokens,
+    fit_to_budget,
+)
+from agents._guardrails import clean_pr_text, wrap_pr_data, wrapper_overhead
 from agents._outcome import Completed, CouldNotFinish, RunOutcome, RunUsage, Stale, Unavailable
 from agents._submit import InvalidSubmission, SubmitTool
-from agents._toolbox import ToolBox
+from agents._toolbox import ToolBox, ToolResult
 from heimdall.adapters.ai import ChatMessage, ChatResponse, ToolCall, ToolChoice, ToolSpec
 from heimdall.shared.errors import (
     AiBadResponse,
@@ -148,8 +156,35 @@ async def _handle_tool[T: BaseModel](run: AgentRun[T], state: RunState, call: To
         state = replace(state, counts=state.counts.plus(call.name))
     used = sum(estimate_tokens(message.content) for message in state.history)
     remaining = run.budget.context_tokens - used
-    text = fit_to_budget(result.text, remaining, run.budget.max_result_bytes.get(call.name))
-    return _with_tool_message(state, call, text), None
+    return _with_tool_message(state, call, _result_for_model(run, call, result, remaining)), None
+
+
+def _result_for_model[T: BaseModel](
+    run: AgentRun[T], call: ToolCall, result: ToolResult, remaining_tokens: int
+) -> str:
+    """Fit a tool result to the budget, wrapping real tool output as PR data.
+
+    The toolbox's own refusal and error lines are runtime text, so they go back as they are.
+    Tool output is cleaned first, then cut with room kept for the wrapper, so the closing tag
+    is always the last thing the model reads.
+    """
+    byte_cap = run.budget.max_result_bytes.get(call.name)
+    if not result.ran or result.failed:
+        return fit_to_budget(result.text, remaining_tokens, byte_cap)
+    path = _path_argument(call)
+    overhead = wrapper_overhead(call.name, path)
+    body = fit_to_budget(
+        clean_pr_text(result.text),
+        remaining_tokens - math.ceil(overhead / CHARS_PER_TOKEN),
+        None if byte_cap is None else byte_cap - overhead,
+    )
+    return wrap_pr_data(call.name, body, path)
+
+
+def _path_argument(call: ToolCall) -> str | None:
+    """Return the file path the model asked for, when the call named one."""
+    path = call.arguments.get("path")
+    return path if isinstance(path, str) else None
 
 
 async def _handle_submit[T: BaseModel](

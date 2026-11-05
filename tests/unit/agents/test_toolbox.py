@@ -52,7 +52,7 @@ async def test_allowed_tool_with_valid_arguments_runs() -> None:
 
     result = await _toolbox(handler).call("get_file", {"path": "a.py", "start": 3})
 
-    assert (result.text, result.ran) == ('{"text": "line 1"}', True)
+    assert (result.text, result.ran, result.failed) == ('{"text": "line 1"}', True, False)
     assert handler.calls == [{"path": "a.py", "start": 3}]
 
 
@@ -87,7 +87,7 @@ async def test_non_retryable_tool_error_goes_back_to_the_model_without_its_messa
 
     result = await _toolbox(handler).call("get_file", {"path": "a.py"})
 
-    assert (result.text, result.ran) == ("error: ReproLimitReached", True)
+    assert (result.text, result.ran, result.failed) == ("error: ReproLimitReached", True, True)
     assert len(handler.calls) == 1
 
 
