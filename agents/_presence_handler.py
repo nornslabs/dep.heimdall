@@ -13,26 +13,28 @@ from agents._mention import (
     mention_lock,
     mention_queue,
 )
-from agents._presence import format_not_maintainer_reply, format_rate_limited_reply
+from agents._presence import format_not_maintainer_reply
+from agents._rate_limit_notice import queue_rate_limit_notice
+from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.db.outbox.writer import write_outbox
+from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.queue.enqueue import enqueue
 from heimdall.adapters.switch.agent.protocol import AgentMessage
-from heimdall.modules.audit.api import AuditEntry, append_in_transaction, pr_subject
+from heimdall.modules.audit.api import AuditEntry, append_in_transaction
 from heimdall.modules.conversation.api import Limited, QuestionScope, admit_question_in_transaction
 from heimdall.modules.desk.api import parse_command
 from heimdall.modules.tenancy.api import find_room_maintainer, find_room_tenant
 from heimdall.modules.triage.api import PrSnapshot, find_pr_by_switch_thread
 from heimdall.shared.agents import AgentName
-from heimdall.shared.context import PrRef, TenantCtx, new_request_id
+from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.errors import RoomTenantAmbiguous
+from heimdall.shared.ids import InstallationId
 from heimdall.shared.logging import get_logger
 
 log = get_logger(__name__)
 
 NOT_A_MAINTAINER_KEY_PREFIX = "mention-denied"
-RATE_LIMITED_KEY_PREFIX = "rate-limited"
-RATE_LIMITED_ACTION = "conversation.rate_limited"
 
 
 class MentionHandler:
@@ -117,37 +119,8 @@ class MentionHandler:
         if not decision.send_notice:
             log_ignored(self._agent, message, "rate_limited")
             return
-        payload: dict[str, object] = {
-            "agent": self._agent.value,
-            "channel_id": message.room_id,
-            "message": format_rate_limited_reply(self._agent, decision.retry_after),
-        }
-        if pr is not None:
-            payload["pr_id"] = str(pr.id)
-        await write_outbox(
-            session,
-            installation_id=ctx.installation_id,
-            channel="switch",
-            kind="room.message",
-            payload=payload,
-            idempotency_key=f"{RATE_LIMITED_KEY_PREFIX}:{self._agent.value}:{message.message_id}",
-        )
-        await append_in_transaction(session, ctx, self._limit_audit_entry(message, pr))
+        await queue_rate_limit_notice(session, ctx, self._agent, message, pr, decision)
         log_ignored(self._agent, message, "rate_limited_replied")
-
-    def _limit_audit_entry(self, message: AgentMessage, pr: PrSnapshot | None) -> AuditEntry:
-        """Build the audit entry for a notice: who, where and which message, never the text."""
-        subject = (
-            f"room:{message.room_id}"
-            if pr is None
-            else pr_subject(PrRef(repo_id=pr.repo_id, number=pr.number))
-        )
-        return AuditEntry(
-            actor=message.sender_name,
-            action=RATE_LIMITED_ACTION,
-            subject=subject,
-            payload={"agent": self._agent.value, "message_id": message.message_id},
-        )
 
     async def _enqueue_mention(
         self,
@@ -194,8 +167,34 @@ class MentionHandler:
         return await find_pr_by_switch_thread(session, ctx, message.thread_id)
 
 
+async def reply_is_queued(
+    session: AsyncSession, installation_id: InstallationId, idempotency_key: str
+) -> bool:
+    """Tell whether a reply with this idempotency key is already in the outbox.
+
+    A handler that writes more than the reply (an audit entry, a note) uses this to recognise a
+    message Switch delivered again, so the second delivery changes nothing.
+
+    Args:
+        session: Session inside the caller's transaction.
+        installation_id: The tenant the reply belongs to.
+        idempotency_key: The key the reply is queued under.
+
+    Returns:
+        True when the first delivery already queued its reply.
+    """
+    statement = select_for_tenant(OutboxMessage, installation_id).where(
+        OutboxMessage.idempotency_key == idempotency_key
+    )
+    return (await session.exec(statement)).first() is not None
+
+
 async def refuse_non_maintainer(
-    session: AsyncSession, agent: AgentName, message: AgentMessage, key_prefix: str
+    session: AsyncSession,
+    agent: AgentName,
+    message: AgentMessage,
+    key_prefix: str,
+    audit: AuditEntry | None = None,
 ) -> None:
     """Tell a non-maintainer to ask an admin to add them, if the room belongs to a tenant.
 
@@ -207,6 +206,8 @@ async def refuse_non_maintainer(
         agent: The agent answering.
         message: The refused message; only its ids and sender name are used.
         key_prefix: Start of the reply's idempotency key, naming the handler that refused.
+        audit: An entry to record with the refusal. It is written once: a message delivered
+            again, whose reply is already queued, adds nothing.
     """
     try:
         installation_id = await find_room_tenant(session, message.room_id)
@@ -216,6 +217,13 @@ async def refuse_non_maintainer(
     if installation_id is None:
         log_ignored(agent, message, "unlinked_room")
         return
+    idempotency_key = f"{key_prefix}:{agent.value}:{message.message_id}"
+    if audit is not None:
+        if await reply_is_queued(session, installation_id, idempotency_key):
+            log_ignored(agent, message, "duplicate_refusal")
+            return
+        ctx = TenantCtx(installation_id=installation_id, request_id=new_request_id())
+        await append_in_transaction(session, ctx, audit)
     await write_outbox(
         session,
         installation_id=installation_id,
@@ -226,7 +234,7 @@ async def refuse_non_maintainer(
             "channel_id": message.room_id,
             "message": format_not_maintainer_reply(agent, message.sender_name),
         },
-        idempotency_key=f"{key_prefix}:{agent.value}:{message.message_id}",
+        idempotency_key=idempotency_key,
     )
     log_ignored(agent, message, "not_a_maintainer_replied")
 

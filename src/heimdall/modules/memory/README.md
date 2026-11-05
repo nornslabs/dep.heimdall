@@ -38,3 +38,7 @@ model steered by PR text cannot write or drop a note on its own.
 
 Note values are written by maintainers but are still shown to models as data, never as
 instructions.
+
+**Audit.** The module does not write audit entries: its callers do, in the same transaction as the
+note change (see `agents/_memory_audit.py`), so a change and its entry commit or roll back
+together.
