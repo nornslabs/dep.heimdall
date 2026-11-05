@@ -79,6 +79,27 @@ class MattermostRest:
         except (ValueError, TypeError, KeyError) as error:
             raise SwitchRequestFailed("Switch returned invalid post data") from error
 
+    async def get_thread_posts(self, root_id: str) -> tuple[RoomPost, ...]:
+        """Fetch a thread's posts from Mattermost, oldest first."""
+        response = await self._request("GET", f"{POSTS_PATH}/{root_id}/thread")
+        try:
+            posts = cast(dict[str, object], response.json())["posts"]
+            entries = sorted(
+                cast(dict[str, dict[str, object]], posts).values(),
+                key=lambda post: int(cast(int, post["create_at"])),
+            )
+            return tuple(
+                RoomPost(
+                    id=_required_text(entry, "id"),
+                    channel_id=_required_text(entry, "channel_id"),
+                    root_id=_optional_text(entry, "root_id"),
+                    message=_optional_text(entry, "message"),
+                )
+                for entry in entries
+            )
+        except (ValueError, TypeError, KeyError, AttributeError) as error:
+            raise SwitchRequestFailed("Switch returned invalid thread data") from error
+
     async def get_username(self, user_id: str) -> str:
         """Resolve a Mattermost user id to its username."""
         response = await self._request("GET", f"/api/v4/users/{user_id}")

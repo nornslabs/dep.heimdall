@@ -61,7 +61,12 @@ def register_mention_task(queue_app: App, deps: MentionDeps) -> None:
             return
         ports = DbMentionPorts(deps, ctx, sender_role)
         question = Question(pr_ref=pr_ref, sender=sender, text=text)
-        answer = await answer_mention(deps.agent, ports, deps.model(), question)
+        ai = deps.model()
+        answer = None
+        if deps.approve_by_message is not None:
+            answer = await deps.approve_by_message(ports, ctx, ai, question)
+        if answer is None:
+            answer = await answer_mention(deps.agent, ports, ai, question)
         await _queue_reply(deps.sessions, ctx, own_name, channel, key, answer)
         log.info("mention_answered", pr_ref=pr_ref, **ids)
 

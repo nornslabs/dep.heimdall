@@ -1,5 +1,7 @@
 """Integration coverage for Switch approval reactions and tenant services."""
 
+import uuid
+
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -17,6 +19,7 @@ from heimdall.modules.approval.api import approve_by_policy
 from heimdall.modules.approval.models import Approval
 from heimdall.modules.desk.api import format_approval_message, get_draft, save_draft
 from heimdall.modules.tenancy.models import Repo
+from heimdall.shared.context import TenantCtx
 from tests.integration.db.test_approval_service import (
     MaintainerConfigReader,
     draft_context,
@@ -157,3 +160,90 @@ async def test_policy_approval_and_maintainer_pause_are_tenant_scoped(
     assert stored_repo.auto_suggest_paused
     with pytest.raises(ValueError, match="disabled by repository policy"):
         await approve_by_policy(sessions, reader, ctx, repo, paused_draft.id, "lint")
+
+
+class FakeThreadSwitch(FakeSwitch):
+    """A fake room whose thread holds the given posts, oldest first."""
+
+    def __init__(self, thread: list[str], username: str) -> None:
+        super().__init__("", username)
+        self.thread = [
+            RoomPost(f"post-{n}", "channel-1", "root-1", text) for n, text in enumerate(thread)
+        ]
+
+    async def get_thread_posts(self, root_id: str) -> tuple[RoomPost, ...]:
+        """Return the prepared thread."""
+        return tuple(self.thread)
+
+
+APPROVE_REPLY = RoomEvent("posted", "channel-1", "reply-9", "user-1", "root-1", "/heimdall approve")
+
+
+async def _approvals_and_comments(
+    sessions: async_sessionmaker[AsyncSession], ctx: TenantCtx, draft_id: uuid.UUID
+) -> tuple[list[Approval], list[OutboxMessage]]:
+    async with unit_of_work(sessions) as session:
+        approvals = await session.exec(
+            select_for_tenant(Approval, ctx.installation_id).where(Approval.draft_id == draft_id)
+        )
+        comments = await session.exec(
+            select_for_tenant(OutboxMessage, ctx.installation_id).where(
+                OutboxMessage.kind == "github.pr_comment"
+            )
+        )
+        return list(approvals.all()), list(comments.all())
+
+
+async def test_thread_reply_approves_the_latest_draft_in_the_thread(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """A maintainer's ``/heimdall approve`` reply approves the newest marked draft."""
+    ctx, repo, pr_id, draft_id = await draft_context(sessions)
+    older = await get_draft(sessions, ctx, draft_id)
+    newer = await save_draft(sessions, ctx, pr_id, "head-1", older.kind, "A newer draft")
+    room = FakeThreadSwitch(
+        [
+            format_approval_message(
+                older.body, older.id, older.body_hash, int(ctx.installation_id), repo.full_name
+            ),
+            "chatter",
+            format_approval_message(
+                newer.body, newer.id, newer.body_hash, int(ctx.installation_id), repo.full_name
+            ),
+        ],
+        "reviewer",
+    )
+
+    await ApprovalReactionHandler(sessions, MaintainerConfigReader(), room).handle(APPROVE_REPLY)  # type: ignore[arg-type]
+
+    approvals, comments = await _approvals_and_comments(sessions, ctx, newer.id)
+    assert [approval.via for approval in approvals] == ["message"]
+    assert approvals[0].draft_hash == newer.body_hash
+    assert len(comments) == 1
+
+
+async def test_thread_reply_from_a_non_maintainer_approves_nothing(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    ctx, repo, _, draft_id = await draft_context(sessions)
+    draft = await get_draft(sessions, ctx, draft_id)
+    marked = format_approval_message(
+        draft.body, draft.id, draft.body_hash, int(ctx.installation_id), repo.full_name
+    )
+    room = FakeThreadSwitch([marked], "stranger")
+
+    await ApprovalReactionHandler(sessions, MaintainerConfigReader(), room).handle(APPROVE_REPLY)  # type: ignore[arg-type]
+
+    approvals, comments = await _approvals_and_comments(sessions, ctx, draft_id)
+    assert approvals == [] and comments == []
+    assert room.replies == [("channel-1", "root-1", NON_MAINTAINER_REPLY)]
+
+
+async def test_thread_reply_without_a_draft_in_the_thread_does_nothing(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    room = FakeThreadSwitch(["just talking"], "reviewer")
+
+    await ApprovalReactionHandler(sessions, MaintainerConfigReader(), room).handle(APPROVE_REPLY)  # type: ignore[arg-type]
+
+    assert room.replies == []

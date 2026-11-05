@@ -17,14 +17,17 @@ from procrastinate import App
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from agents._conversation import MentionAnswer, MentionPorts, Question
 from agents._job_context import PrJobContext, load_pr_job_context
 from agents._mcp_tools import McpToolClient, mcp_agent_tools
-from agents._mention_ports import MentionDeps
+from agents._mention_ports import ApproveByMessage, MentionDeps
 from agents._mention_task import register_mention_task
 from agents._presence_runner import run_with_presence
 from agents._runtime import ChatModel, Completed, ToolBox
 from agents._skills import LOAD_SKILL_TOOL, SkillSet, load_skills
 from agents._toolbox import AgentTool
+from agents.heimdall._approve_message import approve_from_message
+from agents.heimdall._intake_job import run_intake_reply
 from agents.heimdall._message import render_desk_result
 from agents.heimdall.agent import run_heimdall
 from agents.heimdall.allowed_tools import ALLOWED_TOOLS
@@ -92,6 +95,7 @@ def register_heimdall_task(
             reader,
             lambda: model or AiAdapter(load_ai_config()),
             guard_act_tools,
+            approve_by_message=_approver(sessions, reader),
         ),
     )
 
@@ -129,6 +133,12 @@ def register_heimdall_task(
                 },
                 idempotency_key=f"heimdall:{installation_id}:{pr_id}:{head_sha}:card",
             )
+
+    @queue_app.task(name="heimdall.draft_intake_reply")
+    async def draft_intake_reply_task(installation_id: int, pr_id: str, head_sha: str) -> None:
+        """Draft the reply to an author whose pull request failed intake."""
+        active_model = model or AiAdapter(load_ai_config())
+        await run_intake_reply(sessions, active_model, installation_id, pr_id, head_sha)
 
     @queue_app.task(name="heimdall.run_command")
     async def run_command_task(
@@ -173,6 +183,19 @@ def register_heimdall_task(
                 },
                 idempotency_key=f"heimdall:{installation_id}:{pr_id}:{head_sha}:command:{uuid.uuid4()}",
             )
+
+
+def _approver(
+    sessions: async_sessionmaker[AsyncSession], reader: GitHubApiReader
+) -> ApproveByMessage:
+    """Bind the tenant services to Heimdall's approve-in-words hook."""
+
+    async def approve(
+        ports: MentionPorts, ctx: TenantCtx, ai: ChatModel, question: Question
+    ) -> MentionAnswer | None:
+        return await approve_from_message(sessions, reader, ports, ctx, ai, question)
+
+    return approve
 
 
 async def _run_for_card(

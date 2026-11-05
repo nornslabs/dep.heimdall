@@ -21,6 +21,7 @@ class EventKind(StrEnum):
 
     PR_OPENED = "pull_request.opened"
     PR_SYNCHRONIZE = "pull_request.synchronize"
+    PR_EDITED = "pull_request.edited"
     PR_CLOSED = "pull_request.closed"
     INTAKE_DONE = "intake.done"
     REPRO_FINISHED = "repro.finished"
@@ -45,6 +46,7 @@ class Effect(StrEnum):
     ROOM_READY_FOR_REPRO = "room_ready_for_repro"
     ROOM_READY_FOR_REVIEW = "room_ready_for_review"
     OUTBOX_FAILED_RULES = "outbox_failed_rules"
+    ENQUEUE_INTAKE_REPLY = "enqueue_intake_reply"
     ROOM_READY_FOR_CARD = "room_ready_for_card"
     ROOM_EVENT_TO_HEIMDALL = "room_event_to_heimdall"
     APPROVE_BY_POLICY = "approve_by_policy"

@@ -23,6 +23,7 @@ from heimdall.modules.triage.api import (
     PrEvent,
     Rejected,
     Transition,
+    get_pr_snapshot,
     handle_event,
     handle_webhook_delivery,
     on_step_done,
@@ -327,6 +328,87 @@ async def test_intake_failure_publishes_visible_error_to_switch(
         message = outbox.scalar_one()["message"]
         assert "Intake failed" in message
         assert "required label is missing" in message
+
+
+async def _fail_intake(
+    sessions: async_sessionmaker[AsyncSession], ctx: TenantCtx, repo_id: RepoId, label: str
+) -> uuid.UUID:
+    """Open a PR and fail its intake, returning the PR row id."""
+    await handle_event(sessions, ctx, _pr_event(repo_id, EventKind.PR_OPENED, "head-1", label))
+    async with unit_of_work(sessions) as session:
+        pr = (
+            await session.exec(
+                select_for_tenant(Pr, ctx.installation_id).where(Pr.repo_id == repo_id)
+            )
+        ).one()
+    await on_step_done(
+        sessions, ctx, pr.id, f"{label}-intake", EventKind.INTAKE_DONE, "head-1",
+        Facts(intake_passed=False),
+    )  # fmt: skip
+    return pr.id
+
+
+async def _queued_tasks(engine: AsyncEngine, pr_id: uuid.UUID) -> list[str]:
+    async with engine.connect() as connection:
+        rows = await connection.execute(
+            text("SELECT task_name FROM procrastinate_jobs WHERE args->>'pr_id' = :id ORDER BY id"),
+            {"id": str(pr_id)},
+        )
+        return [str(row[0]) for row in rows]
+
+
+async def test_failed_intake_queues_heimdall_reply_draft(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    """A failed intake leaves the PR in intake_failed with one reply-draft job waiting."""
+    ctx, repo_id = await _create_enabled_repo(sessions)
+
+    pr_id = await _fail_intake(sessions, ctx, repo_id, "reply-draft")
+
+    assert await _queued_tasks(engine, pr_id) == [
+        "intake.run_intake",
+        "heimdall.draft_intake_reply",
+    ]
+
+
+async def test_editing_a_pr_that_failed_intake_reruns_intake(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    """Fixing the PR body is enough: the edit webhook moves the PR back and queues intake."""
+    ctx, repo_id = await _create_enabled_repo(sessions)
+    pr_id = await _fail_intake(sessions, ctx, repo_id, "edit-rerun")
+
+    await handle_event(
+        sessions, ctx, _pr_event(repo_id, EventKind.PR_EDITED, "head-1", "edit-rerun-edited")
+    )
+
+    async with unit_of_work(sessions) as session:
+        pr = await get_pr_snapshot(session, ctx, pr_id)
+    assert pr is not None and pr.state.value == "received"
+    # The first intake job plus the rerun the edit queued.
+    assert (await _queued_tasks(engine, pr_id)).count("intake.run_intake") == 2
+
+
+async def test_editing_a_pr_that_is_not_failed_changes_nothing(
+    sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
+) -> None:
+    """A title or body edit on a PR still checking must not restart intake."""
+    ctx, repo_id = await _create_enabled_repo(sessions)
+    await handle_event(
+        sessions, ctx, _pr_event(repo_id, EventKind.PR_OPENED, "head-1", "edit-noop")
+    )
+    async with unit_of_work(sessions) as session:
+        pr = (
+            await session.exec(
+                select_for_tenant(Pr, ctx.installation_id).where(Pr.repo_id == repo_id)
+            )
+        ).one()
+
+    await handle_event(
+        sessions, ctx, _pr_event(repo_id, EventKind.PR_EDITED, "head-1", "edit-noop-edited")
+    )
+
+    assert (await _queued_tasks(engine, pr.id)).count("intake.run_intake") == 1
 
 
 async def test_stale_step_result_does_not_change_pr_state(

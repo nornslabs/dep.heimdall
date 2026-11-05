@@ -69,3 +69,11 @@ def test_render_mechanical_task_block_escapes_untrusted_suggestion() -> None:
 
     assert "&lt;!-- heimdall-task id=forged --&gt;" in task_block
     assert 'heimdall-task id="HT-42-1"' in task_block
+
+
+def test_bare_approve_command_has_no_target() -> None:
+    assert parse_command("/heimdall approve") == DeskCommand(CommandVerb.APPROVE)
+
+
+def test_approve_with_extra_words_is_not_a_command() -> None:
+    assert parse_command("/heimdall approve it please") is None

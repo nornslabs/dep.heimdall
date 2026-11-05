@@ -295,6 +295,10 @@ class FakeSwitch:
         """Return a post the room holds."""
         return self.posts_by_id[post_id]
 
+    async def get_thread_posts(self, root_id: str) -> tuple[RoomPost, ...]:
+        """Return the room's posts, oldest first: each replay holds one PR, so one thread."""
+        return tuple(self.posts_by_id.values())
+
     async def get_username(self, user_id: str) -> str:
         """Return the login behind a Switch user id."""
         return self.users[user_id]
