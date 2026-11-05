@@ -17,6 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from agents._memory_handler import MemoryCommandHandler
 from agents._mention import AGENT_MENTION_TASK, SENDER_ROLE_MAINTAINER, AgentMention
 from agents.heimdall.runner import register_heimdall_task
 from agents.huginn.runner import register_huginn_task
@@ -43,10 +44,13 @@ from heimdall.adapters.queue.enqueue import (
     LOKI_QUEUE,
     enqueue,
 )
+from heimdall.adapters.switch.agent.protocol import AgentMessage
 from heimdall.adapters.switch.ports import RoomEvent
 from heimdall.modules.tenancy.api import on_installation_event
-from heimdall.modules.triage.api import receive_webhook
+from heimdall.modules.triage.api import receive_webhook, save_switch_thread_id
 from heimdall.shared.agents import AgentName
+from heimdall.shared.context import TenantCtx, new_request_id
+from heimdall.shared.ids import InstallationId
 from tests.e2e.fake_world import (
     AGENT_ROOM_ID,
     DEMO_MAIN_SHA,
@@ -90,6 +94,10 @@ _FINDINGS = (
 _CARD_BODY = (
     "SELECT body FROM cards WHERE installation_id = :installation_id "
     f"AND pr_id = {_PR_ID} ORDER BY created_at DESC LIMIT 1"
+)
+_THREAD_ID = (
+    "SELECT switch_thread_id FROM prs WHERE installation_id = :installation_id "
+    "AND repo_id = :repo_id AND number = :number"
 )
 _MEMORY_COUNT = "SELECT count(*) FROM agent_memory WHERE installation_id = :installation_id"
 # The schema is shared by the whole session, so failures are read only past this test's start.
@@ -142,6 +150,7 @@ class Pipeline:
         )
         self._deliveries = 0
         self._mentions = 0
+        self._messages = 0
         self._started_at = datetime.now(UTC)
         self._since_job = 0
 
@@ -264,6 +273,45 @@ class Pipeline:
             )
         await self.settle()
         return len(self._deps.switch.room_posts)
+
+    async def chat(self, agent: AgentName, pr: SeededPr, sender: str, body: str) -> None:
+        """Type ``body`` in the PR's thread as ``sender``, the way the agent's bridge hears it.
+
+        Goes through the agent's memory command handler, the only code that writes notes.
+        """
+        self._messages += 1
+        thread_id = await self._thread_id(pr)
+        message = AgentMessage(
+            sequence=self._messages,
+            room_id=AGENT_ROOM_ID,
+            message_id=f"e2e-chat-{self._messages}-{uuid.uuid4().hex[:8]}",
+            sender=f"@switch-mattermost-x-{sender}:localhost",
+            sender_name=sender,
+            body=body,
+            thread_id=thread_id,
+            addressed=True,
+        )
+        assert await MemoryCommandHandler(agent, self.sessions).handle(message)
+        await self.settle()
+
+    async def _thread_id(self, pr: SeededPr) -> str:
+        """Return the PR's Switch thread, saving its heading post as the thread when unsaved.
+
+        The replay delivers outbox rows straight to ``FakeSwitch``, so the worker's
+        ``SessionThreadStore`` never records a thread; this does what it does in production.
+        """
+        rows = await self._query(_THREAD_ID, self._pr_params(pr))
+        if rows[0][0] is not None:
+            return str(rows[0][0])
+        heading = f"New PR #{pr.number} "
+        post_id = next(
+            id_
+            for id_, post in self._deps.switch.posts_by_id.items()
+            if post.message.startswith(heading)
+        )
+        ctx = TenantCtx(InstallationId(INSTALLATION_ID), new_request_id())
+        await save_switch_thread_id(self.sessions, ctx, await self.pr_id(pr), post_id)
+        return post_id
 
     async def repro_verdict(self, pr: SeededPr) -> str | None:
         """Return the verdict stored on the PR's newest repro run, or None without a run."""
