@@ -212,6 +212,74 @@ class ScriptedHuginnModel:
         }
 
 
+class ScriptedHeimdallModel:
+    """Drive Heimdall's runtime: save the review card from the brief, then submit_result."""
+
+    def __init__(self) -> None:
+        """Start with no calls recorded."""
+        self.calls: list[tuple[ChatMessage, ...]] = []
+        self._installation_id = 0
+        self._pr_id = ""
+
+    @property
+    def model(self) -> str:
+        """The model name recorded in usage."""
+        return SCRIPTED_MODEL
+
+    async def chat(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[ToolSpec] = (),
+        *,
+        tool_choice: ToolChoice = "auto",
+    ) -> ChatResponse:
+        """Record the prompt, save the card, and finish by submitting the card id."""
+        self.calls.append(tuple(messages))
+        if not self._pr_id:
+            self._installation_id, self._pr_id = _tool_scope(messages)
+        result = _last_result(messages)
+        if result is None:
+            brief = _brief_payload(messages)
+            pr = cast(dict[str, object], brief.get("pull_request", {}))
+            repro_status = str(brief.get("repro_status", "No reproduction run is available."))
+            findings = cast(list[str], brief.get("findings", []))
+            save_args: dict[str, object] = {
+                "installation_id": self._installation_id,
+                "pr_id": self._pr_id,
+                "number": int(str(pr.get("number", 0))),
+                "title": str(pr.get("title", "")),
+                "head_sha": str(pr.get("head_sha", "")),
+                "rules_summary": "All intake rules passed.",
+                "fix_status": repro_status,
+                "gaps": findings,
+                "suggested_action": "Review the card, then approve the comment to post it.",
+            }
+            return _tool_reply(ToolCall("heimdall-card", "save_card", save_args))
+        name, values = result
+        if name == "save_card":
+            card_id = str(values["card_id"])
+            return _tool_reply(
+                ToolCall(
+                    "heimdall-submit",
+                    "submit_result",
+                    {"action": "card", "card_id": card_id},
+                )
+            )
+        raise AssertionError(f"unexpected Heimdall tool result: {name}")
+
+
+_BRIEF_PATTERN = re.compile(r'<pr_data source="pr_brief">\n(.*?)\n</pr_data>', re.DOTALL)
+
+
+def _brief_payload(messages: Sequence[ChatMessage]) -> dict[str, object]:
+    """Extract and parse the pr_brief payload from prompt messages."""
+    for message in messages:
+        match = _BRIEF_PATTERN.search(message.content)
+        if match is not None:
+            return cast(dict[str, object], json.loads(match.group(1)))
+    return {}
+
+
 def _tool_reply(*calls: ToolCall) -> ChatResponse:
     """Build a model reply that asks for one or more tools."""
     return ChatResponse(None, calls, Usage(0, 0), SCRIPTED_MODEL)

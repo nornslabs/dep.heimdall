@@ -55,6 +55,7 @@ def test_mcp_server_registers_reproduction_tools() -> None:
         (
             "heimdall",
             {
+                "get_pr_context",
                 "list_findings",
                 "get_repro",
                 "save_card",
