@@ -1,5 +1,6 @@
 """Huginn's name, loop limits and model settings."""
 
+from agents._budget import AgentBudget
 from heimdall.adapters.ai import AiConfig
 from heimdall.adapters.switch.agent import AgentConnectionConfig
 from heimdall.adapters.switch.agent.credentials import load_agent_credentials, switch_api_url
@@ -7,8 +8,28 @@ from heimdall.modules.repro.api import MAX_REPRO_RUNS
 
 AGENT_NAME = "huginn"
 MAX_TURNS = 12
+CONTEXT_TOKENS = 24_000
+RUN_TOKEN_BUDGET = 150_000
+MAX_DIFF_BYTES = 40 * 1024
+MAX_FILE_READS = 4
 
-__all__ = ["AGENT_NAME", "MAX_REPRO_RUNS", "MAX_TURNS", "load_ai_config", "load_switch_config"]
+# Starting points; tune on the seeded PRs.
+BUDGET = AgentBudget(
+    context_tokens=CONTEXT_TOKENS,
+    run_tokens=RUN_TOKEN_BUDGET,
+    max_turns=MAX_TURNS,
+    call_caps={"start_repro": MAX_REPRO_RUNS, "get_file": MAX_FILE_READS},
+    max_result_bytes={"get_diff": MAX_DIFF_BYTES},
+)
+
+__all__ = [
+    "AGENT_NAME",
+    "BUDGET",
+    "MAX_REPRO_RUNS",
+    "MAX_TURNS",
+    "load_ai_config",
+    "load_switch_config",
+]
 
 
 def load_switch_config(rooms: tuple[str, ...]) -> AgentConnectionConfig:
