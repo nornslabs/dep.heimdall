@@ -50,6 +50,12 @@ class SwitchSender:
             raise SwitchRequestFailed("Switch reaction requires post_id and emoji_name")
         await self._rest.add_reaction(post_id, emoji_name)
 
+    async def unreact(self, post_id: str, emoji_name: str) -> None:
+        """Remove the bot's reaction from a post."""
+        if not post_id or not emoji_name:
+            raise SwitchRequestFailed("Switch reaction requires post_id and emoji_name")
+        await self._rest.remove_reaction(post_id, emoji_name)
+
     async def get_post(self, post_id: str) -> RoomPost:
         """Fetch a Switch post by id for reaction handling."""
         return await self._rest.get_post(post_id)

@@ -284,6 +284,9 @@ class FakeSwitch:
         """Post a message addressed to an agent role."""
         return self.post(channel_id, message)
 
+    async def unreact(self, post_id: str, emoji_name: str) -> None:
+        return None
+
     async def react(self, post_id: str, emoji_name: str) -> None:
         """Accept a reaction; the replay never reads Heimdall's own reactions."""
 
