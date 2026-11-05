@@ -153,7 +153,7 @@ memory commands, `_presence_handler.MentionHandler` queues one `agent.mention` j
 agent's own queue, in the same transaction as the sender lookup:
 
 ```
-agent.mention {agent, pr_ref | null, thread_id | null, sender, sender_role, text, message_id}
+agent.mention {agent, pr_ref | null, room_id, thread_id | null, sender, sender_role, text, message_id}
 ```
 
 `pr_ref` is the PR whose Switch thread the message is in. `sender_role` is always `maintainer`
@@ -161,8 +161,55 @@ today: someone who is not one gets the fixed "ask an admin" reply and no job. `h
 get no special handling. Heimdall's `parse_command` verbs (`/heimdall approve|revise|fix|retry`,
 `@heimdall pause auto`) keep their own path and queue nothing. `text` is untrusted data: it is
 carried verbatim and never logged or acted on. A queueing lock drops a repeat delivery while the
-first job is still waiting, so delivery is at-least-once. Until the conversation work answers
-them (HEI-94), the registered `agent.mention` task (`_mention.py`) only logs ids.
+first job is still waiting, so delivery is at-least-once.
+
+## Conversations (answering `agent.mention`)
+
+`_mention_task.register_mention_task` answers each job with `_conversation.answer_mention` and
+queues one `room.message` back to `room_id` (into the PR's thread via `pr_id`) with idempotency
+key `mention:<agent>:<message_id>`, so a redelivered job never posts twice.
+
+- **Scope first.** Each agent's `scope.py` is an `AgentScope`, rendered into the prompt. An
+  out-of-scope reply (`in_scope=false`) never posts the model's words: a redirect renders as
+  a fixed "that's a question for @other" line, anything off-topic as
+  "I only cover <role> for this PR."
+- **Ask mode** always runs first: the agent's `ASK_TOOLS` (read-only), `MENTION_MAX_TURNS = 6`,
+  submitting `AgentReply` (`_reply.py`) through `submit_reply`.
+- **Act mode** opens only when the ask reply is in scope and sets `wants_action`, code
+  confirms the sender is a maintainer (role and `repo_maintainers`), *and* a tool-less intent
+  check (`submit_intent`) that sees only the maintainer's message agrees it asks to act. The
+  ask run has read PR content, so its `wants_action` alone could come from text in the PR.
+  Act mode is a second run with
+  `ACT_TOOLS`: the ask tools plus one write (`start_repro`, `save_findings` or `save_draft`),
+  wrapped in the agent's usual guard (`<agent>/mention.py: guard_act_tools`). The model can
+  ask to act; only code opens the tools. Nothing reaches GitHub without the normal 👍.
+- **Evidence.** An in-scope `AgentReply` needs at least one `path:line`, `finding:<id>` or
+  `repro:<id>` entry or it fails validation. `_evidence.EvidenceTracker` records what this
+  run's tools returned and which writes ran; `reply_problems` refuses evidence no tool returned,
+  a redirect to itself, any action in ask mode, and an action that does not match what ran.
+  These go back as the one repair round.
+- **Pinned ids.** Every tool in a mention run gets the mention's own `installation_id`,
+  `pr_id`, `repo_id`, `repo_full_name`, `pr_number` and `head_sha`, whatever the model passed.
+- **Refused writes.** A guard's `error: ...` result is not recorded as seen or as an action.
+  If a write ran but the act run could not finish, the reply names the write instead of the
+  failure line.
+- **Redelivery.** A job whose reply is already in the outbox stops before any model call, so
+  act mode's write never runs twice for one message.
+- **Fixed lines.** No PR thread (or an unknown PR, which is then not threaded): "Mention me in a PR's thread…", with no
+  model call. A run that does not finish (repair spent, limits, model down, head moved):
+  "I couldn't produce a grounded answer…". A non-maintainer's request to act gets the ask
+  answer plus "Only maintainers can ask me to act…".
+
+| File | Role |
+|---|---|
+| `_scope.py` | `AgentScope`, `Redirect`, `render_scope` |
+| `_reply.py` | `AgentReply`, its validation, `render_agent_reply`, the fixed lines |
+| `_evidence.py` | `EvidenceTracker`, `reply_problems`, `MentionMode` |
+| `_mention_prompt.py` | `MentionPr`, `Question`, `build_mention_messages`, `build_intent_messages` |
+| `_mention_run.py` | `run_mode`, `confirm_intent`, id pinning, `MentionAgent`, `MentionPorts` |
+| `_conversation.py` | `answer_mention`, `MentionAnswer` |
+| `_mention_ports.py` | `DbMentionPorts`, `MentionDeps`, `ActSetup` |
+| `_mention_task.py` | `register_mention_task`: the job body and its outbox reply |
 
 No model ever writes a note: agents get only the read-only MCP tool `recall`, so PR text cannot
 plant an instruction that outlives the PR. Loki puts its notes for the PR's repo into its review

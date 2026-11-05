@@ -89,6 +89,7 @@ class MentionHandler:
         mention = AgentMention(
             agent=self._agent,
             pr_ref=pr_ref,
+            room_id=message.room_id,
             thread_id=message.thread_id,
             sender=message.sender_name,
             sender_role=SENDER_ROLE_MAINTAINER,

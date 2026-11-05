@@ -22,6 +22,13 @@ The review module still validates changed files, skipped paths, the finding cap 
 before it stores anything. Loki's guard checks the one thing only the diff can answer: which
 line the PR added.
 
+## Conversations
+
+When mentioned, Loki answers about its findings, edge cases, scope versus the linked issue and
+test quality only (`scope.py`, `conversation.md`). Ask mode uses `ASK_TOOLS`; a maintainer's
+request to act opens `save_findings` with the usual `FindingGuard` (`mention.py`). Loki never
+writes code for the contributor. See `../README.md#conversations-answering-agentmention`.
+
 ## Skills
 
 | Skill | When | Allowed tools | Outcome |

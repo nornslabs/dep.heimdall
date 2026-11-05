@@ -171,6 +171,7 @@ async def test_a_maintainers_mention_queues_one_event_on_that_agents_queue(
         "installation_id": installation_id,
         "agent": "huginn",
         "pr_ref": None,
+        "room_id": room,
         "thread_id": None,
         "sender": "alice",
         "sender_role": "maintainer",
