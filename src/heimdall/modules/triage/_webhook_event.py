@@ -82,5 +82,10 @@ _ACTIONS = {
     "opened": EventKind.PR_OPENED,
     "synchronize": EventKind.PR_SYNCHRONIZE,
     "edited": EventKind.PR_EDITED,
+    # The intake-failure reply asks authors to fix labels and assignees, so those count as edits.
+    "labeled": EventKind.PR_EDITED,
+    "unlabeled": EventKind.PR_EDITED,
+    "assigned": EventKind.PR_EDITED,
+    "unassigned": EventKind.PR_EDITED,
     "closed": EventKind.PR_CLOSED,
 }
