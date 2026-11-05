@@ -26,6 +26,10 @@ def _payload() -> Mapping[str, object]:
         ("opened", EventKind.PR_OPENED),
         ("synchronize", EventKind.PR_SYNCHRONIZE),
         ("edited", EventKind.PR_EDITED),
+        ("labeled", EventKind.PR_EDITED),
+        ("unlabeled", EventKind.PR_EDITED),
+        ("assigned", EventKind.PR_EDITED),
+        ("unassigned", EventKind.PR_EDITED),
         ("closed", EventKind.PR_CLOSED),
     ],
 )
@@ -37,4 +41,4 @@ def test_supported_actions_map_to_event_kinds(action: str, kind: EventKind) -> N
 
 
 def test_unsupported_action_is_ignored() -> None:
-    assert pull_request_event("delivery-1", "pull_request", "labeled", _payload()) is None
+    assert pull_request_event("delivery-1", "pull_request", "review_requested", _payload()) is None
