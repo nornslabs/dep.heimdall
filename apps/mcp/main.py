@@ -14,7 +14,7 @@ from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.modules.approval.api import approve_by_policy
 from heimdall.modules.desk.api import CardContent, create_mechanical_task, save_card, save_draft
 from heimdall.modules.repro.api import get_run, start_run
-from heimdall.modules.review.api import FindingInput, list_findings
+from heimdall.modules.review.api import FindingInput, FindingRef, list_findings
 from heimdall.modules.triage.api import PrSnapshot, get_pr_snapshot
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.github import RepoRef
@@ -230,8 +230,10 @@ def create_server(
                 typed_findings,
                 config.review,
             )
+            saved_rows = await list_findings(sessions, ctx, pr_uuid)
             return {
                 "saved": len(batch.accepted),
+                "finding_ids": _finding_ids(batch.accepted, saved_rows),
                 "rejected": [
                     {
                         "index": item.index,
@@ -393,6 +395,30 @@ async def _get_pr_snapshot(
     if snapshot is None:
         raise ValueError("pull request is not registered for this installation")
     return snapshot
+
+
+def _finding_ids(accepted: tuple[FindingInput, ...], saved: tuple[FindingRef, ...]) -> list[str]:
+    """Return the id of each accepted finding, matched to what the head now holds.
+
+    Args:
+        accepted: Findings the review module allowed for this head.
+        saved: Every finding stored for the head, with its id.
+
+    Returns:
+        One id per accepted finding, in input order and without repeats. A duplicate the
+        module stored once is cited once.
+    """
+    by_identity = {
+        (finding.file, finding.line, finding.text, finding.severity): str(finding.id)
+        for finding in saved
+    }
+    ids: list[str] = []
+    for finding in accepted:
+        identity = (finding.file, finding.line, finding.text, finding.severity)
+        finding_id = by_identity.get(identity)
+        if finding_id is not None and finding_id not in ids:
+            ids.append(finding_id)
+    return ids
 
 
 def _finding_input(value: dict[str, str | int | None]) -> FindingInput:

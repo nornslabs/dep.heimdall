@@ -2,23 +2,35 @@
 
 import asyncio
 import uuid
+from pathlib import Path
 
+from mcp.server.mcpserver import MCPServer
 from procrastinate import App
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from agents._job_context import load_pr_job_context
+from agents._job_context import PrJobContext, load_pr_job_context
 from agents._lifecycle import warn_if_shared_model
-from agents._mcp_tools import LokiMcpTools
+from agents._mcp_tools import LokiMcpTools, mcp_agent_tools
 from agents._presence_runner import run_with_presence
-from agents._runtime import ChatModel
-from agents._skills import load_skills
+from agents._runtime import ChatModel, Completed, ToolBox
+from agents._skills import LOAD_SKILL_TOOL, SkillSet, load_skills
 from agents.heimdall.config import load_ai_config as load_heimdall_config
 from agents.huginn.config import load_ai_config as load_huginn_config
-from agents.loki._message import format_review_message
+from agents.loki._diff import diff_added_lines
+from agents.loki._message import render_review
+from agents.loki._notes import read_note_lines
 from agents.loki.agent import run_loki
 from agents.loki.allowed_tools import ALLOWED_TOOLS
 from agents.loki.config import AGENT_NAME, REQUIRED_SKILLS, load_ai_config
+from agents.loki.context import LinkedIssue, build_messages, build_review_brief
+from agents.loki.guardrails import (
+    FindingGuard,
+    guard_save_findings,
+    is_docs_only,
+    submit_review_tool,
+)
+from agents.loki.schemas import LokiReview
 from apps.mcp.main import create_server
 from heimdall.adapters.ai import AiAdapter, AiConfig
 from heimdall.adapters.db.engine import create_engine, make_session_factory
@@ -28,11 +40,17 @@ from heimdall.adapters.github.auth import GitHubAppClients, load_private_key
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.adapters.queue.app import create_queue_app
 from heimdall.adapters.queue.enqueue import LOKI_QUEUE
+from heimdall.modules.review.api import finish_review
+from heimdall.modules.tenancy.api import load_config
+from heimdall.modules.triage.api import get_pr_snapshot
 from heimdall.shared.agents import AgentName
 from heimdall.shared.context import TenantCtx, new_request_id
-from heimdall.shared.errors import ConfigInvalid
+from heimdall.shared.errors import ConfigInvalid, GitHubRequestFailed
+from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId
 from heimdall.shared.logging import get_logger
+
+PROMPT_PATH = Path(__file__).with_name("prompt.md")
 
 log = get_logger(__name__)
 
@@ -65,34 +83,138 @@ def register_loki_task(
 
     @queue_app.task(name="loki.run_review")
     async def run_review_task(installation_id: int, pr_id: str, head_sha: str) -> None:
-        """Review one PR head; saving the findings tells triage Loki is done."""
+        """Review one PR head, then queue its room post once the review is submitted."""
         ctx = TenantCtx(InstallationId(installation_id), new_request_id())
-        job = await load_pr_job_context(sessions, ctx, uuid.UUID(pr_id), head_sha)
+        pr_uuid = uuid.UUID(pr_id)
+        job = await load_pr_job_context(sessions, ctx, pr_uuid, head_sha)
         if job is None:
             log.info("loki_job_stale", installation_id=installation_id, pr_id=pr_id)
             return
-        tools = LokiMcpTools(create_server(sessions, reader, AGENT_NAME))
-        result = await run_loki(tools, model, installation_id, job.snapshot.id, job.repo_full_name)
-        if result.dropped or not job.agent_room_id:
+        reviewed = await _review_for(sessions, reader, model, ctx, job, installation_id)
+        if reviewed is None or not job.agent_room_id:
             return
-        async with unit_of_work(sessions) as session:
-            await write_outbox(
-                session,
-                installation_id=ctx.installation_id,
-                channel="switch",
-                kind="room.message",
-                payload={
-                    "agent": AgentName.LOKI.value,
-                    "channel_id": job.agent_room_id,
-                    "pr_id": pr_id,
-                    "message": format_review_message(
-                        saved=result.saved,
-                        rejected=len(result.rejected),
-                        head_sha=result.head_sha,
-                    ),
-                },
-                idempotency_key=f"loki:{installation_id}:{pr_id}:{head_sha}:review",
-            )
+        review, rejected = reviewed
+        # A review with findings already reported this when it saved them; saying so again is
+        # harmless, and a clean pass has no other way to finish the step.
+        await finish_review(sessions, ctx, pr_uuid, head_sha, ctx.request_id)
+        await _queue_review(sessions, ctx, pr_uuid, head_sha, job.agent_room_id, review, rejected)
+
+
+async def _review_for(
+    sessions: async_sessionmaker[AsyncSession],
+    reader: GitHubApiReader,
+    model: ChatModel,
+    ctx: TenantCtx,
+    job: PrJobContext,
+    installation_id: int,
+) -> tuple[LokiReview, int] | None:
+    """Run Loki on one PR head and return its review and rejected count, or None on no answer."""
+    snapshot = job.snapshot
+    repo = RepoRef(ctx.installation_id, job.repo_full_name)
+    config = await load_config(sessions, reader, ctx, repo, snapshot.head_sha)
+    info = await reader.get_pull_request(repo, snapshot.number)
+    changed = await reader.list_changed_files(repo, snapshot.number)
+    diff = await reader.get_diff(repo, snapshot.number)
+    changed_paths = [file.path for file in changed]
+    guard = FindingGuard(
+        diff_lines=diff_added_lines(diff.text),
+        docs_only=is_docs_only(changed_paths, config.review.skip_paths),
+    )
+    skills = load_skills(AgentName.LOKI, ALLOWED_TOOLS, REQUIRED_SKILLS)
+    server = create_server(sessions, reader, AGENT_NAME)
+    brief = build_review_brief(
+        installation_id=installation_id,
+        pr_id=str(snapshot.id),
+        repo_full_name=job.repo_full_name,
+        number=snapshot.number,
+        title=info.title,
+        body=info.body,
+        head_sha=snapshot.head_sha,
+        base_sha=snapshot.base_sha,
+        changed_paths=changed_paths,
+        skip_paths=config.review.skip_paths,
+        linked_issue=await _linked_issue(reader, repo, snapshot.linked_issue),
+    )
+    note_lines = await read_note_lines(
+        LokiMcpTools(server), installation_id, {"repo_id": snapshot.repo_id}
+    )
+    outcome = await run_loki(
+        ai=model,
+        toolbox=await _toolbox(server, skills, guard),
+        submit=submit_review_tool(guard),
+        head_sha=snapshot.head_sha,
+        read_current_head=lambda: _current_head(sessions, ctx, snapshot.id),
+        messages=build_messages(brief, _instructions(), skills.prompt_index(), note_lines),
+    )
+    if not isinstance(outcome, Completed):
+        log.info("loki_did_not_submit", pr_id=str(snapshot.id), reason=type(outcome).__name__)
+        return None
+    return outcome.payload, guard.rejected_count
+
+
+async def _linked_issue(
+    reader: GitHubApiReader, repo: RepoRef, number: int | None
+) -> LinkedIssue | None:
+    """Read the issue a PR closes, or None when it has none or GitHub no longer serves it."""
+    if number is None:
+        return None
+    try:
+        issue = await reader.get_issue(repo, number)
+    except GitHubRequestFailed:
+        return None
+    return LinkedIssue(number=issue.number, title=issue.title, body=issue.body)
+
+
+async def _toolbox(server: MCPServer, skills: SkillSet, guard: FindingGuard) -> ToolBox:
+    """Build Loki's ToolBox, with the finding guard wrapped around ``save_findings``."""
+    tools = await mcp_agent_tools(server, ALLOWED_TOOLS)
+    guarded = tuple(
+        guard_save_findings(guard, tool) if tool.spec.name == "save_findings" else tool
+        for tool in tools
+    )
+    return ToolBox(ALLOWED_TOOLS | {LOAD_SKILL_TOOL}, (*guarded, skills.tool()))
+
+
+async def _queue_review(
+    sessions: async_sessionmaker[AsyncSession],
+    ctx: TenantCtx,
+    pr_id: uuid.UUID,
+    head_sha: str,
+    room_id: str,
+    review: LokiReview,
+    rejected: int,
+) -> None:
+    """Queue the rendered review for the PR's room, once per head."""
+    async with unit_of_work(sessions) as session:
+        await write_outbox(
+            session,
+            installation_id=ctx.installation_id,
+            channel="switch",
+            kind="room.message",
+            payload={
+                "agent": AgentName.LOKI.value,
+                "channel_id": room_id,
+                "message": render_review(review, head_sha=head_sha, rejected=rejected),
+                "pr_id": str(pr_id),
+            },
+            idempotency_key=f"loki:{ctx.installation_id}:{pr_id}:{head_sha}:review",
+        )
+
+
+async def _current_head(
+    sessions: async_sessionmaker[AsyncSession], ctx: TenantCtx, pr_id: uuid.UUID
+) -> str:
+    """Read the PR's head again, so a review for a head that moved is dropped."""
+    async with unit_of_work(sessions) as session:
+        snapshot = await get_pr_snapshot(session, ctx, pr_id)
+    if snapshot is None:
+        raise ValueError(f"pull request {pr_id} is not registered for this installation")
+    return snapshot.head_sha
+
+
+def _instructions() -> str:
+    """Return Loki's role prompt, read from ``prompt.md`` beside this module."""
+    return PROMPT_PATH.read_text(encoding="utf-8")
 
 
 async def run_worker() -> None:
