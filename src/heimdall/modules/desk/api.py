@@ -1,6 +1,11 @@
 """Public interface for desk functionality."""
 
 from heimdall.modules.desk.domain import (
+    PR_ACTION_KINDS,
+    PR_ASK_KIND,
+    PR_CLOSE_KIND,
+    PR_MERGE_KIND,
+    PR_REOPEN_KIND,
     CardContent,
     CardRef,
     CommandVerb,
@@ -25,6 +30,11 @@ from heimdall.modules.desk.service import (
 )
 
 __all__ = [
+    "PR_ACTION_KINDS",
+    "PR_ASK_KIND",
+    "PR_CLOSE_KIND",
+    "PR_MERGE_KIND",
+    "PR_REOPEN_KIND",
     "CardContent",
     "CardRef",
     "CommandVerb",

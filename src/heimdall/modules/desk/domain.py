@@ -5,7 +5,18 @@ import html
 import re
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Final
 from uuid import UUID
+
+PR_CLOSE_KIND: Final = "pr_close"
+PR_REOPEN_KIND: Final = "pr_reopen"
+PR_MERGE_KIND: Final = "pr_merge"
+PR_ASK_KIND: Final = "pr_ask"
+PR_ACTION_KINDS: Final = frozenset({PR_CLOSE_KIND, PR_REOPEN_KIND, PR_MERGE_KIND})
+"""Draft kinds whose approval changes the pull request itself, not just comments on it.
+
+``PR_ASK_KIND`` is only a comment asking the contributor for something, so it is not listed.
+"""
 
 
 class CommandVerb(StrEnum):
@@ -59,6 +70,7 @@ class DraftRef:
     body: str
     body_hash: str
     superseded_by: UUID | None = None
+    head_sha: str | None = None
 
 
 @dataclass(frozen=True)
@@ -127,20 +139,15 @@ def render_card(content: CardContent) -> str:
         Markdown card body for a Switch thread.
     """
     lines = [
-        f"## PR #{content.number}: {_escape(content.title)}",
-        f"Head: `{content.head_sha}`",
+        f"**PR #{content.number}: {_escape(content.title)}** (`{content.head_sha[:7]}`)",
         "",
-        "### Intake",
         _escape(content.intake_summary),
         "",
-        "### Reproduction",
         _escape(content.repro_summary),
-        "",
-        "### Findings",
     ]
-    lines.extend(f"- {_escape(finding)}" for finding in content.findings)
-    if not content.findings:
-        lines.append("- No findings.")
+    if content.findings:
+        lines.extend(["", "What caught my eye:"])
+        lines.extend(f"- {_escape(finding)}" for finding in content.findings)
     return "\n".join(lines)
 
 
@@ -175,9 +182,11 @@ def format_approval_message(
     Returns:
         A Switch post body with a hidden marker after the unchanged draft text.
     """
+    # A Markdown link-reference definition renders as nothing, unlike an HTML comment, which
+    # Mattermost shows as text.
     marker = (
-        f"<!-- heimdall-approval draft_id={draft_id} draft_hash={body_hash} "
-        f"installation_id={installation_id} repo={repo_full_name} -->"
+        f"[//]: # (heimdall-approval draft_id={draft_id} draft_hash={body_hash} "
+        f"installation_id={installation_id} repo={repo_full_name})"
     )
     return f"{body.rstrip()}\n\n{marker}"
 
@@ -238,10 +247,17 @@ def render_mechanical_task_block(
 
 def _escape(value: str) -> str:
     """Escape user supplied Markdown punctuation for safe display."""
-    return re.sub(r"([\\`*_{}\[\]()#+.!|>~-])", r"\\\1", value)
+    # Only characters that can open links, emphasis, headings, quotes or tables. Escaping "." and
+    # "-" as well made ordinary prose unreadable ("README\.md").
+    return re.sub(r"([\\`*_{}\[\]#|>~])", r"\\\1", value)
 
 
 __all__ = [
+    "PR_ACTION_KINDS",
+    "PR_ASK_KIND",
+    "PR_CLOSE_KIND",
+    "PR_MERGE_KIND",
+    "PR_REOPEN_KIND",
     "CardContent",
     "CardRef",
     "CommandVerb",

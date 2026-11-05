@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from typing import cast
+from typing import Any, Final, cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -11,10 +11,18 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.github._errors import github_errors
 from heimdall.adapters.github.auth import GitHubAppClients
-from heimdall.modules.approval.api import get_approved_draft, verify_repro_workflow_dispatch
+from heimdall.modules.approval.api import (
+    ApprovedDraft,
+    get_approved_draft,
+    verify_repro_workflow_dispatch,
+)
+from heimdall.modules.desk.api import PR_CLOSE_KIND, PR_MERGE_KIND, PR_REOPEN_KIND
 from heimdall.shared.context import TenantCtx
 from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId
+
+MERGE_METHOD: Final = "squash"
+_STATE_FOR_KIND: Final = {PR_CLOSE_KIND: "closed", PR_REOPEN_KIND: "open"}
 
 
 class GitHubSender:
@@ -63,14 +71,15 @@ class GitHubSender:
         approved = await get_approved_draft(self._sessions, ctx, _parse_uuid(draft_id), draft_hash)
         repo = RepoRef(installation_id, repo_name)
         client = self._clients.for_installation(installation_id)
-        path = f"/repos/{repo.full_name}/issues/{pr_number}/comments"
-        async with github_errors("post pull request comment"):
-            await client.arequest(  # pyright: ignore[reportUnknownMemberType]
-                "POST",
-                path,
-                json={"body": approved.body},
-                headers={"Idempotency-Key": message.idempotency_key},
-            )
+        key = message.idempotency_key
+        if approved.kind == PR_MERGE_KIND:
+            await _merge(client, repo, pr_number, approved, key)
+            return
+        # State first: if the comment fails and the job retries, repeating the state change is
+        # harmless, while repeating the comment would post it twice.
+        if approved.kind in _STATE_FOR_KIND:
+            await _set_state(client, repo, pr_number, _STATE_FOR_KIND[approved.kind])
+        await _comment(client, repo, pr_number, approved.body, key)
 
     async def _dispatch_repro_workflow(self, message: OutboxMessage) -> None:
         """Dispatch only when the tenant policy record matches every request field."""
@@ -114,6 +123,44 @@ class GitHubSender:
                 json={"ref": ref, "inputs": inputs},
                 headers={"Idempotency-Key": message.idempotency_key},
             )
+
+
+async def _comment(client: Any, repo: RepoRef, pr_number: int, body: str, key: str) -> None:
+    """Post the approved text as a comment on the pull request."""
+    async with github_errors("post pull request comment"):
+        await client.arequest(
+            "POST",
+            f"/repos/{repo.full_name}/issues/{pr_number}/comments",
+            json={"body": body},
+            headers={"Idempotency-Key": key},
+        )
+
+
+async def _set_state(client: Any, repo: RepoRef, pr_number: int, state: str) -> None:
+    """Open or close the pull request; asking for the state it already has is a no-op."""
+    async with github_errors(f"set pull request {state}"):
+        await client.arequest(
+            "PATCH", f"/repos/{repo.full_name}/pulls/{pr_number}", json={"state": state}
+        )
+
+
+async def _merge(
+    client: Any, repo: RepoRef, pr_number: int, approved: ApprovedDraft, key: str
+) -> None:
+    """Merge at the head the maintainer approved; GitHub refuses it if the head has moved."""
+    if not approved.head_sha:
+        raise ValueError("merge draft has no recorded head to merge")
+    async with github_errors("merge pull request"):
+        await client.arequest(
+            "PUT",
+            f"/repos/{repo.full_name}/pulls/{pr_number}/merge",
+            json={
+                "sha": approved.head_sha,
+                "merge_method": MERGE_METHOD,
+                "commit_message": approved.body,
+            },
+            headers={"Idempotency-Key": key},
+        )
 
 
 def _payload_string(message: OutboxMessage, name: str) -> str:

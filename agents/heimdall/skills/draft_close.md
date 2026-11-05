@@ -8,7 +8,7 @@ tools:
 
 # Draft a close message
 
-State the decision in the first sentence, then give the reason. A close message is not a review
+Open with a short thank-you, then state the decision and the reason in a kind, direct voice, the way a maintainer writes to someone they would like to see back. A close message is not a review
 essay; two or three short paragraphs are enough.
 
 Use saved evidence only:

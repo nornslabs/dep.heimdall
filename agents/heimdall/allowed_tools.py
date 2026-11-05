@@ -12,6 +12,10 @@ ALLOWED_TOOLS: frozenset[str] = frozenset(
         "list_findings",
         "save_card",
         "save_draft",
+        "draft_close",
+        "draft_reopen",
+        "draft_merge",
+        "draft_ask_contributor",
         "create_mechanical_task",
         "recall",
     }
@@ -20,5 +24,10 @@ ALLOWED_TOOLS: frozenset[str] = frozenset(
 ASK_TOOLS: frozenset[str] = frozenset({"get_pr_context", "get_repro", "list_findings", "recall"})
 """Read-only tools a mention may use in ask mode."""
 
-ACT_TOOLS: frozenset[str] = ASK_TOOLS | {"save_draft"}
-"""Ask tools plus ``save_draft``; a mention never opens ``save_card`` or a mechanical task."""
+DRAFT_TOOLS: frozenset[str] = frozenset(
+    {"save_draft", "draft_close", "draft_reopen", "draft_merge", "draft_ask_contributor"}
+)
+"""Every tool that saves a draft for approval. They share one per-command draft cap."""
+
+ACT_TOOLS: frozenset[str] = ASK_TOOLS | DRAFT_TOOLS
+"""Ask tools plus the draft tools; a mention never opens ``save_card`` or a mechanical task."""

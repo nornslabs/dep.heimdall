@@ -27,6 +27,8 @@ class ApprovedDraft:
     body_hash: str
     approver: str
     via: str
+    kind: str = "comment"
+    head_sha: str | None = None
 
 
 def validate_approval(

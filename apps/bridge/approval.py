@@ -16,11 +16,12 @@ from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId
 
 APPROVAL_MARKER = re.compile(
-    r"<!-- heimdall-approval "
+    # Current form is a hidden link definition; the HTML comment is what older posts carry.
+    r"(?:\[//\]: # \(|<!-- )heimdall-approval "
     r"draft_id=(?P<draft_id>[0-9a-f-]{36}) "
     r"draft_hash=(?P<draft_hash>[0-9a-f]{64}) "
     r"installation_id=(?P<installation_id>[1-9][0-9]*) "
-    r"repo=(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+) -->"
+    r"repo=(?P<repo>[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)(?:\)| -->)"
 )
 THUMBS_UP = frozenset({"+1", "thumbsup", "thumbs_up"})
 NON_MAINTAINER_REPLY = "Only a configured repository maintainer can approve this draft."

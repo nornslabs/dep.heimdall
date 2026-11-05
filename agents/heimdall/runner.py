@@ -408,21 +408,22 @@ def _render_repro(result: dict[str, object]) -> str:
         verdict_value = result.get("verdict")
         verdict = Verdict(str(verdict_value)) if verdict_value is not None else None
     except (KeyError, ValueError):
-        return "Reproduction result is malformed."
+        return "I couldn't read the test result for this one."
     if status is ReproStatus.FINISHED and verdict is not None:
         return {
             Verdict.FIX_CONFIRMED: (
-                "Fix confirmed: tests passed with the fix and failed without it."
+                "Fix confirmed: the tests fail without this change and pass with it."
             ),
-            Verdict.FIX_FAILED: "Fix failed: tests did not pass with the proposed fix.",
+            Verdict.FIX_FAILED: "Fix failed: the tests still fail with this change applied.",
             Verdict.NOT_REPRODUCED: (
-                "Issue not reproduced: tests passed with and without the fix."
+                "Issue not reproduced: the tests pass either way, so they don't show "
+                "what this change fixes."
             ),
         }[verdict]
     return {
-        ReproStatus.TIMED_OUT: "Reproduction timed out; no verdict is available.",
-        ReproStatus.STALE: "Reproduction is stale because the PR head changed.",
-    }.get(status, "Reproduction is still running; no verdict is available.")
+        ReproStatus.TIMED_OUT: "The test run timed out, so I can't say either way yet.",
+        ReproStatus.STALE: "The PR changed since I tested it, so that result is out of date.",
+    }.get(status, "The tests are still running, so there's no result yet.")
 
 
 async def _saved_message_for(

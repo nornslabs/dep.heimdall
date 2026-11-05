@@ -171,3 +171,42 @@ async def test_submit_desk_result_tool_cross_check_refuses_unsaved_ids() -> None
     problems = await tool.verify(result)
     assert problems is not None
     assert "card-999 was not saved" in problems.errors
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["pr_close", "pr_reopen", "pr_merge"])
+async def test_generic_save_draft_cannot_save_an_action_draft(kind: str) -> None:
+    """Closing, reopening and merging only come from their own tools, never a model's `kind`."""
+    guard = DeskGuard()
+    ran: list[object] = []
+
+    async def fake_handler(arguments: object) -> object:
+        ran.append(arguments)
+        return {"draft_id": "draft-1"}
+
+    tool = AgentTool(ToolSpec("save_draft", "save draft", {"type": "object"}), fake_handler)
+    guarded = guard_save_draft(guard, tool)
+
+    result = await guarded.handler({"kind": kind, "body": "do it"})
+
+    assert isinstance(result, str)
+    assert result.startswith("error:")
+    assert ran == []
+    assert guard.draft_count == 0
+
+
+@pytest.mark.asyncio
+async def test_action_tools_share_the_draft_cap_with_save_draft() -> None:
+    guard = DeskGuard(max_drafts=1)
+
+    async def fake_handler(arguments: object) -> object:
+        return {"draft_id": "draft-1"}
+
+    close = guard_save_draft(
+        guard, AgentTool(ToolSpec("draft_close", "close", {"type": "object"}), fake_handler)
+    )
+
+    assert await close.handler({"body": "Closing."}) == {"draft_id": "draft-1"}
+    refused = await close.handler({"body": "Closing again."})
+    assert isinstance(refused, str)
+    assert refused.startswith("error:")

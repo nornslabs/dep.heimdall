@@ -32,3 +32,25 @@ def test_approval_marker_rejects_malformed_hash() -> None:
     )
 
     assert parse_approval_marker(message) is None
+
+
+def test_rendered_marker_is_a_hidden_link_definition_not_visible_text() -> None:
+    """Markdown renderers drop a link definition, so the room shows only the draft."""
+    message = format_approval_message("Reviewed draft", uuid.uuid4(), "a" * 64, 1, "o/r")
+
+    assert "<!--" not in message
+    assert message.splitlines()[-1].startswith("[//]: # (heimdall-approval ")
+
+
+def test_legacy_html_comment_marker_still_parses() -> None:
+    """Posts made before the marker was hidden stay approvable."""
+    draft_id = uuid.uuid4()
+    legacy = (
+        f"Old draft\n\n<!-- heimdall-approval draft_id={draft_id} draft_hash={'b' * 64} "
+        "installation_id=7 repo=o/r -->"
+    )
+
+    marker = parse_approval_marker(legacy)
+
+    assert marker is not None
+    assert marker.draft_id == draft_id

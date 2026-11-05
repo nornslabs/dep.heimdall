@@ -33,6 +33,10 @@ BUDGET = AgentBudget(
         "get_diff": NO_CALLS,
         "get_file": NO_CALLS,
         "save_draft": MAX_DRAFTS,
+        "draft_close": MAX_DRAFTS,
+        "draft_reopen": MAX_DRAFTS,
+        "draft_merge": MAX_DRAFTS,
+        "draft_ask_contributor": MAX_DRAFTS,
     },
 )
 
