@@ -14,7 +14,14 @@ from heimdall.adapters.github._errors import github_errors, is_not_found
 from heimdall.adapters.github._http import get
 from heimdall.adapters.github.auth import GitHubAppClients
 from heimdall.shared.errors import GitHubRequestFailed
-from heimdall.shared.github import ChangedFile, CiState, PrDiff, PullRequestInfo, RepoRef
+from heimdall.shared.github import (
+    ChangedFile,
+    CiState,
+    IssueInfo,
+    PrDiff,
+    PullRequestInfo,
+    RepoRef,
+)
 
 MAX_DIFF_BYTES = 200_000
 """The LLD's cap on the diff handed to agents (get_diff returns at most 200 KB)."""
@@ -152,6 +159,25 @@ class GitHubApiReader:
                 self._client(repo), "/search/issues", params={"q": query, "per_page": 1}
             )
             return _wire.SearchTotalWire.model_validate(reply.payload).total_count
+
+    async def get_issue(self, repo: RepoRef, issue_number: int) -> IssueInfo:
+        """Read a linked issue's title and body, so a review can check the PR's scope.
+
+        Args:
+            repo: Repository and installation that owns the issue.
+            issue_number: Linked issue number.
+
+        Returns:
+            The issue; ``body`` is ``""`` when GitHub has none.
+
+        Raises:
+            GitHubUnavailable: GitHub is down, slow or rate limiting (retryable).
+            GitHubRequestFailed: the issue does not exist or the reply is malformed.
+        """
+        async with github_errors("get issue"):
+            reply = await get(self._client(repo), f"/repos/{repo.full_name}/issues/{issue_number}")
+            issue = _wire.IssueWire.model_validate(reply.payload)
+        return IssueInfo(number=issue.number, title=issue.title, body=issue.body or "")
 
     async def get_issue_assignees(self, repo: RepoRef, issue_number: int) -> tuple[str, ...]:
         """Read all assignees of a linked issue.

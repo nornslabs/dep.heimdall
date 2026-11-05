@@ -1,27 +1,38 @@
-"""A scripted model for Loki and Huginn, so the replay never calls a real provider."""
+"""Scripted models for Loki and Huginn, so the replay never calls a real provider."""
 
 import json
 import re
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import cast
 
 from heimdall.adapters.ai import ChatMessage, ChatResponse, ToolCall, ToolChoice, ToolSpec, Usage
 from tests.e2e.fake_world import REPO_FULL_NAME
 
 SCRIPTED_MODEL = "scripted-e2e"
-NO_FINDINGS_REPLY = '{"findings": []}'
 TEST_COMMAND = "pytest -q"
+REVIEW_SUMMARY = "Scripted review for the e2e replay."
 _RESULT = re.compile(r'^<pr_data source="([^"]+)">\n(.*)\n</pr_data>$', re.DOTALL)
 _SCOPE = re.compile(r"installation_id (\d+) and pr_id ([0-9a-f-]{36})")
 
 
-class ScriptedModel:
-    """A ``ChatModel`` that always answers with one fixed reply, for Loki's single call."""
+class ScriptedLokiModel:
+    """Drive Loki's runtime: read the PR and its diff, save the scripted findings, submit.
 
-    def __init__(self, reply: str) -> None:
-        """Keep the reply text the model returns; tests may replace ``reply`` between runs."""
-        self.reply = reply
+    The replay sets the findings before each review; an empty tuple means a clean pass.
+    """
+
+    def __init__(self) -> None:
+        """Start with no findings and no PR scope yet."""
+        self._findings: tuple[dict[str, object], ...] = ()
+        self._installation_id = 0
+        self._pr_id = ""
+        self._head_sha = ""
+        self._pr_number = 0
         self.calls: list[tuple[ChatMessage, ...]] = []
+
+    def set_findings(self, findings: Sequence[Mapping[str, object]]) -> None:
+        """Use these findings for the next review; empty means a clean pass."""
+        self._findings = tuple(dict(finding) for finding in findings)
 
     @property
     def model(self) -> str:
@@ -35,9 +46,70 @@ class ScriptedModel:
         *,
         tool_choice: ToolChoice = "auto",
     ) -> ChatResponse:
-        """Record the prompt and return the scripted reply."""
+        """Record the prompt and take the next review step from the last tool result."""
         self.calls.append(tuple(messages))
-        return ChatResponse(self.reply, (), Usage(0, 0), SCRIPTED_MODEL)
+        if not self._pr_id:
+            self._installation_id, self._pr_id = _tool_scope(messages)
+        return self._reply(_last_result(messages))
+
+    def _reply(self, result: tuple[str, dict[str, object]] | None) -> ChatResponse:
+        """Choose the next call from the last tool result, as a model would."""
+        if result is None:
+            return _tool_reply(
+                ToolCall("loki-context", "get_pr_context", self._context_arguments())
+            )
+        name, values = result
+        if name == "get_pr_context":
+            self._pr_number = int(str(values["number"]))
+            self._head_sha = str(values["head_sha"])
+            if not self._findings:
+                return _tool_reply(ToolCall("loki-submit", "submit_review", self._clean_pass()))
+            return _tool_reply(ToolCall("loki-diff", "get_diff", self._diff_arguments()))
+        if name == "get_diff":
+            return _tool_reply(ToolCall("loki-save", "save_findings", self._save_arguments()))
+        if name == "save_findings":
+            return _tool_reply(ToolCall("loki-submit", "submit_review", self._submitted(values)))
+        raise AssertionError(f"unexpected Loki tool result: {name}")
+
+    def _context_arguments(self) -> dict[str, object]:
+        """Read the PR metadata for the scope the prompt named."""
+        return {
+            "installation_id": self._installation_id,
+            "pr_id": self._pr_id,
+            "repo_full_name": REPO_FULL_NAME,
+        }
+
+    def _diff_arguments(self) -> dict[str, object]:
+        """Read the diff of the PR the scripted model just looked up."""
+        return {
+            "installation_id": self._installation_id,
+            "repo_full_name": REPO_FULL_NAME,
+            "pr_number": self._pr_number,
+        }
+
+    def _save_arguments(self) -> dict[str, object]:
+        """Save the scripted findings against the head the scripted model observed."""
+        return {
+            "installation_id": self._installation_id,
+            "pr_id": self._pr_id,
+            "repo_full_name": REPO_FULL_NAME,
+            "head_sha": self._head_sha,
+            "findings": [dict(finding) for finding in self._findings],
+        }
+
+    def _clean_pass(self) -> dict[str, object]:
+        """Submit a review with nothing to report."""
+        return {"skipped_reason": "no_findings", "summary": REVIEW_SUMMARY}
+
+    def _submitted(self, values: dict[str, object]) -> dict[str, object]:
+        """Submit the ids save_findings returned, or a clean pass when it accepted none."""
+        ids = values.get("finding_ids")
+        finding_ids = (
+            [str(value) for value in cast(list[object], ids)] if isinstance(ids, list) else []
+        )
+        if not finding_ids:
+            return self._clean_pass()
+        return {"finding_ids": finding_ids, "summary": REVIEW_SUMMARY}
 
 
 class ScriptedHuginnModel:
@@ -146,12 +218,12 @@ def _tool_reply(*calls: ToolCall) -> ChatResponse:
 
 
 def _tool_scope(messages: Sequence[ChatMessage]) -> tuple[int, str]:
-    """Read the tenant and PR ids Huginn's prompt says its tools are scoped to."""
+    """Read the tenant and PR ids an agent's prompt says its tools are scoped to."""
     for message in messages:
         match = _SCOPE.search(message.content)
         if match is not None:
             return int(match.group(1)), match.group(2)
-    raise AssertionError("Huginn's prompt is missing its tool scope")
+    raise AssertionError("agent's prompt is missing its tool scope")
 
 
 def _last_result(messages: Sequence[ChatMessage]) -> tuple[str, dict[str, object]] | None:
@@ -162,7 +234,7 @@ def _last_result(messages: Sequence[ChatMessage]) -> tuple[str, dict[str, object
         match = _RESULT.match(message.content)
         if match is None:
             raise AssertionError(
-                f"Huginn tool result is not wrapped as pr_data: {message.content[:200]!r}"
+                f"agent tool result is not wrapped as pr_data: {message.content[:200]!r}"
             )
         return match.group(1), json.loads(match.group(2))
     return None

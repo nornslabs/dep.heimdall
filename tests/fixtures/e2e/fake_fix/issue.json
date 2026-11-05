@@ -1,1 +1,1 @@
-{"assignees":[{"login":"sboy99"}],"number":2}
+{"assignees":[{"login":"sboy99"}],"number":2,"title":"ws_url builds an invalid WebSocket URL","body":"`ws_url` should return a `wss` URL when `switch_bridge_url` is https and a `ws` URL when it is http, keeping the rest of the URL intact."}
