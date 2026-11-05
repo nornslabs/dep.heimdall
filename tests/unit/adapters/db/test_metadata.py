@@ -1,6 +1,16 @@
 from heimdall.adapters.db.metadata import import_all_models, metadata
 
-MODULES = {"approval", "audit", "desk", "intake", "repro", "review", "tenancy", "triage"}
+MODULES = {
+    "approval",
+    "audit",
+    "desk",
+    "intake",
+    "memory",
+    "repro",
+    "review",
+    "tenancy",
+    "triage",
+}
 
 
 def test_import_all_models_loads_every_module() -> None:

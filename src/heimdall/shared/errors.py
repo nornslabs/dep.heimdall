@@ -60,6 +60,14 @@ class ReproLimitReached(HeimdallError):
     """The PR has already used its allowed reproduction attempts for this head."""
 
 
+class InvalidNote(HeimdallError):
+    """An agent note's key or value breaks the memory rules (format or length)."""
+
+
+class NoteNotFound(HeimdallError):
+    """No agent note with this key exists for the repository and agent."""
+
+
 class ToolNotAllowed(HeimdallError):
     """An agent called an MCP tool that is not on its allowed list."""
 
