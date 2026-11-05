@@ -16,7 +16,8 @@ The Gate: plain-code intake rule checks.
 Tables (`models.py`): `intake_results` (one row per rule per head commit).
 
 `api.py` exports `IntakeFacts`, `RuleResult`, `RuleName`, `evaluate_rules(facts, config)`,
-`run_intake(...)`, and `mark_results_stale(...)`. `run_intake` fetches GitHub facts, checks the
+`run_intake(...)`, `list_failed_rules(...)` (the failed, non-stale rules of one head, read by Heimdall's
+intake reply) and `mark_results_stale(...)`. `run_intake` fetches GitHub facts, checks the
 head-scoped config, upserts six rule outcomes, then sends the checklist to Switch through the
 outbox and advances triage in the same transaction. The PR's thread opens with the heading
 `New PR #<no> <title>` (`_heading.py`); the PR title is untrusted, so it is flattened to one line,

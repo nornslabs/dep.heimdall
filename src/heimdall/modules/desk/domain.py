@@ -98,8 +98,10 @@ def parse_command(message: str) -> DeskCommand | None:
         verb = CommandVerb(parts[1].casefold())
     except ValueError:
         return None
+    if verb in {CommandVerb.RETRY, CommandVerb.APPROVE} and len(parts) == 2:
+        return DeskCommand(verb)
     if verb is CommandVerb.RETRY:
-        return DeskCommand(verb) if len(parts) == 2 else None
+        return None
     if len(parts) < 3:
         return None
     try:

@@ -54,6 +54,10 @@ class SwitchSender:
         """Fetch a Switch post by id for reaction handling."""
         return await self._rest.get_post(post_id)
 
+    async def get_thread_posts(self, root_id: str) -> tuple[RoomPost, ...]:
+        """Fetch a thread's posts, oldest first, to find the draft a reply approves."""
+        return await self._rest.get_thread_posts(root_id)
+
     async def get_username(self, user_id: str) -> str:
         """Resolve a Switch user id to its username."""
         return await self._rest.get_username(user_id)

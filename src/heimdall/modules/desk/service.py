@@ -289,6 +289,31 @@ async def get_current_draft_in_transaction(
     )
 
 
+async def get_latest_draft(
+    sessions: async_sessionmaker[AsyncSession], ctx: TenantCtx, pr_id: uuid.UUID
+) -> DraftRef | None:
+    """Return the newest un-superseded draft of a pull request, whatever its kind.
+
+    Args:
+        sessions: Tenant database session factory.
+        ctx: Tenant and request context; the query is scoped to its installation.
+        pr_id: Pull request identifier.
+
+    Returns:
+        The draft a maintainer's go-ahead would approve, or None when there is none.
+    """
+    async with unit_of_work(sessions) as session:
+        result = await session.exec(
+            select_for_tenant(Draft, ctx.installation_id)
+            .where(Draft.pr_id == pr_id, col(Draft.superseded_by).is_(None))
+            .order_by(col(Draft.created_at).desc())
+        )
+        draft = result.first()
+    if draft is None:
+        return None
+    return DraftRef(draft.id, draft.pr_id, draft.kind, draft.body, draft.body_hash, None)
+
+
 async def get_draft(
     sessions: async_sessionmaker[AsyncSession], ctx: TenantCtx, draft_id: uuid.UUID
 ) -> DraftRef:

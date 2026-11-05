@@ -6,6 +6,8 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import cast
 
 from agents._conversation import SUBMIT_INTENT_NAME, SUBMIT_REPLY_NAME
+from agents.heimdall._approve_message import APPROVAL_INTENT_TOOL
+from agents.heimdall._intake_reply import SYSTEM_PROMPT as INTAKE_REPLY_PROMPT
 from heimdall.adapters.ai import ChatMessage, ChatResponse, ToolCall, ToolChoice, ToolSpec, Usage
 from tests.e2e.fake_world import REPO_FULL_NAME
 
@@ -14,6 +16,9 @@ TEST_COMMAND = "pytest -q"
 REVIEW_SUMMARY = "Scripted review for the e2e replay."
 _RESULT = re.compile(r'^<pr_data source="([^"]+)">\n(.*)\n</pr_data>$', re.DOTALL)
 _SCOPE = re.compile(r"installation_id (\d+) and pr_id ([0-9a-f-]{36})")
+
+
+MENTION_SUBMIT_TOOLS = frozenset({SUBMIT_REPLY_NAME, SUBMIT_INTENT_NAME, APPROVAL_INTENT_TOOL})
 
 
 class MentionScript:
@@ -33,7 +38,7 @@ class MentionScript:
 
     def answer(self, tools: Sequence[ToolSpec]) -> ChatResponse | None:
         """Return the next scripted submission when this is a mention run, else None."""
-        if not any(tool.name in {SUBMIT_REPLY_NAME, SUBMIT_INTENT_NAME} for tool in tools):
+        if not any(tool.name in MENTION_SUBMIT_TOOLS for tool in tools):
             return None
         self.calls += 1
         if not self._steps:
@@ -269,6 +274,8 @@ class ScriptedHeimdallModel:
         scripted = self.mentions.answer(tools)
         if scripted is not None:
             return scripted
+        if not tools and messages and messages[0].content == INTAKE_REPLY_PROMPT:
+            return ChatResponse("- Fix the failed intake checks.", (), Usage(0, 0), SCRIPTED_MODEL)
         if not self._pr_id:
             self._installation_id, self._pr_id = _tool_scope(messages)
         result = _last_result(messages)

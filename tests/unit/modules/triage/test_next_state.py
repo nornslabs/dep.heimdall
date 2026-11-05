@@ -46,7 +46,17 @@ def test_intake_pass_moves_received_to_checking_and_wakes_both_agents() -> None:
 def test_intake_fail_moves_received_to_intake_failed_and_reports_rules() -> None:
     result = next_state(PrState.RECEIVED, EventKind.INTAKE_DONE, Facts(intake_passed=False))
 
-    assert result == Transition(PrState.INTAKE_FAILED, (Effect.OUTBOX_FAILED_RULES,))
+    assert result == Transition(
+        PrState.INTAKE_FAILED, (Effect.OUTBOX_FAILED_RULES, Effect.ENQUEUE_INTAKE_REPLY)
+    )
+
+
+def test_editing_a_pr_that_failed_intake_reruns_intake() -> None:
+    result = next_state(PrState.INTAKE_FAILED, EventKind.PR_EDITED, Facts())
+
+    assert result == Transition(
+        PrState.RECEIVED, (Effect.ENQUEUE_INTAKE, Effect.MARK_OLDER_RUNS_STALE)
+    )
 
 
 @pytest.mark.parametrize("event", CHECK_EVENTS)

@@ -12,7 +12,14 @@ from mcp.server.mcpserver import MCPServer
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from agents._conversation import MentionAgent, MentionMode, MentionPr
+from agents._conversation import (
+    MentionAgent,
+    MentionAnswer,
+    MentionMode,
+    MentionPorts,
+    MentionPr,
+    Question,
+)
 from agents._mcp_tools import mcp_agent_tools
 from agents._mention import SENDER_ROLE_MAINTAINER
 from agents._runtime import AgentTool, ChatModel
@@ -47,6 +54,13 @@ type GuardActTools = Callable[[ActSetup, tuple[AgentTool, ...]], Awaitable[tuple
 """Wraps an agent's guard around its write tool; returns the tools with the guard in place."""
 
 
+type ApproveByMessage = Callable[
+    [MentionPorts, TenantCtx, ChatModel, Question], Awaitable[MentionAnswer | None]
+]
+"""An agent's first look at a mention: an answer when the message settles a pending approval,
+or None to let the normal ask/act conversation handle it."""
+
+
 @dataclass(frozen=True)
 class MentionDeps:
     """Everything one agent's ``agent.mention`` task needs, built once by its runner.
@@ -57,6 +71,8 @@ class MentionDeps:
         reader: Read-only GitHub adapter.
         model: Returns the agent's model; lazy so a worker without one still registers.
         guard_act_tools: Puts the agent's guard on its write tool in act mode.
+        approve_by_message: Optional first look at each mention, for an agent whose drafts a
+            maintainer approves in words (Heimdall).
     """
 
     agent: MentionAgent
@@ -64,6 +80,7 @@ class MentionDeps:
     reader: GitHubApiReader
     model: Callable[[], ChatModel]
     guard_act_tools: GuardActTools
+    approve_by_message: ApproveByMessage | None = None
 
 
 class DbMentionPorts:

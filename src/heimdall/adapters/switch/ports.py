@@ -65,6 +65,10 @@ class RoomPort(Protocol):
         """Fetch a post so a reaction can be matched to its approval marker."""
         ...
 
+    async def get_thread_posts(self, root_id: str) -> tuple[RoomPost, ...]:
+        """Fetch every post in a thread, oldest first, so a reply can find the draft it answers."""
+        ...
+
     async def get_username(self, user_id: str) -> str:
         """Resolve a Switch user id to the corresponding GitHub login."""
         ...

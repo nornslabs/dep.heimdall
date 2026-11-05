@@ -5,6 +5,11 @@ draft posts. Approval posts include a hidden marker with the draft id, exact bod
 installation id and repository. Mattermost usernames are treated as GitHub logins; deployments
 must configure those identities consistently with `heimdall.yml` maintainer entries.
 
+A maintainer can instead reply `/heimdall approve` in the PR's thread. The bridge fetches the
+thread (`RoomPort.get_thread_posts`), picks the newest approval post (or the one named by
+`/heimdall approve <draft_id>`) and approves the hash in that post's marker with `via="message"`.
+A replaced draft gets a short "approve the latest draft" reply.
+
 Non-maintainers receive one short thread reply. They create no approval or GitHub outbox entry.
 
 `@bifrost ping` is a plain health check (`_health.py`): the bridge answers it with a fixed line in

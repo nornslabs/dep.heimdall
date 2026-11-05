@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from heimdall.adapters.switch.ports import RoomEvent, RoomPort
+from heimdall.adapters.switch.ports import RoomEvent, RoomPort, RoomPost
 from heimdall.modules.approval.api import pause_auto_suggestions, record_approval
 from heimdall.modules.desk.api import CommandVerb, parse_command
 from heimdall.modules.tenancy.api import ConfigFileReader, get_tenant
-from heimdall.shared.errors import NotAMaintainer
+from heimdall.shared.errors import DraftChanged, NotAMaintainer
 from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId
 
@@ -24,6 +24,7 @@ APPROVAL_MARKER = re.compile(
 )
 THUMBS_UP = frozenset({"+1", "thumbsup", "thumbs_up"})
 NON_MAINTAINER_REPLY = "Only a configured repository maintainer can approve this draft."
+DRAFT_CHANGED_REPLY = "That draft was replaced or edited. Approve the latest draft instead."
 AUTO_PAUSED_REPLY = "Automatic mechanical suggestions are paused for this repository."
 
 
@@ -62,6 +63,17 @@ def parse_approval_marker(message: str) -> ApprovalMarker | None:
     )
 
 
+def _latest_marker(
+    thread: tuple[RoomPost, ...], target_id: uuid.UUID | None
+) -> tuple[RoomPost, ApprovalMarker] | None:
+    """Pick the newest approval post in a thread, or the one for ``target_id`` when given."""
+    for post in reversed(thread):
+        marker = parse_approval_marker(post.message)
+        if marker is not None and (target_id is None or marker.draft_id == target_id):
+            return post, marker
+    return None
+
+
 class ApprovalReactionHandler:
     """Record configured maintainers' thumbs-up reactions on marked draft posts."""
 
@@ -89,9 +101,7 @@ class ApprovalReactionHandler:
             event: Untrusted Switch post or reaction event.
         """
         if event.kind == "posted":
-            command = parse_command(event.message)
-            if command is not None and command.verb == CommandVerb.PAUSE_AUTO:
-                await self._pause_auto(event)
+            await self._handle_posted(event)
             return
         if event.kind != "reaction_added" or event.emoji_name not in THUMBS_UP:
             return
@@ -115,6 +125,49 @@ class ApprovalReactionHandler:
         except NotAMaintainer:
             root_id = post.root_id or post.id
             await self._room.post_to_thread(post.channel_id, root_id, NON_MAINTAINER_REPLY)
+
+    async def _handle_posted(self, event: RoomEvent) -> None:
+        """Route a maintainer's slash command posted in the room."""
+        command = parse_command(event.message)
+        if command is None:
+            return
+        if command.verb == CommandVerb.PAUSE_AUTO:
+            await self._pause_auto(event)
+        elif command.verb == CommandVerb.APPROVE:
+            await self._approve_from_thread(event, command.target_id)
+
+    async def _approve_from_thread(self, event: RoomEvent, target_id: uuid.UUID | None) -> None:
+        """Approve the draft a maintainer's thread reply answers, exactly as the thread shows it.
+
+        The hash comes from the draft's own approval post, so the approval covers the text the
+        maintainer could read there. ``record_approval`` still rejects a non-maintainer, a stale
+        hash and a superseded draft.
+        """
+        if not event.root_id:
+            return
+        thread = await self._room.get_thread_posts(event.root_id)
+        found = _latest_marker(thread, target_id)
+        if found is None:
+            return
+        post, marker = found
+        approver = await self._room.get_username(event.user_id)
+        ctx = await get_tenant(self._sessions, marker.installation_id)
+        repo = RepoRef(ctx.installation_id, marker.repo_full_name)
+        try:
+            await record_approval(
+                self._sessions,
+                self._reader,
+                ctx,
+                repo,
+                marker.draft_id,
+                approver,
+                marker.draft_hash,
+                via="message",
+            )
+        except NotAMaintainer:
+            await self._room.post_to_thread(post.channel_id, event.root_id, NON_MAINTAINER_REPLY)
+        except DraftChanged:
+            await self._room.post_to_thread(post.channel_id, event.root_id, DRAFT_CHANGED_REPLY)
 
     async def _pause_auto(self, event: RoomEvent) -> None:
         """Pause policy for the draft's repository after a maintainer command."""

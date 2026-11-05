@@ -19,6 +19,7 @@ from heimdall.modules.desk.service import (
     get_current_draft_in_transaction,
     get_draft,
     get_draft_in_transaction,
+    get_latest_draft,
     save_card,
     save_draft,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "get_current_draft_in_transaction",
     "get_draft",
     "get_draft_in_transaction",
+    "get_latest_draft",
     "hash_draft",
     "mention_maintainers",
     "parse_command",

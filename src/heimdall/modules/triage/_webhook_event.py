@@ -81,5 +81,6 @@ def pull_request_event(
 _ACTIONS = {
     "opened": EventKind.PR_OPENED,
     "synchronize": EventKind.PR_SYNCHRONIZE,
+    "edited": EventKind.PR_EDITED,
     "closed": EventKind.PR_CLOSED,
 }

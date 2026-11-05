@@ -458,6 +458,18 @@ async def _apply_effects(
             lock=f"huginn:{ctx.installation_id}:{pr_id}:{event.head_sha}",
         )
     await _enqueue_agent_wakeups(session, ctx, event, effects, pr_id)
+    if Effect.ENQUEUE_INTAKE_REPLY in effects:
+        await enqueue(
+            session,
+            "heimdall.draft_intake_reply",
+            {
+                "installation_id": ctx.installation_id,
+                "pr_id": str(pr_id),
+                "head_sha": event.head_sha,
+            },
+            queue=HEIMDALL_QUEUE,
+            lock=f"heimdall:{ctx.installation_id}:{pr_id}:{event.head_sha}",
+        )
     if Effect.MARK_OLDER_RUNS_STALE in effects:
         from heimdall.modules.intake.api import mark_results_stale
         from heimdall.modules.repro.api import mark_runs_stale

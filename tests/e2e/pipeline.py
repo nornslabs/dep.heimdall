@@ -197,6 +197,17 @@ class Pipeline:
         await handler.handle(event)
         await self.settle()
 
+    async def reply_approve(self, login: str) -> None:
+        """Have a Switch user reply ``/heimdall approve`` in the PR's thread, then deliver."""
+        user_id = f"user-{login}"
+        self._deps.switch.users[user_id] = login
+        handler = ApprovalReactionHandler(self.sessions, self.reader, self._deps.switch)
+        event = RoomEvent(
+            "posted", ROOM_ID, "reply-post", user_id, "thread-root", "/heimdall approve"
+        )
+        await handler.handle(event)
+        await self.settle()
+
     async def settle(self) -> None:
         """Run queued jobs, send due outbox rows and report finished workflow runs.
 

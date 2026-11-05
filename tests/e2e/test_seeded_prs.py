@@ -4,10 +4,15 @@ Each test opens a recorded PR, lets the jobs, agents and outbox run, and checks 
 the room and GitHub. Agents run their real loops; only Loki's model reply is scripted.
 """
 
+import dataclasses
+
 import pytest
 
+from agents._conversation import SUBMIT_REPLY_NAME
+from agents.heimdall._approve_message import APPROVAL_INTENT_TOOL
 from agents.heimdall.guardrails import find_quoted_finding_ids
 from apps.bridge.approval import NON_MAINTAINER_REPLY
+from heimdall.shared.agents import AgentName
 from tests.e2e.fake_world import (
     MAINTAINER,
     DemoGitHub,
@@ -40,6 +45,16 @@ UNUSED_IMPORT_FINDING: dict[str, object] = {
     "mechanical_category": "lint",
 }
 OUTSIDER = "drive-by-reviewer"
+# The schema lives for the whole session and a PR number opens once, so the approval scenario
+# runs on its own copy of the rule-breaking PR.
+INTAKE_REPLY_PR_NUMBER = 21
+RULE_BREAKER_COPY = dataclasses.replace(
+    RULE_BREAKER, pull={**RULE_BREAKER.pull, "number": INTAKE_REPLY_PR_NUMBER}
+)
+FREE_TEXT_PR_NUMBER = 22
+RULE_BREAKER_FREE_TEXT = dataclasses.replace(
+    RULE_BREAKER, pull={**RULE_BREAKER.pull, "number": FREE_TEXT_PR_NUMBER}
+)
 HUGINN_REPRODUCED = "Huginn: the paired tests reproduce the issue."
 HUGINN_NOT_COVERED = "Huginn: the paired tests do not exercise the change."
 
@@ -125,15 +140,63 @@ async def test_fake_fix_card_says_not_reproduced_with_loki_finding(
 async def test_rule_breaker_fails_intake_and_writes_nothing_to_github(
     pipeline: Pipeline, github: DemoGitHub, switch: FakeSwitch
 ) -> None:
-    """PR #5: no linked issue, assignee or label, so intake fails and no agent runs."""
+    """PR #5: no linked issue, assignee or label, so intake fails; only a reply is drafted."""
     await pipeline.open_pr(RULE_BREAKER)
     await pipeline.run_huginn()
 
     assert await pipeline.pr_state(RULE_BREAKER) == "intake_failed"
-    assert len(switch.room_posts) == 2
+    assert len(switch.room_posts) == 3
     assert switch.room_posts[0].startswith(f"New PR #{RULE_BREAKER.number} ")
     assert "Resolve the failed checks" in switch.room_posts[1]
     assert await pipeline.latest_repro_run(RULE_BREAKER) is None
     assert await pipeline.repro_verdict(RULE_BREAKER) is None
     assert github.writes() == []
+    await assert_nothing_failed(pipeline)
+
+
+async def test_failed_intake_draft_tags_maintainers_and_posts_only_after_approval(
+    pipeline: Pipeline, github: DemoGitHub, switch: FakeSwitch
+) -> None:
+    """The author's reply waits for a maintainer, then a thread reply posts it exactly once."""
+    await pipeline.open_pr(RULE_BREAKER_COPY)
+    await pipeline.run_huginn()
+
+    request = switch.room_posts[-1]
+    assert request.startswith(f"@{MAINTAINER}")
+    assert "Hey @" in request
+    assert github.comments_posted(RULE_BREAKER_COPY.number) == []
+
+    await pipeline.reply_approve(OUTSIDER)
+    assert switch.thread_replies == [NON_MAINTAINER_REPLY]
+    assert github.comments_posted(RULE_BREAKER_COPY.number) == []
+
+    await pipeline.reply_approve(MAINTAINER)
+    comments = github.comments_posted(RULE_BREAKER_COPY.number)
+    assert len(comments) == 1
+    assert comments[0].startswith("Hey @")
+    await assert_nothing_failed(pipeline)
+
+
+async def test_a_free_text_go_ahead_from_a_maintainer_posts_the_reply(
+    pipeline: Pipeline, github: DemoGitHub
+) -> None:
+    """ "go ahead" is no slash command: the model reads it, and only a maintainer's counts."""
+    await pipeline.open_pr(RULE_BREAKER_FREE_TEXT)
+    await pipeline.run_huginn()
+    script = pipeline.heimdall_model.mentions
+    # An outsider's message gets no approval check, only the ordinary conversation.
+    script.script(SUBMIT_REPLY_NAME, {"in_scope": False, "redirect_to": "huginn", "answer": ""})
+
+    await pipeline.mention(
+        AgentName.HEIMDALL, RULE_BREAKER_FREE_TEXT, OUTSIDER, "go ahead", sender_role="contributor"
+    )
+    assert script.calls == 1
+    assert github.comments_posted(RULE_BREAKER_FREE_TEXT.number) == []
+
+    script.script(APPROVAL_INTENT_TOOL, {"approves": True})
+    await pipeline.mention(AgentName.HEIMDALL, RULE_BREAKER_FREE_TEXT, MAINTAINER, "go ahead")
+
+    comments = github.comments_posted(RULE_BREAKER_FREE_TEXT.number)
+    assert len(comments) == 1
+    assert comments[0].startswith("Hey @")
     await assert_nothing_failed(pipeline)
