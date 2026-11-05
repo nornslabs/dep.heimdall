@@ -7,6 +7,9 @@ from heimdall.adapters.switch.agent.credentials import load_agent_credentials, s
 from heimdall.modules.repro.api import MAX_REPRO_RUNS
 
 AGENT_NAME = "huginn"
+REQUIRED_SKILLS: frozenset[str] = frozenset(
+    {"pick_test_command", "judge_repro", "fix_setup_failure"}
+)
 MAX_TURNS = 12
 CONTEXT_TOKENS = 24_000
 RUN_TOKEN_BUDGET = 150_000
@@ -27,6 +30,7 @@ __all__ = [
     "BUDGET",
     "MAX_REPRO_RUNS",
     "MAX_TURNS",
+    "REQUIRED_SKILLS",
     "load_ai_config",
     "load_switch_config",
 ]

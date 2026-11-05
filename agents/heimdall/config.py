@@ -6,6 +6,16 @@ from heimdall.adapters.switch.agent import AgentConnectionConfig
 from heimdall.adapters.switch.agent.credentials import load_agent_credentials, switch_api_url
 
 AGENT_NAME = "heimdall"
+REQUIRED_SKILLS: frozenset[str] = frozenset(
+    {
+        "write_card",
+        "draft_change_request",
+        "draft_thanks",
+        "draft_close",
+        "explain_why",
+        "mechanical_task",
+    }
+)
 MAX_TURNS = 8
 CONTEXT_TOKENS = 24_000
 RUN_TOKEN_BUDGET = 100_000

@@ -12,11 +12,13 @@ from agents._lifecycle import warn_if_shared_model
 from agents._mcp_tools import LokiMcpTools
 from agents._presence_runner import run_with_presence
 from agents._runtime import ChatModel
+from agents._skills import load_skills
 from agents.heimdall.config import load_ai_config as load_heimdall_config
 from agents.huginn.config import load_ai_config as load_huginn_config
 from agents.loki._message import format_review_message
 from agents.loki.agent import run_loki
-from agents.loki.config import AGENT_NAME, load_ai_config
+from agents.loki.allowed_tools import ALLOWED_TOOLS
+from agents.loki.config import AGENT_NAME, REQUIRED_SKILLS, load_ai_config
 from apps.mcp.main import create_server
 from heimdall.adapters.ai import AiAdapter, AiConfig
 from heimdall.adapters.db.engine import create_engine, make_session_factory
@@ -100,6 +102,8 @@ async def run_worker() -> None:
 
     settings = get_settings()
     configure_logging(settings.log_level)
+    # Validated at startup so a broken playbook fails before any job runs.
+    load_skills(AgentName.LOKI, ALLOWED_TOOLS, REQUIRED_SKILLS)
     config = load_ai_config()
     warn_if_shared_model(config, _other_agent_configs())
     ai = AiAdapter(config)

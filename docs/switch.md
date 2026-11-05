@@ -156,13 +156,17 @@ key die and alert the room; rows that name no agent still use the Mattermost bot
 In the triage room, a maintainer can mention an agent to check it is running:
 
 ```text
-@huginn ping          -> Huginn: pong, I'm alive.
-@loki hello           -> Loki: hello! I'm alive. I review a pull request's diff and file cited findings.
+@huginn ping            -> Huginn: pong, I'm alive.
+@huginn are you awake?  -> Huginn: I'm awake. I run the repository's configured reproduction
+                           command and report paired test outcomes.
+@loki hello             -> Loki: hello! I'm alive. I review the current pull request diff and
+                           report concrete, actionable findings.
 @huginn @loki @heimdall ping    (all three answer)
 ```
 
-`ping`, `alive`, `status`, `hello`, `hi` and `hey` are recognised, nothing else; any other text is
-ignored for now. Only a maintainer of a repo linked to that room gets an answer, so:
+`ping`, `alive`, `status`, `hello`, `hi`, `hey`, `are you awake?` and `you there?` are recognised,
+nothing else; any other text is ignored for now. Only a maintainer of a repo linked to that room
+gets an answer, so:
 
 * The room's agent id must be on a repo (`HEIMDALL_DEFAULT_SWITCH_AGENT_ROOM_ID` or `link_room
   --agent-room-id`), and the agent claims linked rooms **when it starts**, so restart the agents

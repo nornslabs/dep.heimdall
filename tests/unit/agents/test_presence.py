@@ -43,6 +43,26 @@ def test_greetings_are_recognised(body: str) -> None:
 @pytest.mark.parametrize(
     "body",
     [
+        "are you awake",
+        "Are you awake?",
+        "  are   you   awake  ",
+        "@huginn are you awake?",
+        "@Huginn: are you there?",
+        "@huginn @loki @heimdall are you awake?",
+        "you there",
+        "You there?",
+        "@loki you there?",
+        "you awake?",
+        "@heimdall awake",
+    ],
+)
+def test_awake_checks_are_recognised(body: str) -> None:
+    assert parse_presence_prompt(body) is PresencePrompt.AWAKE
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
         "",
         "   ",
         "@huginn",
@@ -55,6 +75,9 @@ def test_greetings_are_recognised(body: str) -> None:
         "@odin ping",
         "@huginn ping @odin",
         "hello there, can you review my PR?",
+        "are you awake and can you review my PR?",
+        "you there now",
+        "@huginn are you awake? @loki",
         "p" * 5000,
         "ping" + " " * 5000 + "ping",
     ],
@@ -65,13 +88,17 @@ def test_anything_else_is_not_a_presence_prompt(body: str) -> None:
 
 @pytest.mark.parametrize("agent", list(AgentName))
 @pytest.mark.parametrize("prompt", list(PresencePrompt))
-def test_reply_names_the_agent_and_says_it_is_alive(
-    agent: AgentName, prompt: PresencePrompt
-) -> None:
+def test_reply_names_the_agent_and_reports_status(agent: AgentName, prompt: PresencePrompt) -> None:
     reply = format_presence_reply(agent, prompt)
 
     assert reply.startswith(f"{agent.value.capitalize()}: ")
-    assert "alive" in reply
+    assert "alive" in reply or "awake" in reply
+
+
+def test_awake_reply_reports_the_agents_role() -> None:
+    assert "reproduction" in format_presence_reply(AgentName.HUGINN, PresencePrompt.AWAKE)
+    assert "review" in format_presence_reply(AgentName.LOKI, PresencePrompt.AWAKE)
+    assert "triage" in format_presence_reply(AgentName.HEIMDALL, PresencePrompt.AWAKE)
 
 
 def test_reply_never_contains_a_prompt_word_that_could_trigger_another_agent() -> None:
