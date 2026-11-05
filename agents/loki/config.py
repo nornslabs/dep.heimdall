@@ -1,5 +1,6 @@
 """Loki's name, loop limits and model settings."""
 
+from agents._budget import AgentBudget
 from heimdall.adapters.ai import AiConfig
 from heimdall.adapters.switch.agent import AgentConnectionConfig
 from heimdall.adapters.switch.agent.credentials import load_agent_credentials, switch_api_url
@@ -7,6 +8,19 @@ from heimdall.adapters.switch.agent.credentials import load_agent_credentials, s
 AGENT_NAME = "loki"
 MAX_TURNS = 8
 MAX_FINDINGS = 5
+CONTEXT_TOKENS = 40_000
+RUN_TOKEN_BUDGET = 250_000
+MAX_DIFF_BYTES = 80 * 1024
+MAX_FILE_READS = 8
+
+# Starting points; tune on the seeded PRs.
+BUDGET = AgentBudget(
+    context_tokens=CONTEXT_TOKENS,
+    run_tokens=RUN_TOKEN_BUDGET,
+    max_turns=MAX_TURNS,
+    call_caps={"get_file": MAX_FILE_READS},
+    max_result_bytes={"get_diff": MAX_DIFF_BYTES},
+)
 
 
 def load_switch_config(rooms: tuple[str, ...]) -> AgentConnectionConfig:

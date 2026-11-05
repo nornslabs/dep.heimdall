@@ -1,11 +1,25 @@
 """Heimdall's name, loop limits and model settings."""
 
+from agents._budget import AgentBudget
 from heimdall.adapters.ai import AiConfig
 from heimdall.adapters.switch.agent import AgentConnectionConfig
 from heimdall.adapters.switch.agent.credentials import load_agent_credentials, switch_api_url
 
 AGENT_NAME = "heimdall"
 MAX_TURNS = 8
+CONTEXT_TOKENS = 24_000
+RUN_TOKEN_BUDGET = 100_000
+MAX_DRAFTS = 2
+NO_CALLS = 0
+
+# Heimdall writes the card from other agents' results, so it has no diff or file access.
+# Starting points; tune on the seeded PRs.
+BUDGET = AgentBudget(
+    context_tokens=CONTEXT_TOKENS,
+    run_tokens=RUN_TOKEN_BUDGET,
+    max_turns=MAX_TURNS,
+    call_caps={"get_diff": NO_CALLS, "get_file": NO_CALLS, "save_draft": MAX_DRAFTS},
+)
 
 
 def load_switch_config(rooms: tuple[str, ...]) -> AgentConnectionConfig:

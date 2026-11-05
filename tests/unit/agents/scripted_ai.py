@@ -16,7 +16,9 @@ def tool_reply(*calls: ToolCall, model: str = "scripted-1") -> ChatResponse:
 class ScriptedAi:
     """Return each scripted reply in order; fail loudly if the script runs out."""
 
-    def __init__(self, replies: Sequence[ChatResponse], model: str = "scripted-1") -> None:
+    def __init__(
+        self, replies: Sequence[ChatResponse | Exception], model: str = "scripted-1"
+    ) -> None:
         self._replies = list(replies)
         self._model = model
         self.requests: list[tuple[tuple[ChatMessage, ...], tuple[ToolSpec, ...], ToolChoice]] = []
@@ -35,4 +37,7 @@ class ScriptedAi:
         self.requests.append((tuple(messages), tuple(tools), tool_choice))
         if not self._replies:
             raise AssertionError("ScriptedAi ran out of replies")
-        return self._replies.pop(0)
+        reply = self._replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        return reply

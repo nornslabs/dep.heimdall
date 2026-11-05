@@ -64,6 +64,12 @@ class ToolNotAllowed(HeimdallError):
     """An agent called an MCP tool that is not on its allowed list."""
 
 
+class ToolUnavailable(HeimdallError):
+    """An agent's tool kept failing with an outage through every retry."""
+
+    retryable = True
+
+
 class GitHubRequestFailed(HeimdallError):
     """GitHub refused a request (a 4xx other than rate limiting) or sent an unexpected reply."""
 
