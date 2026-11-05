@@ -36,10 +36,18 @@ class AgentTool:
 
 @dataclass(frozen=True)
 class ToolResult:
-    """What a tool call gave the model, and whether the tool actually ran (for call caps)."""
+    """What a tool call gave the model, and whether the tool actually ran (for call caps).
+
+    Attributes:
+        text: The result, or an ``error: ...`` line written by the toolbox.
+        ran: True once the handler was called, so the call counts against its cap.
+        failed: True when the handler raised, so ``text`` is the toolbox's own error line
+            rather than tool output, and is not wrapped as PR data.
+    """
 
     text: str
     ran: bool
+    failed: bool = False
 
 
 class ToolBox:
@@ -107,7 +115,7 @@ class ToolBox:
             raise
         except Exception as error:
             log.warning("agent_tool_failed", tool=name, error_type=type(error).__name__)
-            return ToolResult(f"error: {type(error).__name__}", ran=True)
+            return ToolResult(f"error: {type(error).__name__}", ran=True, failed=True)
         return ToolResult(_as_text(result), ran=True)
 
     def _argument_errors(self, name: str, arguments: Mapping[str, object]) -> str | None:

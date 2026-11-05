@@ -59,7 +59,7 @@ class PresenceHandler:
                 self._ignored(message, "ambiguous_room")
                 return
             if maintainer is None:
-                await self._refuse(session, message)
+                await refuse_non_maintainer(session, self._agent, message, "presence-denied")
                 return
             await write_outbox(
                 session,
@@ -74,40 +74,54 @@ class PresenceHandler:
                 idempotency_key=f"presence:{self._agent.value}:{message.message_id}",
             )
 
-    async def _refuse(self, session: AsyncSession, message: AgentMessage) -> None:
-        """Tell a non-maintainer to ask an admin to add them, if the room belongs to a tenant.
-
-        A room no enabled repo links, or one shared by several installations, has no tenant to
-        write the reply for, so it stays ignored.
-        """
-        try:
-            installation_id = await find_room_tenant(session, message.room_id)
-        except RoomTenantAmbiguous:
-            self._ignored(message, "ambiguous_room")
-            return
-        if installation_id is None:
-            self._ignored(message, "unlinked_room")
-            return
-        await write_outbox(
-            session,
-            installation_id=installation_id,
-            channel="switch",
-            kind="room.message",
-            payload={
-                "agent": self._agent.value,
-                "channel_id": message.room_id,
-                "message": format_not_maintainer_reply(self._agent, message.sender_name),
-            },
-            idempotency_key=f"presence-denied:{self._agent.value}:{message.message_id}",
-        )
-        self._ignored(message, "not_a_maintainer_replied")
-
     def _ignored(self, message: AgentMessage, reason: str) -> None:
         """Log that a message got no reply, by ids only."""
-        log.info(
-            "agent_message_ignored",
-            agent=self._agent.value,
-            reason=reason,
-            room_id=message.room_id,
-            message_id=message.message_id,
-        )
+        log_ignored(self._agent, message, reason)
+
+
+async def refuse_non_maintainer(
+    session: AsyncSession, agent: AgentName, message: AgentMessage, key_prefix: str
+) -> None:
+    """Tell a non-maintainer to ask an admin to add them, if the room belongs to a tenant.
+
+    A room no enabled repo links, or one shared by several installations, has no tenant to
+    write the reply for, so it stays ignored.
+
+    Args:
+        session: Session inside the caller's transaction.
+        agent: The agent answering.
+        message: The refused message; only its ids and sender name are used.
+        key_prefix: Start of the reply's idempotency key, naming the handler that refused.
+    """
+    try:
+        installation_id = await find_room_tenant(session, message.room_id)
+    except RoomTenantAmbiguous:
+        log_ignored(agent, message, "ambiguous_room")
+        return
+    if installation_id is None:
+        log_ignored(agent, message, "unlinked_room")
+        return
+    await write_outbox(
+        session,
+        installation_id=installation_id,
+        channel="switch",
+        kind="room.message",
+        payload={
+            "agent": agent.value,
+            "channel_id": message.room_id,
+            "message": format_not_maintainer_reply(agent, message.sender_name),
+        },
+        idempotency_key=f"{key_prefix}:{agent.value}:{message.message_id}",
+    )
+    log_ignored(agent, message, "not_a_maintainer_replied")
+
+
+def log_ignored(agent: AgentName, message: AgentMessage, reason: str) -> None:
+    """Log that a message got no normal answer, by ids only; the body is never logged."""
+    log.info(
+        "agent_message_ignored",
+        agent=agent.value,
+        reason=reason,
+        room_id=message.room_id,
+        message_id=message.message_id,
+    )

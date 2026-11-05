@@ -5,7 +5,8 @@ The PR triage state machine. Only this module changes `prs.state`, and only thro
 
 Public functions: `receive_webhook`, `handle_webhook_delivery`, `handle_event`, `on_step_done`,
 `on_step_done_in_transaction`, `get_pr_snapshot`, and `get_switch_thread_id` /
-`save_switch_thread_id` (the Switch thread every agent replies into; the first saved wins). `domain.py` exposes the pure
+`save_switch_thread_id` (the Switch thread every agent replies into; the first saved wins), and
+`find_pr_by_switch_thread` (which PR a room message's thread belongs to). `domain.py` exposes the pure
 `next_state` transition function, `with_checks_done`, and its event, fact, state, and
 outcome types.
 

@@ -37,7 +37,11 @@ class McpToolClient:
 
 
 class LokiMcpTools(McpToolClient):
-    """Loki's three read-and-submit tools over MCP."""
+    """Loki's read-and-submit tools over MCP, plus its read-only notes."""
+
+    async def recall(self, installation_id: int, repo_id: int) -> dict[str, object]:
+        """Read every note maintainers kept for Loki on the repo."""
+        return await self.call("recall", installation_id=installation_id, repo_id=repo_id, query="")
 
     async def get_pr_context(
         self, installation_id: int, pr_id: str, repo_full_name: str

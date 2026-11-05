@@ -8,6 +8,7 @@ from mcp.server.mcpserver import MCPServer
 from sqlalchemy.ext.asyncio import async_sessionmaker
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from apps.mcp._memory_tools import register_memory_tools
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.modules.approval.api import approve_by_policy
@@ -36,20 +37,22 @@ def create_server(
         MCP server with reproduction tools and, when wired, review tools.
     """
     allowed_tools = {
-        "huginn": {"start_repro", "get_repro"},
-        "loki": {"get_pr_context", "get_diff", "save_findings"},
+        "huginn": {"start_repro", "get_repro", "recall"},
+        "loki": {"get_pr_context", "get_diff", "save_findings", "recall"},
         "heimdall": {
             "list_findings",
             "get_repro",
             "save_card",
             "save_draft",
             "create_mechanical_task",
+            "recall",
         },
     }
     if agent_name not in allowed_tools:
         raise ValueError(f"unknown MCP agent scope: {agent_name}")
     server = MCPServer(f"heimdall-{agent_name}")
     registered_tools = {"start_repro", "get_repro"}
+    registered_tools |= register_memory_tools(server, sessions, agent_name)
 
     @server.tool(
         description="Queue a paired reproduction run for a PR in the current checking state.",
@@ -115,7 +118,7 @@ def create_server(
             pr_id: str,
             repo_full_name: str,
         ) -> dict[str, object]:
-            """Return PR metadata and head for the requested tenant-scoped PR."""
+            """Return PR metadata, head and repo id for the requested tenant-scoped PR."""
             ctx = TenantCtx(
                 installation_id=InstallationId(installation_id),
                 request_id=new_request_id(),
@@ -125,6 +128,7 @@ def create_server(
             info = await github_reader.get_pull_request(repo, snapshot.number)
             return {
                 "pr_id": str(snapshot.id),
+                "repo_id": snapshot.repo_id,
                 "number": snapshot.number,
                 "head_sha": snapshot.head_sha,
                 "title": info.title,

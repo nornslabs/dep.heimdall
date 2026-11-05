@@ -3,15 +3,18 @@
 Every step returns a new ``RunState``; an outcome alongside it means the run is over.
 """
 
+import json
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Protocol
 
 from pydantic import BaseModel
 
-from agents._budget import AgentBudget, CallCounts, estimate_tokens, fit_to_budget
+from agents._budget import AgentBudget, CallCounts, estimate_tokens
+from agents._guardrails import ToneFiltered, filter_tone, find_secret_kinds
 from agents._outcome import Completed, CouldNotFinish, RunOutcome, RunUsage, Stale, Unavailable
 from agents._submit import InvalidSubmission, SubmitTool
+from agents._tool_result import result_for_model
 from agents._toolbox import ToolBox
 from heimdall.adapters.ai import ChatMessage, ChatResponse, ToolCall, ToolChoice, ToolSpec
 from heimdall.shared.errors import (
@@ -136,6 +139,9 @@ async def take_turn[T: BaseModel](run: AgentRun[T], state: RunState) -> Step[T]:
 
 async def _handle_tool[T: BaseModel](run: AgentRun[T], state: RunState, call: ToolCall) -> Step[T]:
     """Run one tool within its call cap and fit its result to the context budget."""
+    blocked = _secret_block(run.agent, call.name, json.dumps(call.arguments), state)
+    if blocked is not None:
+        return state, blocked
     if run.budget.cap_reached(call.name, state.counts):
         cap = run.budget.call_caps[call.name]
         text = f"error: {call.name!r} limit of {cap} reached; finish with what you have"
@@ -148,7 +154,7 @@ async def _handle_tool[T: BaseModel](run: AgentRun[T], state: RunState, call: To
         state = replace(state, counts=state.counts.plus(call.name))
     used = sum(estimate_tokens(message.content) for message in state.history)
     remaining = run.budget.context_tokens - used
-    text = fit_to_budget(result.text, remaining, run.budget.max_result_bytes.get(call.name))
+    text = result_for_model(run.budget, call, result, remaining)
     return _with_tool_message(state, call, text), None
 
 
@@ -162,6 +168,11 @@ async def _handle_submit[T: BaseModel](
             return state, CouldNotFinish("invalid_submission", state.usage, state.turns)
         state = replace(state, repaired=True, turn_limit=max(state.turn_limit, state.turns + 1))
         return _with_tool_message(state, call, checked.errors), None
+    blocked = _secret_block(run.agent, call.name, checked.model_dump_json(), state)
+    if blocked is not None:
+        return state, blocked
+    if isinstance(checked, ToneFiltered):
+        checked = checked.filtered(filter_tone)
     try:
         current = await still_current(run.head_sha, run.read_current_head, agent=run.agent)
     except HeimdallError as error:
@@ -169,6 +180,25 @@ async def _handle_submit[T: BaseModel](
     if not current:
         return state, Stale(state.usage, state.turns)
     return state, Completed(checked, state.usage, state.turns)
+
+
+def _secret_block(agent: str, where: str, text: str, state: RunState) -> CouldNotFinish | None:
+    """Fail the run when outgoing text holds a secret, logging only the kinds found.
+
+    Args:
+        agent: Agent name for the log line.
+        where: Tool or submit name the text was bound for.
+        text: The outgoing arguments or submission, serialised.
+        state: The run so far, for the outcome's usage and turns.
+
+    Returns:
+        ``CouldNotFinish("secret_in_output")`` when a secret was found, otherwise None.
+    """
+    kinds = find_secret_kinds(text)
+    if not kinds:
+        return None
+    log.warning("agent_secret_blocked", agent=agent, where=where, kinds=kinds)
+    return CouldNotFinish("secret_in_output", state.usage, state.turns)
 
 
 def _with_tool_message(state: RunState, call: ToolCall, text: str) -> RunState:

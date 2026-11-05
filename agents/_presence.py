@@ -53,6 +53,18 @@ class PresencePrompt(Enum):
     AWAKE = "awake"
 
 
+def strip_leading_mentions(body: str) -> str:
+    """Drop the run of agent @mentions that opens a message, and surrounding whitespace.
+
+    Args:
+        body: Untrusted message text.
+
+    Returns:
+        What the sender asked, without the mentions that addressed the agents.
+    """
+    return _LEADING_MENTIONS.sub("", body, count=1).strip()
+
+
 def parse_presence_prompt(body: str) -> PresencePrompt | None:
     """Decide whether a message is a bare ping, greeting or awake check.
 

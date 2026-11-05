@@ -1,3 +1,3 @@
-"""MCP tools Loki may call; this agent has no write or reproduction controls."""
+"""MCP tools Loki may call; it has no reproduction controls and no memory write tool."""
 
-ALLOWED_TOOLS: frozenset[str] = frozenset({"get_pr_context", "get_diff", "save_findings"})
+ALLOWED_TOOLS: frozenset[str] = frozenset({"get_pr_context", "get_diff", "save_findings", "recall"})
