@@ -6,6 +6,7 @@ import pytest
 from pydantic import BaseModel
 from structlog.testing import capture_logs
 
+from agents._guardrails import wrap_pr_data
 from agents._runtime import (
     AgentBudget,
     AgentRun,
@@ -332,4 +333,6 @@ async def test_runtime_loads_a_skill_then_submits(tmp_path: Path) -> None:
     outcome = await run_agent(run, [ChatMessage("user", "judge the run")])
 
     assert isinstance(outcome, Completed)
-    assert ai.requests[1][0][-1] == ChatMessage("tool", body, tool_call_id="c1")
+    # Every tool result the runtime hands back is wrapped as PR data, skill playbooks included.
+    expected = ChatMessage("tool", wrap_pr_data("load_skill", body), tool_call_id="c1")
+    assert ai.requests[1][0][-1] == expected
