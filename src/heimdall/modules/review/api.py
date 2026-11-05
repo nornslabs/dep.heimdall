@@ -9,6 +9,7 @@ from heimdall.modules.review.domain import (
 )
 from heimdall.modules.review.ports import ReviewReader
 from heimdall.modules.review.service import (
+    finish_review,
     get_finding_in_transaction,
     list_findings,
     save_findings,
@@ -20,6 +21,7 @@ __all__ = [
     "FindingRef",
     "RejectedFinding",
     "ReviewReader",
+    "finish_review",
     "get_finding_in_transaction",
     "list_findings",
     "save_findings",

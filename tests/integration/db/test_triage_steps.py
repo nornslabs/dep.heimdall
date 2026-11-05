@@ -10,6 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from heimdall.adapters.db.tenant import select_for_tenant
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.queue.enqueue import HEIMDALL_QUEUE, LOKI_QUEUE
+from heimdall.modules.review.api import finish_review
 from heimdall.modules.tenancy.api import on_installation_event
 from heimdall.modules.triage.api import (
     EventKind,
@@ -21,6 +22,7 @@ from heimdall.modules.triage.api import (
 )
 from heimdall.modules.triage.models import Pr
 from heimdall.shared.context import TenantCtx
+from heimdall.shared.errors import StaleHeadSha
 from heimdall.shared.ids import InstallationId, RepoId
 from tests.integration.db.installation_helpers import created_installation
 
@@ -149,6 +151,33 @@ async def test_loki_is_woken_once_the_pr_reaches_checking(
             {"installation_id": ctx.installation_id, "pr_id": str(pr_id), "head_sha": "head-1"},
         )
     ]
+
+
+async def test_a_clean_review_finishes_the_step_and_posts_the_card(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """A review that saved nothing still reports itself finished, so triage can advance."""
+    ctx, _repo_id, pr_id = await _checking_pr(sessions, "head-1")
+    await _finish(sessions, ctx, pr_id, REPRO_DONE, "head-1")
+
+    await finish_review(sessions, ctx, pr_id, "head-1", "loki-job-1")
+
+    assert await _jobs(sessions, pr_id, "heimdall.build_card") == [
+        (
+            HEIMDALL_QUEUE,
+            {"installation_id": ctx.installation_id, "pr_id": str(pr_id), "head_sha": "head-1"},
+        )
+    ]
+
+
+async def test_a_review_for_an_old_head_is_refused(
+    sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    """A job for a head the PR has moved past cannot finish the review step."""
+    ctx, _repo_id, pr_id = await _checking_pr(sessions, "head-1")
+
+    with pytest.raises(StaleHeadSha):
+        await finish_review(sessions, ctx, pr_id, "head-0", "loki-job-1")
 
 
 async def test_heimdall_is_woken_only_when_the_card_is_due(
