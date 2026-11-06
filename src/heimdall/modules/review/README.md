@@ -28,3 +28,8 @@ past.
 `get_finding_in_transaction(...)` returns a finding scoped to the current tenant, PR and head
 within an existing transaction so another module can validate a mechanical task without opening
 a nested transaction.
+
+## Related documentation
+
+- `docs/how-it-works.md` — Loki review (stage 5).
+- `docs/config.md` — the `review` section of `heimdall.yml` (`max_findings`, `skip_paths`).

@@ -19,3 +19,8 @@ and `parse_command` (`/heimdall approve` alone approves the newest draft in the 
 
 Tables: `cards`, `drafts` (`body_hash` is what an approval must match), and `agent_tasks` (ids like
 `HT-482-1`). Every use case scopes reads to its installation and verifies the PR head.
+
+## Related documentation
+
+- `docs/how-it-works.md` — desk card and draft (stage 6).
+- `docs/security.md` — draft-hash binding for approvals.

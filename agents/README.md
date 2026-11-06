@@ -249,3 +249,8 @@ key `mention:<agent>:<message_id>`, so a redelivered job never posts twice.
 No model ever writes a note: agents get only the read-only MCP tool `recall`, so PR text cannot
 plant an instruction that outlives the PR. Loki puts its notes for the PR's repo into its review
 prompt, inside a `pr_data` block (`loki/_notes.py`).
+
+## Related documentation
+
+- `docs/agents.md` — agent runtime, skills, guardrails, ask/act, rate limits, memory commands.
+- `docs/config.md` — per-agent LLM configuration (`LLM_DEFAULT_*` / `LLM_<AGENT>_*`).

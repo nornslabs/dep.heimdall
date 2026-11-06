@@ -44,4 +44,9 @@ again, so every `ChannelSender` must be idempotent per `idempotency_key`.
   action (for example a merge on a PR that changed), without GitHub's own reply.
   Alerts never raise alerts.
 - **`last_error`** stores only the error type, since error text can quote PR content.
-- **No sender for a channel:** the message stays `pending`.
+No sender for a channel: the message stays `pending`.
+
+## Related documentation
+
+- `docs/architecture.md` — outbox writer/sender, tenant filter, one transaction per use case.
+- `docs/how-it-works.md` — outbox delivery between state changes and external posts.
