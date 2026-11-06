@@ -221,9 +221,3 @@ end-to-end replay on pushes and pull requests.
 setup, architecture, configuration, security, development, and agents. Each scoped README
 (`src/heimdall/modules/*/README.md`, `src/heimdall/adapters/*/README.md`, `apps/*/README.md`,
 `agents/README.md`) describes its own folder in detail.
-
-## Demo
-
-The demo recording is not available yet. The recording task is tracked in
-[HEI-75](https://linear.app/heimdallabs/issue/HEI-75/record-the-demo-video-about-3-minutes); add
-the video URL here after it is recorded.
