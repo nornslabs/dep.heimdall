@@ -20,6 +20,7 @@ class ThreadedPoster:
     def __init__(self, event_id: str = "sw_new") -> None:
         self.threaded: list[tuple[str, str | None]] = []
         self.plain: list[tuple[str, str]] = []
+        self.rich: list[tuple[str, str, str | None, list[dict[str, object]]]] = []
         self._event_id = event_id
 
     async def post(self, room_id: str, content: str) -> None:
@@ -28,6 +29,32 @@ class ThreadedPoster:
     async def post_in_thread(self, content: str, thread_id: str | None) -> str:
         self.threaded.append((content, thread_id))
         return self._event_id
+
+    async def post_rich(
+        self,
+        room_id: str,
+        content: str,
+        thread_id: str | None,
+        *,
+        attachments: list[dict[str, object]],
+    ) -> str | None:
+        self.rich.append((room_id, content, thread_id, attachments))
+        return self._event_id
+
+
+class RichPosterReturnsNone(ThreadedPoster):
+    """A poster whose Mattermost bot is missing, so rich posts cannot render."""
+
+    async def post_rich(
+        self,
+        room_id: str,
+        content: str,
+        thread_id: str | None,
+        *,
+        attachments: list[dict[str, object]],
+    ) -> str | None:
+        self.rich.append((room_id, content, thread_id, attachments))
+        return None
 
 
 class FakeThreads:
@@ -60,12 +87,21 @@ def _message(payload: JsonObject) -> OutboxMessage:
     )
 
 
-def _post(agent: str, text: str, *, root: bool = False, pr_id: str | None = PR_ID) -> JsonObject:
+def _post(
+    agent: str,
+    text: str,
+    *,
+    root: bool = False,
+    pr_id: str | None = PR_ID,
+    attachments: list[dict[str, object]] | None = None,
+) -> JsonObject:
     payload: JsonObject = {"agent": agent, "channel_id": "room-1", "message": text}
     if pr_id is not None:
         payload["pr_id"] = pr_id
     if root:
         payload["thread_role"] = "root"
+    if attachments is not None:
+        payload["attachments"] = attachments
     return payload
 
 
@@ -126,3 +162,72 @@ async def test_a_blank_pr_id_is_treated_like_no_pr_id() -> None:
 
     assert poster.plain == [("room-1", "hello")]
     assert poster.threaded == []
+
+
+async def test_a_rich_root_post_renders_the_card_and_opens_the_thread() -> None:
+    poster, threads = ThreadedPoster("sw_root"), FakeThreads()
+
+    await _router(
+        poster,
+        threads,
+    ).send(
+        _message(
+            _post(
+                "heimdall",
+                "Card ready",
+                root=True,
+                attachments=[{"title": "Card ready", "color": "#16a34a"}],
+            )
+        )
+    )
+
+    assert poster.rich == [
+        ("room-1", "Card ready", None, [{"title": "Card ready", "color": "#16a34a"}])
+    ]
+    assert poster.threaded == []
+    assert threads.known == {PR_ID: "sw_root"}
+
+
+async def test_a_rich_reply_renders_the_card_in_the_saved_thread() -> None:
+    poster, threads = ThreadedPoster("sw_root"), FakeThreads({PR_ID: "sw_root"})
+
+    await _router(
+        poster,
+        threads,
+    ).send(
+        _message(
+            _post(
+                "loki",
+                "Review posted",
+                attachments=[{"title": "Review posted", "color": "#2563eb"}],
+            )
+        )
+    )
+
+    assert poster.rich == [
+        ("room-1", "Review posted", "sw_root", [{"title": "Review posted", "color": "#2563eb"}])
+    ]
+    assert poster.threaded == []
+    assert threads.known == {PR_ID: "sw_root"}
+
+
+async def test_a_rich_poster_without_a_bot_falls_back_to_markdown() -> None:
+    poster, threads = RichPosterReturnsNone("sw_fallback"), FakeThreads()
+
+    await _router(
+        poster,
+        threads,
+    ).send(
+        _message(
+            _post(
+                "heimdall",
+                "Card ready",
+                root=True,
+                attachments=[{"title": "Card ready"}],
+            )
+        )
+    )
+
+    assert poster.rich == [("room-1", "Card ready", None, [{"title": "Card ready"}])]
+    assert poster.threaded == [("Card ready", None)]
+    assert threads.known == {PR_ID: "sw_fallback"}
