@@ -29,6 +29,8 @@ class AgentConnectionConfig:
         mattermost_bot_token: Bot token for Mattermost REST API (typing, reactions, progress).
             Optional; if not set, feedback features are disabled.
         mattermost_team_id: Mattermost team ID for REST API calls. Optional.
+        mattermost_base_url: Mattermost root URL (``HEIMDALL_SWITCH_URL``, for example
+            ``http://mattermost:8065``). Required when bot token and team ID are set.
     """
 
     base_url: str
@@ -43,6 +45,7 @@ class AgentConnectionConfig:
     drain_timeout_seconds: float = DRAIN_TIMEOUT_SECONDS
     mattermost_bot_token: str | None = field(default=None, repr=False)
     mattermost_team_id: str | None = field(default=None, repr=False)
+    mattermost_base_url: str | None = field(default=None, repr=False)
 
     @property
     def message_url(self) -> str:
