@@ -103,8 +103,8 @@ class MentionAckHandler:
         """Await a reaction call; a reaction is a courtesy, so a failure is only logged."""
         try:
             await call  # type: ignore[misc]
-        except SwitchRequestFailed:
-            log.warning("mention_ack_failed")
+        except SwitchRequestFailed as error:
+            log.warning("mention_ack_failed", error=str(error))
             return False
         return True
 
