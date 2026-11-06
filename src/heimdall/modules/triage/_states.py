@@ -27,6 +27,7 @@ class EventKind(StrEnum):
     REPRO_FINISHED = "repro.finished"
     REVIEW_FINISHED = "review.finished"
     MAINTAINER_COMMAND = "maintainer.command"
+    MAINTAINER_RECHECK = "maintainer.recheck"
     FINDING_MECHANICAL = "finding.mechanical"
     REACTION_APPROVE = "reaction.approve"
     OUTBOX_SENT = "outbox.sent"

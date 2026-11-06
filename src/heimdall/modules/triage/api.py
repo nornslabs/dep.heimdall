@@ -3,6 +3,7 @@
 Other modules may import only from this file.
 """
 
+from heimdall.modules.triage._recheck import request_recheck
 from heimdall.modules.triage._thread import (
     find_pr_by_switch_thread,
     get_switch_thread_id,
@@ -42,5 +43,6 @@ __all__ = [
     "on_step_done",
     "on_step_done_in_transaction",
     "receive_webhook",
+    "request_recheck",
     "save_switch_thread_id",
 ]

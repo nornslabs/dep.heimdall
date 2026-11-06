@@ -31,6 +31,7 @@ outcome types.
 | `received` | `intake.done` | all rules pass | `checking` | outbox heading `New PR #<no> <title>` as the PR's thread root (only while the PR has no thread) and the checklist as its reply, both posted by Heimdall when the repo has an agent room (else the bot posts the flat checklist); enqueue Huginn with validated repro command; enqueue `loki.run_review` |
 | `received` | `intake.done` | any rule fails | `intake_failed` | outbox failed rules; enqueue `heimdall.draft_intake_reply` |
 | `intake_failed` | `pull_request.edited` (also sent for label and assignee changes) | none | `received` | enqueue intake, mark older runs stale |
+| `intake_failed`, `checking`, `card_posted` | `maintainer.recheck` | sender is maintainer | `received` | enqueue intake, mark older runs stale |
 | `checking` | `repro.finished` / `review.finished` | both done | `card_posted` | enqueue `heimdall.build_card` |
 | `checking` | either finished | only one done | `checking` | none |
 | `card_posted` | `maintainer.command` | sender is maintainer | `draft_pending` | room event to Heimdall |
