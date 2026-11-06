@@ -28,6 +28,7 @@ class MattermostRest:
             timeout=timeout,
             transport=transport,
         )
+        self._user_id: str | None = None
 
     async def create_post(
         self,
@@ -61,13 +62,20 @@ class MattermostRest:
         """Add a reaction as the authenticated bot user."""
         await self._request(
             "POST",
-            f"/api/v4/users/me/posts/{post_id}/reactions",
-            json={"user_id": "me", "post_id": post_id, "emoji_name": emoji_name},
+            "/api/v4/reactions",
+            json={
+                "user_id": await self._user_id_for_reactions(),
+                "post_id": post_id,
+                "emoji_name": emoji_name,
+            },
         )
 
     async def remove_reaction(self, post_id: str, emoji_name: str) -> None:
         """Remove the authenticated bot user's reaction from a post."""
-        await self._request("DELETE", f"/api/v4/users/me/posts/{post_id}/reactions/{emoji_name}")
+        await self._request(
+            "DELETE",
+            f"/api/v4/users/me/posts/{post_id}/reactions/{emoji_name}",
+        )
 
     async def get_post(self, post_id: str) -> RoomPost:
         """Fetch one Mattermost post by id."""
@@ -111,6 +119,22 @@ class MattermostRest:
             return _required_text(response.json(), "username")
         except (ValueError, TypeError, KeyError) as error:
             raise SwitchRequestFailed("Switch returned invalid user data") from error
+
+    async def _user_id_for_reactions(self) -> str:
+        """Resolve the authenticated user's id for reaction API calls.
+
+        Mattermost's ``POST /api/v4/reactions`` requires the actual user id;
+        ``me`` is not accepted there.
+        """
+        if self._user_id is None:
+            response = await self._request("GET", "/api/v4/users/me")
+            try:
+                payload = response.json()
+                user_id = _required_text(payload, "id")
+            except (ValueError, TypeError, KeyError) as error:
+                raise SwitchRequestFailed("Switch returned invalid user data") from error
+            self._user_id = user_id
+        return self._user_id
 
     async def aclose(self) -> None:
         """Close the pooled HTTP client."""

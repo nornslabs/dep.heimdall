@@ -24,6 +24,8 @@ class Settings(BaseSettings):
         default_switch_room_id: Mattermost channel newly enabled repos post to (the bot's room).
         default_switch_agent_room_id: Switch room UUID their agents post to; not the same id.
         log_level: Minimum level that gets logged.
+        bridge_webhook_url: Base URL of the bridge's slash-command/action webhook, used for
+            the buttons on rich card replies; unset means plain markdown replies.
     """
 
     model_config = SettingsConfigDict(
@@ -42,6 +44,7 @@ class Settings(BaseSettings):
     default_switch_room_id: str | None = None
     default_switch_agent_room_id: str | None = None
     log_level: LogLevel = "INFO"
+    bridge_webhook_url: str | None = None
 
 
 @lru_cache(maxsize=1)

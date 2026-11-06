@@ -27,6 +27,11 @@ htmlcov/
 # Local agent tooling
 .serena/
 
+# PRDs and followup notes (kept locally, not committed)
+PRD_*.md
+*_features.md
+*_followup*.md
+
 # Mounted secrets (GitHub App key etc.)
 secrets/*
 !secrets/README.md

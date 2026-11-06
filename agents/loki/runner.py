@@ -2,6 +2,7 @@
 
 import asyncio
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
@@ -43,6 +44,11 @@ from heimdall.adapters.github.auth import GitHubAppClients, load_private_key
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.adapters.queue.app import create_queue_app
 from heimdall.adapters.queue.enqueue import LOKI_QUEUE
+from heimdall.adapters.switch.agent import SwitchAgentClient
+from heimdall.adapters.switch.agent.credentials import (
+    load_agent_credentials,
+    switch_api_url,
+)
 from heimdall.modules.review.api import finish_review
 from heimdall.modules.tenancy.api import load_config
 from heimdall.modules.triage.api import get_pr_snapshot
@@ -74,6 +80,7 @@ def register_loki_task(
     sessions: async_sessionmaker[AsyncSession],
     reader: GitHubApiReader,
     model: ChatModel,
+    feedback_client: SwitchAgentClient | None = None,
 ) -> None:
     """Register the review job that runs Loki once per PR head.
 
@@ -82,9 +89,19 @@ def register_loki_task(
         sessions: Tenant-scoped database sessions.
         reader: Authenticated read-only GitHub adapter.
         model: Loki's model; the e2e replay passes a scripted one.
+        feedback_client: SwitchAgentClient for feedback features (typing, reactions).
+            If None, feedback features are disabled.
     """
     register_mention_task(
-        queue_app, MentionDeps(MENTION_AGENT, sessions, reader, lambda: model, guard_act_tools)
+        queue_app,
+        MentionDeps(
+            MENTION_AGENT,
+            sessions,
+            reader,
+            lambda: model,
+            guard_act_tools,
+            poster=feedback_client,
+        ),
     )
 
     @queue_app.task(name="loki.run_review")
@@ -223,6 +240,23 @@ def _instructions() -> str:
     return PROMPT_PATH.read_text(encoding="utf-8")
 
 
+def _build_feedback_client(
+    agent: AgentName, environ: Mapping[str, str] | None = None
+) -> SwitchAgentClient | None:
+    """Build a SwitchAgentClient for feedback features (typing, reactions).
+
+    Returns None if credentials are not configured, allowing graceful degradation.
+    """
+    try:
+        config = load_agent_credentials(
+            agent.value, switch_api_url(environ), rooms=(), environ=environ
+        )
+    except ConfigInvalid:
+        return None
+    # No rooms needed for feedback client - it only makes REST calls
+    return SwitchAgentClient(config, on_message=lambda _: asyncio.sleep(0))
+
+
 async def run_worker() -> None:
     """Consume Loki's review jobs from the shared Postgres queue."""
     from heimdall.shared.logging import configure_logging
@@ -242,7 +276,9 @@ async def run_worker() -> None:
     )
     queue_app = create_queue_app(database_url)
     sessions = make_session_factory(engine)
-    register_loki_task(queue_app, sessions, GitHubApiReader(clients), ai)
+    # Build feedback client for typing/reactions (optional)
+    feedback_client = _build_feedback_client(AgentName.LOKI)
+    register_loki_task(queue_app, sessions, GitHubApiReader(clients), ai, feedback_client)
     try:
         async with queue_app.open_async():
             await run_with_presence(
@@ -254,6 +290,8 @@ async def run_worker() -> None:
     finally:
         await engine.dispose()
         await ai.aclose()
+        if feedback_client:
+            await feedback_client.aclose()
 
 
 def main() -> None:

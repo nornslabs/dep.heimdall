@@ -85,6 +85,42 @@ class SwitchAgentClient:
         """Post ``content`` in ``room_id`` as this agent (see ``AgentPoster.post``)."""
         await self._poster.post(room_id, content)
 
+    async def send_typing(self, channel_id: str) -> None:
+        """Send a typing indicator in ``channel_id`` as this agent."""
+        await self._poster.send_typing(channel_id)
+
+    async def add_reaction(self, post_id: str, emoji_name: str) -> None:
+        """Add a reaction to ``post_id`` as this agent."""
+        await self._poster.add_reaction(post_id, emoji_name)
+
+    async def remove_reaction(self, post_id: str, emoji_name: str) -> None:
+        """Remove a reaction from ``post_id`` as this agent."""
+        await self._poster.remove_reaction(post_id, emoji_name)
+
+    async def post_progress(
+        self,
+        channel_id: str,
+        thread_id: str | None,
+        text: str,
+        *,
+        update_post_id: str | None = None,
+    ) -> str | None:
+        """Post or update a progress message (see ``AgentPoster.post_progress``)."""
+        return await self._poster.post_progress(
+            channel_id, thread_id, text, update_post_id=update_post_id
+        )
+
+    async def post_rich(
+        self,
+        room_id: str,
+        content: str,
+        thread_id: str | None,
+        *,
+        attachments: list[dict[str, object]],
+    ) -> str | None:
+        """Post a rich message with attachments (see ``AgentPoster.post_rich``)."""
+        return await self._poster.post_rich(room_id, content, thread_id, attachments=attachments)
+
     async def aclose(self) -> None:
         """Close the HTTP client."""
         await self._poster.aclose()

@@ -28,7 +28,7 @@ from agents._skills import LOAD_SKILL_TOOL, SkillSet, load_skills
 from agents._toolbox import AgentTool
 from agents.heimdall._approve_message import approve_from_message
 from agents.heimdall._intake_job import run_intake_reply
-from agents.heimdall._message import render_desk_result
+from agents.heimdall._message import rich_attachments_for_result
 from agents.heimdall.agent import run_heimdall
 from agents.heimdall.allowed_tools import ALLOWED_TOOLS
 from agents.heimdall.config import AGENT_NAME, REQUIRED_SKILLS, load_ai_config
@@ -53,6 +53,8 @@ from heimdall.adapters.github.auth import GitHubAppClients, load_private_key
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.adapters.queue.app import create_queue_app
 from heimdall.adapters.queue.enqueue import HEIMDALL_QUEUE
+from heimdall.adapters.switch.agent import SwitchAgentClient
+from heimdall.adapters.switch.agent.credentials import load_agent_credentials, switch_api_url
 from heimdall.modules.desk.api import (
     format_approval_message,
     get_current_draft_in_transaction,
@@ -64,13 +66,32 @@ from heimdall.modules.tenancy.api import repo_maintainers
 from heimdall.modules.triage.api import get_pr_snapshot
 from heimdall.shared.agents import AgentName
 from heimdall.shared.context import TenantCtx, new_request_id
+from heimdall.shared.errors import ConfigInvalid
 from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId
 from heimdall.shared.logging import get_logger
+from heimdall.shared.settings import get_settings
 
 PROMPT_PATH = Path(__file__).with_name("prompt.md")
 
 log = get_logger(__name__)
+
+
+def _build_feedback_client(
+    agent: AgentName, environ: Mapping[str, str] | None = None
+) -> SwitchAgentClient | None:
+    """Build a SwitchAgentClient for feedback features (typing, reactions).
+
+    Returns None if credentials are not configured, allowing graceful degradation.
+    """
+    try:
+        config = load_agent_credentials(
+            agent.value, switch_api_url(environ), rooms=(), environ=environ
+        )
+    except ConfigInvalid:
+        return None
+    # No rooms needed for feedback client - it only makes REST calls
+    return SwitchAgentClient(config, on_message=lambda _: asyncio.sleep(0))
 
 
 def register_heimdall_task(
@@ -78,6 +99,7 @@ def register_heimdall_task(
     sessions: async_sessionmaker[AsyncSession],
     reader: GitHubApiReader,
     model: ChatModel | None = None,
+    feedback_client: SwitchAgentClient | None = None,
 ) -> None:
     """Register the card and command jobs that run Heimdall.
 
@@ -86,6 +108,8 @@ def register_heimdall_task(
         sessions: Tenant-scoped database sessions.
         reader: Authenticated read-only GitHub adapter, used for PR metadata.
         model: Heimdall's model; defaults to AiAdapter built from config.
+        feedback_client: SwitchAgentClient for feedback features (typing, reactions).
+            If None, feedback features are disabled.
     """
     register_mention_task(
         queue_app,
@@ -96,6 +120,7 @@ def register_heimdall_task(
             lambda: model or AiAdapter(load_ai_config()),
             guard_act_tools,
             approve_by_message=_approver(sessions, reader),
+            poster=feedback_client,
         ),
     )
 
@@ -118,19 +143,30 @@ def register_heimdall_task(
         async with unit_of_work(sessions) as session:
             maintainers = await repo_maintainers(session, ctx, job.snapshot.repo_id)
             saved_message = await _saved_message_for(session, ctx, result, job)
+            settings = get_settings()
+            message, attachments = rich_attachments_for_result(
+                result,
+                saved_message,
+                webhook_url=settings.bridge_webhook_url,
+                pr_url=f"https://github.com/{job.repo_full_name}/pull/{job.snapshot.number}",
+                pr_number=job.snapshot.number,
+                rerun_pr_id=pr_id,
+                view_diff_url=f"https://github.com/{job.repo_full_name}/pull/{job.snapshot.number}/files",
+            )
+            payload: dict[str, object] = {
+                "agent": AgentName.HEIMDALL.value,
+                "channel_id": job.agent_room_id,
+                "message": mention_maintainers(message, maintainers),
+                "pr_id": pr_id,
+            }
+            if attachments is not None:
+                payload["attachments"] = attachments
             await write_outbox(
                 session,
                 installation_id=tenant_id,
                 channel="switch",
                 kind="room.message",
-                payload={
-                    "agent": AgentName.HEIMDALL.value,
-                    "channel_id": job.agent_room_id,
-                    "message": mention_maintainers(
-                        render_desk_result(result, saved_message), maintainers
-                    ),
-                    "pr_id": pr_id,
-                },
+                payload=payload,
                 idempotency_key=f"heimdall:{installation_id}:{pr_id}:{head_sha}:card",
             )
 
@@ -170,17 +206,30 @@ def register_heimdall_task(
             return
         async with unit_of_work(sessions) as session:
             saved_message = await _saved_message_for(session, ctx, result, job)
+            settings = get_settings()
+            message, attachments = rich_attachments_for_result(
+                result,
+                saved_message,
+                webhook_url=settings.bridge_webhook_url,
+                pr_url=f"https://github.com/{job.repo_full_name}/pull/{job.snapshot.number}",
+                pr_number=job.snapshot.number,
+                rerun_pr_id=pr_id,
+                view_diff_url=f"https://github.com/{job.repo_full_name}/pull/{job.snapshot.number}/files",
+            )
+            payload: dict[str, object] = {
+                "agent": AgentName.HEIMDALL.value,
+                "channel_id": job.agent_room_id,
+                "message": message,
+                "pr_id": pr_id,
+            }
+            if attachments is not None:
+                payload["attachments"] = attachments
             await write_outbox(
                 session,
                 installation_id=tenant_id,
                 channel="switch",
                 kind="room.message",
-                payload={
-                    "agent": AgentName.HEIMDALL.value,
-                    "channel_id": job.agent_room_id,
-                    "message": render_desk_result(result, saved_message),
-                    "pr_id": pr_id,
-                },
+                payload=payload,
                 idempotency_key=f"heimdall:{installation_id}:{pr_id}:{head_sha}:command:{uuid.uuid4()}",
             )
 
@@ -496,7 +545,11 @@ async def run_worker() -> None:
     )
     queue_app = create_queue_app(database_url)
     sessions = make_session_factory(engine)
-    register_heimdall_task(queue_app, sessions, GitHubApiReader(clients), ai)
+
+    # Build feedback client for typing/reactions (optional)
+    feedback_client = _build_feedback_client(AgentName.HEIMDALL)
+    register_heimdall_task(queue_app, sessions, GitHubApiReader(clients), ai, feedback_client)
+
     try:
         async with queue_app.open_async():
             await run_with_presence(
@@ -508,6 +561,8 @@ async def run_worker() -> None:
     finally:
         await engine.dispose()
         await ai.aclose()
+        if feedback_client:
+            await feedback_client.aclose()
 
 
 def main() -> None:

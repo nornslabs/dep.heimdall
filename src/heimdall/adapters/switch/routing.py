@@ -1,7 +1,7 @@
 """Deliver outbox ``switch`` rows as the agent that wrote them, or as the bot if none did."""
 
 from collections.abc import Mapping
-from typing import Protocol
+from typing import Protocol, cast
 
 from heimdall.adapters.db.outbox.models import OutboxMessage
 from heimdall.adapters.db.outbox.sender import ChannelSender
@@ -23,6 +23,21 @@ class AgentPostPort(Protocol):
 
     async def post_in_thread(self, content: str, thread_id: str | None) -> str:
         """Post ``content`` as a thread root (``thread_id`` None) or reply; return its id."""
+        ...
+
+    async def post_rich(
+        self,
+        room_id: str,
+        content: str,
+        thread_id: str | None,
+        *,
+        attachments: list[dict[str, object]],
+    ) -> str | None:
+        """Post ``content`` with rich ``attachments`` as a thread root or reply; return its id.
+
+        Returns None when the poster cannot render rich messages (no Mattermost bot), so the
+        caller falls back to plain markdown.
+        """
         ...
 
 
@@ -81,15 +96,22 @@ class SwitchRoutingSender:
             await self._send_as_bot(message)
             return
         poster = self._poster_for(message.payload[AGENT_FIELD])
-        room_id, content = _room_and_text(message)
+        room_id, content, attachments = _room_and_text(message)
         pr_id = _pr_id(message)
         if pr_id is None or self._threads is None:
+            # A flat post cannot be threaded; rich formatting needs a thread, so post plain.
             await poster.post(room_id, content)
             return
-        await self._post_in_pr_thread(message, poster, pr_id, content)
+        await self._post_in_pr_thread(message, poster, pr_id, content, attachments, room_id)
 
     async def _post_in_pr_thread(
-        self, message: OutboxMessage, poster: AgentPostPort, pr_id: str, content: str
+        self,
+        message: OutboxMessage,
+        poster: AgentPostPort,
+        pr_id: str,
+        content: str,
+        attachments: list[dict[str, object]] | None,
+        room_id: str,
     ) -> None:
         """Post into the PR's thread, opening it first when this row is the root.
 
@@ -97,6 +119,10 @@ class SwitchRoutingSender:
         outbox tries it again shortly instead of posting it outside the thread. A root that
         finds its thread already open becomes a reply: a later push re-runs intake, and its
         checklist belongs in the same thread.
+
+        When ``attachments`` were supplied the post is rendered as a rich Mattermost card;
+        when the bot cannot render rich messages (no Mattermost bot configured) it falls back
+        to the plain markdown message.
         """
         threads = self._threads
         if threads is None:
@@ -104,7 +130,13 @@ class SwitchRoutingSender:
         thread_id = await threads.get(message.installation_id, pr_id)
         if thread_id is None and message.payload.get(THREAD_ROLE_FIELD) != ROOT_ROLE:
             raise SwitchUnavailable("the pull request's thread is not open yet")
-        event_id = await poster.post_in_thread(content, thread_id)
+        if attachments is not None:
+            event_id = await poster.post_rich(room_id, content, thread_id, attachments=attachments)
+            if event_id is None:
+                # No Mattermost bot configured: the card cannot render, post markdown instead.
+                event_id = await poster.post_in_thread(content, thread_id)
+        else:
+            event_id = await poster.post_in_thread(content, thread_id)
         if thread_id is None:
             await threads.save(message.installation_id, pr_id, event_id)
 
@@ -126,15 +158,22 @@ class SwitchRoutingSender:
         return poster
 
 
-def _room_and_text(message: OutboxMessage) -> tuple[str, str]:
-    """Return the room id and text of an agent post, failing if either is missing."""
+def _room_and_text(
+    message: OutboxMessage,
+) -> tuple[str, str, list[dict[str, object]] | None]:
+    """Return the room id, text and optional attachments of an agent post."""
     room_id = message.payload.get("channel_id")
     content = message.payload.get("message")
     if not isinstance(room_id, str) or not room_id:
         raise SwitchRequestFailed("Switch post payload has no channel_id")
     if not isinstance(content, str) or not content:
         raise SwitchRequestFailed("Switch post payload has no message")
-    return room_id, content
+    attachments = message.payload.get("attachments")
+    if not isinstance(attachments, list):
+        attachments = None
+    else:
+        attachments = cast(list[dict[str, object]], attachments)
+    return room_id, content, attachments
 
 
 def _pr_id(message: OutboxMessage) -> str | None:

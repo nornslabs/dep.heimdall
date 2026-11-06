@@ -4,7 +4,9 @@ The reply goes to the room the message came from, into the PR's thread when ther
 The idempotency key is the message and agent, so a redelivered job never posts twice.
 """
 
+import asyncio
 import uuid
+from contextlib import asynccontextmanager, suppress
 
 from procrastinate import App
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -16,11 +18,36 @@ from agents._mention import AGENT_MENTION_TASK
 from agents._mention_ports import DbMentionPorts, MentionDeps
 from heimdall.adapters.db.outbox.writer import outbox_message_exists, write_outbox
 from heimdall.adapters.db.unit_of_work import unit_of_work
+from heimdall.adapters.switch.agent.client import SwitchAgentClient
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.ids import InstallationId
 from heimdall.shared.logging import get_logger
 
 log = get_logger(__name__)
+
+_TYPING_REFRESH_INTERVAL = 4.0  # seconds
+
+
+@asynccontextmanager
+async def _typing_indicator(poster: SwitchAgentClient | None, channel_id: str):
+    """Context manager that sends typing indicator and refreshes it every 4 seconds."""
+    if not poster:
+        yield
+        return
+    stop = asyncio.Event()
+
+    async def refresh():
+        while not stop.is_set():
+            await poster.send_typing(channel_id)
+            with suppress(TimeoutError):
+                await asyncio.wait_for(stop.wait(), _TYPING_REFRESH_INTERVAL)
+
+    task = asyncio.create_task(refresh())
+    try:
+        yield
+    finally:
+        stop.set()
+        await task
 
 
 def register_mention_task(queue_app: App, deps: MentionDeps) -> None:
@@ -59,14 +86,42 @@ def register_mention_task(queue_app: App, deps: MentionDeps) -> None:
         if channel is None:
             log.info("mention_dropped_no_room", **ids)
             return
+
         ports = DbMentionPorts(deps, ctx, sender_role, sender)
         question = Question(pr_ref=pr_ref, sender=sender, text=text)
         ai = deps.model()
+
+        # Phase 1: Reaction ACK + Typing Indicator
+        # React with 👀 immediately to acknowledge receipt
+        await ports.add_reaction(message_id, "eyes")
+        # Phase 2: one updatable progress post for the whole job
+        progress_id = await ports.post_progress(channel, thread_id, "🔄 Looking into this…")
+
         answer = None
-        if deps.approve_by_message is not None:
-            answer = await deps.approve_by_message(ports, ctx, ai, question)
-        if answer is None:
-            answer = await answer_mention(deps.agent, ports, ai, question)
+        try:
+            # Start typing indicator and keep it refreshed during processing
+            async with _typing_indicator(deps.poster, channel):
+                if deps.approve_by_message is not None:
+                    answer = await deps.approve_by_message(ports, ctx, ai, question)
+                if answer is None:
+                    answer = await answer_mention(deps.agent, ports, ai, question)
+
+            # Success: finish the progress post, replace 👀 with ✅
+            if progress_id is not None:
+                await ports.post_progress(channel, thread_id, "✅ Done", update_post_id=progress_id)
+            await ports.remove_reaction(message_id, "eyes")
+            await ports.add_reaction(message_id, "white_check_mark")
+
+        except Exception:
+            # Failure: finish the progress post, replace 👀 with ❌
+            if progress_id is not None:
+                await ports.post_progress(
+                    channel, thread_id, "❌ Failed", update_post_id=progress_id
+                )
+            await ports.remove_reaction(message_id, "eyes")
+            await ports.add_reaction(message_id, "x")
+            raise
+
         await _queue_reply(deps.sessions, ctx, own_name, channel, key, answer)
         log.info("mention_answered", pr_ref=pr_ref, **ids)
 

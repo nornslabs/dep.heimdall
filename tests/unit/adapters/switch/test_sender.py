@@ -115,6 +115,10 @@ async def test_room_port_opens_threads_mentions_roles_and_reacts() -> None:
         requests.append(request)
         if request.url.path == "/api/v4/posts":
             return httpx.Response(201, json={"id": f"post-{len(requests)}"})
+        if request.url.path == "/api/v4/users/me":
+            return httpx.Response(200, json={"id": "user-1"})
+        if request.url.path == "/api/v4/reactions":
+            return httpx.Response(200, json={})
         return httpx.Response(200, json={})
 
     sender = SwitchSender(
@@ -136,12 +140,13 @@ async def test_room_port_opens_threads_mentions_roles_and_reacts() -> None:
         "/api/v4/posts",
         "/api/v4/posts",
         "/api/v4/posts",
-        "/api/v4/users/me/posts/post-2/reactions",
+        "/api/v4/users/me",
+        "/api/v4/reactions",
     ]
     assert json.loads(requests[1].content)["root_id"] == root_id
     assert json.loads(requests[2].content)["message"] == "@Huginn Please reproduce"
-    assert json.loads(requests[3].content) == {
-        "user_id": "me",
+    assert json.loads(requests[4].content) == {
+        "user_id": "user-1",
         "post_id": "post-2",
         "emoji_name": "white_check_mark",
     }

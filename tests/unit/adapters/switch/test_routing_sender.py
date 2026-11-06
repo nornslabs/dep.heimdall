@@ -26,6 +26,17 @@ class RecordingPoster:
     async def post_in_thread(self, content: str, thread_id: str | None) -> str:
         raise AssertionError("a row with no pr_id must not be threaded")
 
+    async def post_rich(
+        self,
+        room_id: str,
+        content: str,
+        thread_id: str | None,
+        *,
+        attachments: list[dict[str, object]],
+    ) -> str | None:
+        """Protocol compliance: flat rows never reach rich posting."""
+        return "sw_rich"
+
 
 class RecordingBot:
     """Stands in for the Mattermost bot sender."""

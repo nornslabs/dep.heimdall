@@ -94,12 +94,25 @@ def load_agent_credentials(
     id_name, key_name = credential_names(agent)
     agent_id = _required(env, id_name)
     api_key = _required(env, key_name)
+
+    # Optional Mattermost credentials for feedback features (typing, reactions, progress)
+    mm_token_name = f"{ENV_PREFIX}_{agent.upper()}_MM_BOT_TOKEN"
+    mm_team_name = f"{ENV_PREFIX}_{agent.upper()}_MM_TEAM_ID"
+    mattermost_bot_token = env.get(mm_token_name, "").strip() or None
+    mattermost_team_id = env.get(mm_team_name, "").strip() or None
+    # HEIMDALL_SWITCH_URL is the Mattermost root (despite the name); agents reach Mattermost
+    # directly for REST feedback calls, not through Switch.
+    mattermost_base_url = env.get("HEIMDALL_SWITCH_URL", "").strip() or None
+
     return AgentConnectionConfig(
         base_url=base_url,
         agent_id=agent_id,
         api_key=api_key,
         rooms=rooms,
         connection_id=connection_id_for(agent_id),
+        mattermost_bot_token=mattermost_bot_token,
+        mattermost_team_id=mattermost_team_id,
+        mattermost_base_url=mattermost_base_url,
     )
 
 
