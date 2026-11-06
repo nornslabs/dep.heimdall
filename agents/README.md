@@ -210,14 +210,15 @@ key `mention:<agent>:<message_id>`, so a redelivered job never posts twice.
   check (`submit_intent`) that sees only the maintainer's message agrees it asks to act. The
   ask run has read PR content, so its `wants_action` alone could come from text in the PR.
   Act mode is a second run with
-  `ACT_TOOLS`: the ask tools plus one write (`start_repro`, `save_findings` or `save_draft`),
+  `ACT_TOOLS`: the ask tools plus one write (`start_repro`, `save_findings`, `save_draft` or, for Heimdall, `recheck_intake`),
   wrapped in the agent's usual guard (`<agent>/mention.py: guard_act_tools`). The model can
   ask to act; only code opens the tools. Nothing reaches GitHub without the normal 👍.
 - **Evidence.** An in-scope `AgentReply` needs at least one `path:line`, `finding:<id>` or
   `repro:<id>` entry or it fails validation. `_evidence.EvidenceTracker` records what this
   run's tools returned and which writes ran; `reply_problems` refuses evidence no tool returned,
   a redirect to itself, any action in ask mode, and an action that does not match what ran.
-  These go back as the one repair round.
+  These go back as the one repair round. A reply that reports `intake_rerun` needs no
+  citation, since that tool returns nothing to cite; the tool having run is the evidence.
 - **Pinned ids.** Every tool in a mention run gets the mention's own `installation_id`,
   `pr_id`, `repo_id`, `repo_full_name`, `pr_number` and `head_sha`, whatever the model passed.
 - **Refused writes.** A guard's `error: ...` result is not recorded as seen or as an action.

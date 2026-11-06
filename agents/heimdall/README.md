@@ -77,3 +77,13 @@ the maintainer's own message (recorded as `via="message"`, still through `record
 the maintainer list and draft hash are checked). A merge is never approved this way: it waits for
 a 👍 or an "approve" reply on its exact text. The tool result carries a `status` so the reply
 reports what really happened.
+
+### Rechecking intake
+
+`recheck_intake` is a fifth act-mode tool. A maintainer asks in any wording ("recheck", "run it
+again", "look at this once more") and the agent infers the intent; there is no command to type.
+The tool asks triage (`triage.api.request_recheck`), whose state machine moves the PR from
+`intake_failed`, `checking` or `card_posted` back to `received` and queues intake on the stored
+head. Triage refuses a closed PR, one with a draft awaiting approval, and one whose intake is
+already queued. `_recheck_guard.py` turns a refusal into an `error:` result, so the reply can
+only say a rerun happened when one did. Repro reruns still belong to Huginn.

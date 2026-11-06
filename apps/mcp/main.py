@@ -10,6 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from apps.mcp._action_tools import register_action_draft_tools
 from apps.mcp._memory_tools import register_memory_tools
+from apps.mcp._recheck_tool import register_recheck_tool
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.modules.approval.api import approve_by_policy
@@ -60,6 +61,7 @@ def create_server(
             "draft_reopen",
             "draft_merge",
             "draft_ask_contributor",
+            "recheck_intake",
             "create_mechanical_task",
             "recall",
         },
@@ -350,6 +352,7 @@ def create_server(
 
         registered_tools.update({"list_findings", "save_card", "save_draft"})
         registered_tools |= register_action_draft_tools(server, sessions)
+        registered_tools |= register_recheck_tool(server, sessions)
 
     @server.tool(
         name="create_mechanical_task",

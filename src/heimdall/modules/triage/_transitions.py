@@ -35,6 +35,10 @@ def _rule(
 
 
 _CHECKING: frozenset[PrState | None] = frozenset({PrState.CHECKING})
+_RECHECKABLE: frozenset[PrState | None] = frozenset(
+    {PrState.INTAKE_FAILED, PrState.CHECKING, PrState.CARD_POSTED}
+)
+"""States a maintainer may restart intake from; not one that has a draft awaiting approval."""
 _BOTH_DONE = (g.BOTH_CHECKS_DONE,)
 _ONE_PENDING = (g.ONE_CHECK_PENDING,)
 _TO_CARD = (Effect.ROOM_READY_FOR_CARD,)
@@ -63,6 +67,8 @@ TRANSITIONS: tuple[Rule, ...] = (
           (Effect.ENQUEUE_INTAKE, Effect.MARK_OLDER_RUNS_STALE)),
     _rule({PrState.INTAKE_FAILED}, EventKind.PR_EDITED, (), PrState.RECEIVED,
           (Effect.ENQUEUE_INTAKE, Effect.MARK_OLDER_RUNS_STALE)),
+    _rule(_RECHECKABLE, EventKind.MAINTAINER_RECHECK, (g.SENDER_IS_MAINTAINER,),
+          PrState.RECEIVED, (Effect.ENQUEUE_INTAKE, Effect.MARK_OLDER_RUNS_STALE)),
     _rule(OPEN_STATES, EventKind.PR_CLOSED, (), PrState.CLOSED,
           (Effect.CANCEL_JOBS, Effect.ROOM_NOTE)),
 )  # fmt: skip

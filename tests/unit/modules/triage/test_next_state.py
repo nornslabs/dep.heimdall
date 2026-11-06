@@ -235,3 +235,35 @@ def test_every_state_is_reachable_from_opened() -> None:
         reachable.add(rule.to)
 
     assert reachable == set(PrState)
+
+
+# --- maintainer recheck ---------------------------------------------------------------
+
+RECHECKABLE_STATES = [PrState.INTAKE_FAILED, PrState.CHECKING, PrState.CARD_POSTED]
+
+
+@pytest.mark.parametrize("state", RECHECKABLE_STATES)
+def test_maintainer_recheck_reruns_intake_and_stales_older_runs(state: PrState) -> None:
+    result = next_state(state, EventKind.MAINTAINER_RECHECK, Facts(sender_is_maintainer=True))
+
+    assert result == Transition(
+        PrState.RECEIVED, (Effect.ENQUEUE_INTAKE, Effect.MARK_OLDER_RUNS_STALE)
+    )
+
+
+@pytest.mark.parametrize("state", RECHECKABLE_STATES)
+def test_recheck_from_a_non_maintainer_is_rejected(state: PrState) -> None:
+    result = next_state(state, EventKind.MAINTAINER_RECHECK, Facts(sender_is_maintainer=False))
+
+    assert result == Rejected(RejectReason.NOT_A_MAINTAINER)
+
+
+@pytest.mark.parametrize(
+    "state", [None, PrState.RECEIVED, PrState.DRAFT_PENDING, PrState.APPROVED, PrState.CLOSED]
+)
+def test_recheck_is_refused_where_it_would_disturb_work_in_flight(
+    state: PrState | None,
+) -> None:
+    result = next_state(state, EventKind.MAINTAINER_RECHECK, Facts(sender_is_maintainer=True))
+
+    assert result == Rejected(RejectReason.NOT_ALLOWED_FROM_STATE)

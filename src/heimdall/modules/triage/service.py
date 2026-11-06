@@ -290,7 +290,7 @@ async def on_step_done_in_transaction(
         thread_heading=thread_heading,
         repro_test_cmd=repro_test_cmd,
     )
-    transition = await _apply_existing_event(session, ctx, pr, event)
+    transition = await apply_existing_event(session, ctx, pr, event)
     if isinstance(transition, Transition):
         await mark_check_done(session, ctx, pr_id, kind, head_sha)
     return transition
@@ -359,7 +359,7 @@ async def _create_pr(
     return transition
 
 
-async def _apply_existing_event(
+async def apply_existing_event(
     session: AsyncSession,
     ctx: TenantCtx,
     pr: Pr,

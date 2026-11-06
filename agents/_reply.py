@@ -21,13 +21,17 @@ NO_PR_REPLY: Final = "Mention me in a PR's thread and I'll answer about that PR.
 FAILED_REPLY: Final = "I couldn't produce a grounded answer to that. Try asking more narrowly."
 ACT_DENIED_REPLY: Final = "Only maintainers can ask me to act; I've answered without acting."
 
-ActionTaken = Literal["none", "repro_started", "findings_saved", "draft_saved"]
+ActionTaken = Literal["none", "repro_started", "findings_saved", "draft_saved", "intake_rerun"]
 AgentHandle = Literal["huginn", "loki", "heimdall"]
+
+SELF_EVIDENT_ACTIONS: Final[frozenset[ActionTaken]] = frozenset({"intake_rerun"})
+"""Actions whose tool returns nothing a reply could cite; the tool having run is the evidence."""
 
 ACTION_DONE: Final[Mapping[ActionTaken, str]] = {
     "repro_started": "started a repro",
     "findings_saved": "saved findings",
     "draft_saved": "saved a draft for your approval",
+    "intake_rerun": "re-ran intake",
 }
 """How a reply names a write that ran, when the model could not summarise it."""
 
@@ -76,15 +80,20 @@ class AgentReply(BaseModel):
     def _check_in_scope(self) -> Self:
         """An in-scope reply answers, cites evidence, and redirects nowhere.
 
-        A request to act is not a claim about the PR, so it may come without evidence.
+        A request to act is not a claim about the PR, so it may come without evidence. Nor is
+        a self-evident action: ``reply_problems`` still refuses it unless that tool ran.
         """
         if self.redirect_to is not None:
             raise ValueError("redirect_to must be null when in_scope is true")
         if not self.answer.strip():
             raise ValueError("answer is required when in_scope is true")
-        if not self.evidence and not self.wants_action:
+        if not self.evidence and not self.wants_action and not self._acted_self_evidently():
             raise ValueError("evidence: an answer about the PR needs at least one entry")
         return self
+
+    def _acted_self_evidently(self) -> bool:
+        """Say whether the reply reports an action that leaves nothing to cite."""
+        return self.action_taken in SELF_EVIDENT_ACTIONS
 
     def filtered(self, clean: Callable[[str], str]) -> Self:
         """Return a copy with the shared tone filter applied to the answer.
