@@ -67,5 +67,5 @@ A check counts only while its stored head equals `prs.head_sha`, so a push makes
 
 ## Related documentation
 
-- `docs/how-it-works.md.triage.md` — the full transition table and rejection rules.
+- `docs/triage-how-it-works.md` — the full transition table and rejection rules.
 - `docs/architecture.md` — the state machine is owned by `triage.domain.next_state`.
