@@ -25,9 +25,10 @@ from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.modules.tenancy.api import get_tenant, on_installation_event
 from heimdall.modules.triage.api import EventKind, Facts, PrEvent, handle_event
+from heimdall.shared.errors import AiUnavailable
 from heimdall.shared.ids import InstallationId, RepoId
 from tests.integration.db.installation_helpers import created_installation
-from tests.unit.agents.scripted_ai import ScriptedAi, tool_reply
+from tests.unit.agents.scripted_ai import ScriptedAi, text_reply, tool_reply
 
 pytestmark = pytest.mark.integration
 
@@ -156,7 +157,7 @@ async def test_a_mention_for_an_unknown_pr_is_not_threaded_under_it(
 ) -> None:
     installation_id, _pr_id = await _open_pr(sessions, engine)
     message_id = f"{MESSAGE_ID_PREFIX}{uuid.uuid4().hex}"
-    queue_app = _loki_task(sessions, ScriptedAi([]))
+    queue_app = _loki_task(sessions, ScriptedAi([AiUnavailable("down")]))
 
     await _run(queue_app, installation_id, str(uuid.uuid4()), message_id)
 
@@ -165,17 +166,20 @@ async def test_a_mention_for_an_unknown_pr_is_not_threaded_under_it(
     assert "pr_id" not in row.payload
 
 
-async def test_a_mention_outside_a_pr_thread_gets_the_fixed_line_without_a_model_call(
+async def test_a_mention_outside_a_pr_thread_gets_a_model_written_reply_without_tools(
     sessions: async_sessionmaker[AsyncSession], engine: AsyncEngine
 ) -> None:
     installation_id, _pr_id = await _open_pr(sessions, engine)
     message_id = f"{MESSAGE_ID_PREFIX}{uuid.uuid4().hex}"
-    ai = ScriptedAi([])
+    ai = ScriptedAi([text_reply("Doing well! Mention me in a PR thread and I'll take a look.")])
     queue_app = _loki_task(sessions, ai)
 
     await _run(queue_app, installation_id, None, message_id)
 
     (row,) = await _replies(sessions, message_id)
-    assert row.payload["message"] == f"Loki: {NO_PR_REPLY}"
+    assert (
+        row.payload["message"]
+        == "Loki: Doing well! Mention me in a PR thread and I'll take a look."
+    )
     assert "pr_id" not in row.payload
-    assert ai.requests == []
+    assert all(tools == () for _messages, tools, _choice in ai.requests)

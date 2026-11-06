@@ -16,7 +16,8 @@ from agents._toolbox import AgentTool
 from agents.huginn.mention import MENTION_AGENT as HUGINN
 from agents.loki.mention import MENTION_AGENT as LOKI
 from heimdall.adapters.ai import ChatResponse, ToolCall, ToolSpec
-from tests.unit.agents.scripted_ai import ScriptedAi, tool_reply
+from heimdall.shared.errors import AiUnavailable
+from tests.unit.agents.scripted_ai import ScriptedAi, text_reply, tool_reply
 
 PR = MentionPr(
     installation_id=7,
@@ -231,22 +232,33 @@ async def test_a_write_that_ran_is_reported_even_when_the_act_run_fails() -> Non
     assert FAILED_REPLY not in answer.text
 
 
-async def test_mention_without_pr_gets_fixed_line_without_model_call() -> None:
-    ai = ScriptedAi([])
+async def test_mention_without_pr_is_answered_by_the_model_without_tools() -> None:
+    ai = ScriptedAi([text_reply("Doing well, thanks! Mention me in a PR thread and I'll dig in.")])
+
+    answer = await _huginn(FakePorts(), ai, "how are you?", pr_ref=None)
+
+    assert answer == MentionAnswer(
+        "Huginn: Doing well, thanks! Mention me in a PR thread and I'll dig in.", pr_id=None
+    )
+    (_messages, tools, choice) = ai.requests[0]
+    assert tools == ()
+    assert choice == "none"
+
+
+async def test_mention_without_pr_falls_back_to_fixed_line_when_the_model_fails() -> None:
+    ai = ScriptedAi([AiUnavailable("down")])
 
     answer = await _huginn(FakePorts(), ai, "hi", pr_ref=None)
 
     assert answer == MentionAnswer(f"Huginn: {NO_PR_REPLY}", pr_id=None)
-    assert ai.requests == []
 
 
-async def test_mention_for_an_unknown_pr_is_not_threaded_and_calls_no_model() -> None:
-    ai = ScriptedAi([])
+async def test_mention_for_an_unknown_pr_is_not_threaded() -> None:
+    ai = ScriptedAi([text_reply("Hey! Point me at a PR thread.")])
 
     answer = await _huginn(FakePorts(), ai, "hi", pr_ref="gone")
 
-    assert answer == MentionAnswer(f"Huginn: {NO_PR_REPLY}", pr_id=None)
-    assert ai.requests == []
+    assert answer == MentionAnswer("Huginn: Hey! Point me at a PR thread.", pr_id=None)
 
 
 async def test_a_resolved_pr_is_named_on_the_answer_so_the_reply_threads() -> None:
