@@ -42,6 +42,7 @@ class AgentPoster:
                 timeout=POST_TIMEOUT_SECONDS,
                 transport=transport,
             )
+        self._mm_user_id: str | None = None
 
     async def post(self, room_id: str, content: str) -> None:
         """Post ``content`` to ``room_id`` as this agent.
@@ -131,7 +132,12 @@ class AgentPoster:
         try:
             url = f"{base.rstrip('/')}/api/v4/reactions"
             await self._mm_client.post(
-                url, json={"user_id": "me", "post_id": post_id, "emoji_name": emoji_name}
+                url,
+                json={
+                    "user_id": await self._mm_user_id_for_reactions(),
+                    "post_id": post_id,
+                    "emoji_name": emoji_name,
+                },
             )
         except Exception:
             pass
@@ -150,10 +156,32 @@ class AgentPoster:
         base = self._config.mattermost_base_url  # pyright: ignore[reportOptionalMemberAccess]
         assert base is not None
         try:
-            url = f"{base.rstrip('/')}/api/v4/posts/{post_id}/reactions/{emoji_name}"
+            url = f"{base.rstrip('/')}/api/v4/users/me/posts/{post_id}/reactions/{emoji_name}"
             await self._mm_client.delete(url)
         except Exception:
             pass
+
+    async def _mm_user_id_for_reactions(self) -> str:
+        """Resolve the authenticated bot's user id for reaction API calls.
+
+        Mattermost's ``POST /api/v4/reactions`` requires the actual user id;
+        ``me`` is not accepted there.
+        """
+        if self._mm_user_id is not None:
+            return self._mm_user_id
+        assert self._mm_client is not None
+        response = await self._mm_client.get(
+            f"{self._config.mattermost_base_url.rstrip('/')}/api/v4/users/me"  # pyright: ignore[reportOptionalMemberAccess]
+        )
+        try:
+            payload = cast(dict[str, object], response.json())
+        except ValueError as error:
+            raise SwitchRequestFailed("Switch returned invalid user data") from error
+        user_id = payload.get("id")
+        if not isinstance(user_id, str) or not user_id:
+            raise SwitchRequestFailed("Switch returned invalid user data")
+        self._mm_user_id = user_id
+        return user_id
 
     async def post_progress(
         self,
