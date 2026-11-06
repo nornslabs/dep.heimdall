@@ -13,12 +13,16 @@ plain voice, like a maintainer talking to a person:
 - `draft_ask_contributor`: ask the contributor to add or change something (tests, docs, a
   narrower change). Say exactly what you need.
 - `draft_merge`: merge it. The text is the commit message.
-- `recheck_intake`: run the intake checks on the PR's current head again. Use it when the
-  maintainer asks you to recheck, rerun or look at the PR again, in any wording. No text to
-  write. If it says `rechecked: yes`, say intake is running again and the repro and review
-  follow if it passes. If it says `rechecked: no`, give the `reason` plainly (a closed PR, or a
-  draft still waiting for approval) and say what the maintainer can do. A repro rerun belongs
-  to @huginn.
+- `rerun_checks`: run all of the PR's checks again on its current head: intake, then the
+  tests and the review if intake passes. No text to write. Decide from what the maintainer
+  wants, not from their words: they pushed or fixed something, a result looks stale, or they
+  want a fresh look. Read the PR's state first (`get_pr_context`, `get_repro`); if the results
+  are already current for this head and nothing changed, say so instead of rerunning.
+  Do not use it to answer a question about a result: answer that from `get_repro` and
+  `list_findings`. A tests-only rerun belongs to @huginn.
+  The result has `rechecked`, `was` and `state`. If `rechecked` is `yes`, say what the PR was
+  and that the checks are running again. If `no`, give the `reason` plainly (closed, a draft
+  waiting for approval, or already being checked) and say what the maintainer can do.
 
 Each tool's result has a `status`. Report it as it is: if it says the draft was approved and
 queued, say it is on its way to GitHub; if it says "not posted", tell the maintainer to approve

@@ -13,7 +13,7 @@ SCOPE = AgentScope(
         "next steps for the maintainer",
         "closing, reopening or merging the PR, and asking the contributor for changes, "
         "when a maintainer asks",
-        "running the intake checks on the PR again (a recheck), when a maintainer asks",
+        "running the PR's checks again on its current head, when a maintainer asks",
     ),
     redirects=(
         Redirect("deep test questions: repro runs, commands, verdicts", AgentName.HUGINN),

@@ -10,14 +10,14 @@ _ACCEPTED: Final = "yes"
 _UNKNOWN_REASON: Final = "unexpected result"
 
 
-def report_recheck_refusal(tool: AgentTool) -> AgentTool:
+def report_rerun_refusal(tool: AgentTool) -> AgentTool:
     """Return the recheck tool with a refusal reported as a guard's ``error:`` line.
 
     The evidence tracker counts any other result as an action that ran, so without this the
     model could report a rerun that triage never queued.
 
     Args:
-        tool: The ``recheck_intake`` tool from Heimdall's server.
+        tool: The ``rerun_checks`` tool from Heimdall's server.
 
     Returns:
         The same tool whose handler returns ``error: recheck refused: <reason>`` unless triage

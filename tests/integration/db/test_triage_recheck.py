@@ -87,19 +87,23 @@ async def test_the_recheck_tool_on_heimdalls_server_queues_intake(
     server = create_server(sessions, cast(GitHubApiReader, object()), agent_name="heimdall")
 
     accepted = await McpToolClient(server).call(
-        "recheck_intake",
+        "rerun_checks",
         installation_id=ctx.installation_id,
         pr_id=str(pr_id),
         repo_full_name=REPO_FULL_NAME,
     )
 
-    assert accepted == {"rechecked": "yes", "state": "received"}
+    assert accepted == {"rechecked": "yes", "was": "intake_failed", "state": "received"}
     assert (await _queued_tasks(engine, pr_id)).count("intake.run_intake") == 2
     refused = await McpToolClient(server).call(
-        "recheck_intake",
+        "rerun_checks",
         installation_id=ctx.installation_id,
         pr_id=str(pr_id),
         repo_full_name=REPO_FULL_NAME,
     )
-    assert refused == {"rechecked": "no", "reason": "not_allowed_from_state"}
+    assert refused == {
+        "rechecked": "no",
+        "reason": "not_allowed_from_state",
+        "was": "received",
+    }
     assert (await _queued_tasks(engine, pr_id)).count("intake.run_intake") == 2

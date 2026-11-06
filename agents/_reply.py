@@ -21,17 +21,17 @@ NO_PR_REPLY: Final = "Mention me in a PR's thread and I'll answer about that PR.
 FAILED_REPLY: Final = "I couldn't produce a grounded answer to that. Try asking more narrowly."
 ACT_DENIED_REPLY: Final = "Only maintainers can ask me to act; I've answered without acting."
 
-ActionTaken = Literal["none", "repro_started", "findings_saved", "draft_saved", "intake_rerun"]
+ActionTaken = Literal["none", "repro_started", "findings_saved", "draft_saved", "checks_rerun"]
 AgentHandle = Literal["huginn", "loki", "heimdall"]
 
-SELF_EVIDENT_ACTIONS: Final[frozenset[ActionTaken]] = frozenset({"intake_rerun"})
+SELF_EVIDENT_ACTIONS: Final[frozenset[ActionTaken]] = frozenset({"checks_rerun"})
 """Actions whose tool returns nothing a reply could cite; the tool having run is the evidence."""
 
 ACTION_DONE: Final[Mapping[ActionTaken, str]] = {
     "repro_started": "started a repro",
     "findings_saved": "saved findings",
     "draft_saved": "saved a draft for your approval",
-    "intake_rerun": "re-ran intake",
+    "checks_rerun": "re-ran the checks",
 }
 """How a reply names a write that ran, when the model could not summarise it."""
 

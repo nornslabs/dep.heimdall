@@ -28,7 +28,7 @@ ACTION_FOR_TOOL: Final[Mapping[str, ActionTaken]] = {
     "draft_reopen": "draft_saved",
     "draft_merge": "draft_saved",
     "draft_ask_contributor": "draft_saved",
-    "recheck_intake": "intake_rerun",
+    "rerun_checks": "checks_rerun",
 }
 """The write tools act mode may open, and what the reply must report after each one runs."""
 
