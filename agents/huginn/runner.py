@@ -1,6 +1,7 @@
 """Procrastinate worker for ready-for-reproduction Huginn jobs."""
 
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
@@ -32,12 +33,15 @@ from heimdall.adapters.github.auth import GitHubAppClients, load_private_key
 from heimdall.adapters.github.reader import GitHubApiReader
 from heimdall.adapters.queue.app import create_queue_app
 from heimdall.adapters.queue.enqueue import HUGINN_QUEUE
+from heimdall.adapters.switch.agent import SwitchAgentClient
+from heimdall.adapters.switch.agent.credentials import load_agent_credentials, switch_api_url
 from heimdall.modules.tenancy.api import load_config
 from heimdall.modules.triage.api import get_pr_snapshot
 from heimdall.shared.agents import AgentName
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId
+from heimdall.shared.errors import ConfigInvalid
 from heimdall.shared.logging import get_logger
 
 PROMPT_PATH = Path(__file__).with_name("prompt.md")
@@ -45,11 +49,25 @@ PROMPT_PATH = Path(__file__).with_name("prompt.md")
 log = get_logger(__name__)
 
 
+def _build_feedback_client(agent: AgentName, environ: Mapping[str, str] | None = None) -> SwitchAgentClient | None:
+    """Build a SwitchAgentClient for feedback features (typing, reactions).
+
+    Returns None if credentials are not configured, allowing graceful degradation.
+    """
+    try:
+        config = load_agent_credentials(agent.value, switch_api_url(environ), rooms=(), environ=environ)
+    except ConfigInvalid:
+        return None
+    # No rooms needed for feedback client - it only makes REST calls
+    return SwitchAgentClient(config, on_message=lambda _: None)
+
+
 def register_huginn_task(
     queue_app: App,
     sessions: async_sessionmaker[AsyncSession],
     reader: GitHubApiReader,
     model: ChatModel,
+    feedback_client: SwitchAgentClient | None = None,
 ) -> None:
     """Register the ready-for-reproduction job that lets Huginn test one PR head.
 
@@ -58,9 +76,14 @@ def register_huginn_task(
         sessions: Tenant-scoped database sessions.
         reader: Authenticated read-only GitHub adapter.
         model: Huginn's model; the e2e replay passes a scripted one.
+        feedback_client: SwitchAgentClient for feedback features (typing, reactions).
+            If None, feedback features are disabled.
     """
     register_mention_task(
-        queue_app, MentionDeps(MENTION_AGENT, sessions, reader, lambda: model, guard_act_tools)
+        queue_app,
+        MentionDeps(
+            MENTION_AGENT, sessions, reader, lambda: model, guard_act_tools, poster=feedback_client
+        ),
     )
 
     @queue_app.task(name="huginn.run_repro")

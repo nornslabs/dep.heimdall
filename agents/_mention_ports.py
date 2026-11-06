@@ -63,6 +63,10 @@ type ApproveByMessage = Callable[
 or None to let the normal ask/act conversation handle it."""
 
 
+from heimdall.adapters.switch.agent.client import SwitchAgentClient
+
+# ... existing imports ...
+
 @dataclass(frozen=True)
 class MentionDeps:
     """Everything one agent's ``agent.mention`` task needs, built once by its runner.
@@ -75,6 +79,8 @@ class MentionDeps:
         guard_act_tools: Puts the agent's guard on its write tool in act mode.
         approve_by_message: Optional first look at each mention, for an agent whose drafts a
             maintainer approves in words (Heimdall).
+        poster: Switch agent client for feedback features (typing, reactions). Optional; if
+            None, feedback features are disabled.
     """
 
     agent: MentionAgent
@@ -83,6 +89,7 @@ class MentionDeps:
     model: Callable[[], ChatModel]
     guard_act_tools: GuardActTools
     approve_by_message: ApproveByMessage | None = None
+    poster: SwitchAgentClient | None = None
 
 
 class DbMentionPorts:
@@ -103,6 +110,38 @@ class DbMentionPorts:
         self._ctx = ctx
         self._sender_role = sender_role
         self._sender = sender
+
+    # Feedback features (Phase 1)
+
+    async def send_typing(self, channel_id: str) -> None:
+        """Send a typing indicator in ``channel_id``. No-op if not configured."""
+        if self._deps.poster:
+            await self._deps.poster.send_typing(channel_id)
+
+    async def add_reaction(self, post_id: str, emoji_name: str) -> None:
+        """Add a reaction to ``post_id``. No-op if not configured."""
+        if self._deps.poster:
+            await self._deps.poster.add_reaction(post_id, emoji_name)
+
+    async def remove_reaction(self, post_id: str, emoji_name: str) -> None:
+        """Remove a reaction from ``post_id``. No-op if not configured."""
+        if self._deps.poster:
+            await self._deps.poster.remove_reaction(post_id, emoji_name)
+
+    async def post_progress(
+        self,
+        channel_id: str,
+        thread_id: str | None,
+        text: str,
+        *,
+        update_post_id: str | None = None,
+    ) -> str | None:
+        """Post or update one progress message. No-op when the poster is not configured."""
+        if self._deps.poster is None:
+            return None
+        return await self._deps.poster.post_progress(
+            channel_id, thread_id, text, update_post_id=update_post_id
+        )
 
     async def load_pr(self, pr_ref: str) -> MentionPr | None:
         """Return the PR for ``pr_ref``, or None when it is malformed or not this tenant's."""
