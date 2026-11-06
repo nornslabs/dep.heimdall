@@ -102,8 +102,9 @@ CONFIG_MM = AgentConnectionConfig(
     connection_id="conn-1",
     mattermost_bot_token="mm-token-1",
     mattermost_team_id="team-1",
+    mattermost_base_url="http://mattermost.test",
 )
-MM_POSTS_URL = "http://switch.test/api/v4/posts"
+MM_POSTS_URL = "http://mattermost.test/api/v4/posts"
 
 
 @respx.mock

@@ -36,7 +36,7 @@ class AgentPoster:
         )
         # Separate client for Mattermost REST API (bot token) for feedback features
         self._mm_client: httpx.AsyncClient | None = None
-        if config.mattermost_bot_token and config.mattermost_team_id:
+        if config.mattermost_bot_token and config.mattermost_team_id and config.mattermost_base_url:
             self._mm_client = httpx.AsyncClient(
                 headers={"Authorization": f"Bearer {config.mattermost_bot_token}"},
                 timeout=POST_TIMEOUT_SECONDS,
@@ -96,7 +96,7 @@ class AgentPoster:
     async def send_typing(self, channel_id: str) -> None:
         """Send a typing indicator for this agent in the given channel.
 
-        Uses Mattermost REST API: ``POST /api/v4/users/me/teams/{team_id}/channels/{channel_id}/typing``.
+        Uses Mattermost REST typing endpoint.
         No-op if bot token or team ID is not configured. Fire-and-forget: errors are logged
         but not raised to avoid disrupting the main flow.
 
@@ -105,8 +105,11 @@ class AgentPoster:
         """
         if not self._mm_client:
             return
+        base = self._config.mattermost_base_url  # pyright: ignore[reportOptionalMemberAccess]
+        assert base is not None
+        team = self._config.mattermost_team_id  # pyright: ignore[reportOptionalMemberAccess]
         try:
-            url = f"{self._config.base_url.rstrip('/')}/api/v4/users/me/teams/{self._config.mattermost_team_id}/channels/{channel_id}/typing"
+            url = f"{base.rstrip('/')}/api/v4/users/me/teams/{team}/channels/{channel_id}/typing"
             await self._mm_client.post(url)
         except Exception:
             # Silently ignore - typing is a best-effort UX feature
@@ -123,9 +126,13 @@ class AgentPoster:
         """
         if not self._mm_client:
             return
+        base = self._config.mattermost_base_url  # pyright: ignore[reportOptionalMemberAccess]
+        assert base is not None
         try:
-            url = f"{self._config.base_url.rstrip('/')}/api/v4/users/me/posts/{post_id}/reactions"
-            await self._mm_client.post(url, json={"user_id": "me", "post_id": post_id, "emoji_name": emoji_name})
+            url = f"{base.rstrip('/')}/api/v4/users/me/posts/{post_id}/reactions"
+            await self._mm_client.post(
+                url, json={"user_id": "me", "post_id": post_id, "emoji_name": emoji_name}
+            )
         except Exception:
             pass
 
@@ -140,8 +147,10 @@ class AgentPoster:
         """
         if not self._mm_client:
             return
+        base = self._config.mattermost_base_url  # pyright: ignore[reportOptionalMemberAccess]
+        assert base is not None
         try:
-            url = f"{self._config.base_url.rstrip('/')}/api/v4/users/me/posts/{post_id}/reactions/{emoji_name}"
+            url = f"{base.rstrip('/')}/api/v4/users/me/posts/{post_id}/reactions/{emoji_name}"
             await self._mm_client.delete(url)
         except Exception:
             pass
@@ -173,7 +182,9 @@ class AgentPoster:
         """
         if not self._mm_client:
             return None
-        base = self._config.base_url.rstrip("/")
+        base = self._config.mattermost_base_url  # pyright: ignore[reportOptionalMemberAccess]
+        assert base is not None
+        base = base.rstrip("/")  # pyright: ignore[reportOptionalMemberAccess]
         try:
             if update_post_id is not None:
                 await self._mm_client.patch(
@@ -219,7 +230,9 @@ class AgentPoster:
         """
         if not self._mm_client:
             return None
-        base = self._config.base_url.rstrip("/")
+        base = self._config.mattermost_base_url  # pyright: ignore[reportOptionalMemberAccess]
+        assert base is not None
+        base = base.rstrip("/")  # pyright: ignore[reportOptionalMemberAccess]
         payload: dict[str, object] = {
             "channel_id": room_id,
             "root_id": thread_id or "",
