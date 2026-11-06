@@ -225,8 +225,11 @@ key `mention:<agent>:<message_id>`, so a redelivered job never posts twice.
   failure line.
 - **Redelivery.** A job whose reply is already in the outbox stops before any model call, so
   act mode's write never runs twice for one message.
-- **Fixed lines.** No PR thread (or an unknown PR, which is then not threaded): "Mention me in a PR's thread…", with no
-  model call. A run that does not finish (repair spent, limits, model down, head moved):
+- **Chat outside a PR.** No PR thread (or an unknown PR, which is then not threaded): one
+  tool-less model call (`_chat_reply.py`) writes a short, natural reply (greeting, who the
+  agent is, an invitation to mention it in a PR thread). It makes no claims about code, wraps
+  the message as data, and passes the tone, secret and broadcast filters. If the model fails
+  or nothing safe is left, the fixed line "Mention me in a PR's thread…" is posted. A run that does not finish (repair spent, limits, model down, head moved):
   "I couldn't produce a grounded answer…". A non-maintainer's request to act gets the ask
   answer plus "Only maintainers can ask me to act…".
 
@@ -238,6 +241,7 @@ key `mention:<agent>:<message_id>`, so a redelivered job never posts twice.
 | `_mention_prompt.py` | `MentionPr`, `Question`, `build_mention_messages`, `build_intent_messages` |
 | `_mention_run.py` | `run_mode`, `confirm_intent`, id pinning, `MentionAgent`, `MentionPorts` |
 | `_conversation.py` | `answer_mention`, `MentionAnswer` |
+| `_chat_reply.py` | `chat_reply`: the tool-less reply to a mention outside a PR thread |
 | `_mention_ports.py` | `DbMentionPorts`, `MentionDeps`, `ActSetup` |
 | `_mention_task.py` | `register_mention_task`: the job body and its outbox reply |
 

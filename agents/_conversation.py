@@ -10,6 +10,7 @@ itself the tools. Nothing here posts; the caller queues the returned text throug
 from dataclasses import dataclass
 from typing import Final
 
+from agents._chat_reply import chat_reply
 from agents._evidence import MentionMode
 from agents._mention_prompt import MentionPr, Question
 from agents._mention_run import (
@@ -75,11 +76,13 @@ async def answer_mention(
 
     Returns:
         The rendered reply (an answer with evidence, a fixed redirect or refusal, or a fixed
-        line when there is no PR or no grounded answer) and the PR it threads under.
+        line when there is no grounded answer; with no PR, a short model-written chat reply that
+        falls back to the fixed line) and the PR it threads under.
     """
     pr = None if question.pr_ref is None else await ports.load_pr(question.pr_ref)
     if pr is None:
-        return MentionAnswer(f"{agent_prefix(agent.scope)} {NO_PR_REPLY}", None)
+        chatted = await chat_reply(agent.scope, ai, question.text)
+        return MentionAnswer(f"{agent_prefix(agent.scope)} {chatted or NO_PR_REPLY}", None)
     text = await _answer_for_pr(agent, ports, ai, pr, question)
     return MentionAnswer(text, pr.pr_id)
 
