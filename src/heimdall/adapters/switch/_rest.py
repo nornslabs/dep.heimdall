@@ -61,13 +61,13 @@ class MattermostRest:
         """Add a reaction as the authenticated bot user."""
         await self._request(
             "POST",
-            f"/api/v4/users/me/posts/{post_id}/reactions",
-            json={"user_id": "me", "post_id": post_id, "emoji_name": emoji_name},
+            f"/api/v4/posts/{post_id}/reactions",
+            json={"emoji_name": emoji_name},
         )
 
     async def remove_reaction(self, post_id: str, emoji_name: str) -> None:
         """Remove the authenticated bot user's reaction from a post."""
-        await self._request("DELETE", f"/api/v4/users/me/posts/{post_id}/reactions/{emoji_name}")
+        await self._request("DELETE", f"/api/v4/posts/{post_id}/reactions/{emoji_name}")
 
     async def get_post(self, post_id: str) -> RoomPost:
         """Fetch one Mattermost post by id."""

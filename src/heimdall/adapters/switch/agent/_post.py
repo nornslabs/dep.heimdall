@@ -129,10 +129,8 @@ class AgentPoster:
         base = self._config.mattermost_base_url  # pyright: ignore[reportOptionalMemberAccess]
         assert base is not None
         try:
-            url = f"{base.rstrip('/')}/api/v4/users/me/posts/{post_id}/reactions"
-            await self._mm_client.post(
-                url, json={"user_id": "me", "post_id": post_id, "emoji_name": emoji_name}
-            )
+            url = f"{base.rstrip('/')}/api/v4/posts/{post_id}/reactions"
+            await self._mm_client.post(url, json={"emoji_name": emoji_name})
         except Exception:
             pass
 
@@ -150,7 +148,7 @@ class AgentPoster:
         base = self._config.mattermost_base_url  # pyright: ignore[reportOptionalMemberAccess]
         assert base is not None
         try:
-            url = f"{base.rstrip('/')}/api/v4/users/me/posts/{post_id}/reactions/{emoji_name}"
+            url = f"{base.rstrip('/')}/api/v4/posts/{post_id}/reactions/{emoji_name}"
             await self._mm_client.delete(url)
         except Exception:
             pass
