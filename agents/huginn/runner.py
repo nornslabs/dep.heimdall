@@ -39,9 +39,9 @@ from heimdall.modules.tenancy.api import load_config
 from heimdall.modules.triage.api import get_pr_snapshot
 from heimdall.shared.agents import AgentName
 from heimdall.shared.context import TenantCtx, new_request_id
+from heimdall.shared.errors import ConfigInvalid
 from heimdall.shared.github import RepoRef
 from heimdall.shared.ids import InstallationId
-from heimdall.shared.errors import ConfigInvalid
 from heimdall.shared.logging import get_logger
 
 PROMPT_PATH = Path(__file__).with_name("prompt.md")
@@ -49,13 +49,18 @@ PROMPT_PATH = Path(__file__).with_name("prompt.md")
 log = get_logger(__name__)
 
 
-def _build_feedback_client(agent: AgentName, environ: Mapping[str, str] | None = None) -> SwitchAgentClient | None:
+def _build_feedback_client(
+    agent: AgentName,
+    environ: Mapping[str, str] | None = None,
+) -> SwitchAgentClient | None:
     """Build a SwitchAgentClient for feedback features (typing, reactions).
 
     Returns None if credentials are not configured, allowing graceful degradation.
     """
     try:
-        config = load_agent_credentials(agent.value, switch_api_url(environ), rooms=(), environ=environ)
+        config = load_agent_credentials(
+            agent.value, switch_api_url(environ), rooms=(), environ=environ
+        )
     except ConfigInvalid:
         return None
     # No rooms needed for feedback client - it only makes REST calls

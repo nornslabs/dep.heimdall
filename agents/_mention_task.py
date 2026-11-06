@@ -6,7 +6,7 @@ The idempotency key is the message and agent, so a redelivered job never posts t
 
 import asyncio
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from procrastinate import App
 from sqlalchemy.ext.asyncio import async_sessionmaker
@@ -16,9 +16,9 @@ from agents._conversation import MentionAnswer, Question, answer_mention
 from agents._job_context import load_agent_room_id
 from agents._mention import AGENT_MENTION_TASK
 from agents._mention_ports import DbMentionPorts, MentionDeps
-from heimdall.adapters.switch.agent.client import SwitchAgentClient
 from heimdall.adapters.db.outbox.writer import outbox_message_exists, write_outbox
 from heimdall.adapters.db.unit_of_work import unit_of_work
+from heimdall.adapters.switch.agent.client import SwitchAgentClient
 from heimdall.shared.context import TenantCtx, new_request_id
 from heimdall.shared.ids import InstallationId
 from heimdall.shared.logging import get_logger
@@ -39,10 +39,8 @@ async def _typing_indicator(poster: SwitchAgentClient | None, channel_id: str):
     async def refresh():
         while not stop.is_set():
             await poster.send_typing(channel_id)
-            try:
+            with suppress(TimeoutError):
                 await asyncio.wait_for(stop.wait(), _TYPING_REFRESH_INTERVAL)
-            except TimeoutError:
-                pass
 
     task = asyncio.create_task(refresh())
     try:

@@ -26,6 +26,7 @@ from agents._runtime import AgentTool, ChatModel
 from apps.mcp.main import create_server
 from heimdall.adapters.db.unit_of_work import unit_of_work
 from heimdall.adapters.github.reader import GitHubApiReader
+from heimdall.adapters.switch.agent.client import SwitchAgentClient
 from heimdall.modules.tenancy.api import get_repo_full_name_in_transaction, repo_maintainers
 from heimdall.modules.triage.api import PrSnapshot, get_pr_snapshot
 from heimdall.shared.context import TenantCtx
@@ -62,10 +63,6 @@ type ApproveByMessage = Callable[
 """An agent's first look at a mention: an answer when the message settles a pending approval,
 or None to let the normal ask/act conversation handle it."""
 
-
-from heimdall.adapters.switch.agent.client import SwitchAgentClient
-
-# ... existing imports ...
 
 @dataclass(frozen=True)
 class MentionDeps:
