@@ -215,6 +215,13 @@ DATABASE_URL=postgresql://heimdall:<password>@localhost:5432/heimdall uv run pyt
 The CI workflow runs lint, formatting, Pyright, unit tests, database integration tests and the
 end-to-end replay on pushes and pull requests.
 
+## Documentation
+
+`docs/index.md` is the single navigation page for all Heimdall documentation: how it works,
+setup, architecture, configuration, security, development, and agents. Each scoped README
+(`src/heimdall/modules/*/README.md`, `src/heimdall/adapters/*/README.md`, `apps/*/README.md`,
+`agents/README.md`) describes its own folder in detail.
+
 ## Demo
 
 The demo recording is not available yet. The recording task is tracked in

@@ -23,3 +23,9 @@ Public functions: `start_run`, `get_run`, `latest_run_id`, `record_result`, `tim
 
 Table `repro_runs` stores run state, paired outcomes, and verdict. `workflow_dispatch_approvals`
 stores dispatch authorization and is owned by approval.
+
+## Related documentation
+
+- `docs/how-it-works.md` — Huginn reproduction (stage 4).
+- `docs/config.md` — the `repro` section of `heimdall.yml`.
+- `docs/security.md` — read-only repro workflow with no secrets.

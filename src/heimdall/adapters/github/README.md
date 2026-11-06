@@ -53,3 +53,8 @@ githubkit 0.17 sends requests through `httpx2`, which `respx` cannot intercept, 
 an `httpx2.MockTransport` through `GitHubAppClients(async_transport=...)`. See
 `tests/integration/adapters/github/fake_github.py`. Tests generate a throwaway RSA key, so no
 secret is committed, and they never touch the network.
+
+## Related documentation
+
+- `docs/architecture.md` — adapter borders and what the GitHub adapter owns.
+- `docs/security.md` — the GitHub adapter is read-only; Gjallarhorn is the only writer.

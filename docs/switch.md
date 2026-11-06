@@ -199,6 +199,11 @@ registry's `/v2/sandbox-quantum/standalone-compose/tags/list`. Use a released ta
   start. Check `docker compose logs switch`.
 - **Starting over:** `docker compose down -v` deletes the Postgres and Mattermost volumes,
   including Heimdall's data.
-- **Mattermost version:** Switch's own stack bundles Mattermost 11.9; this repo runs the version in
-  `docker-compose.yml`. Switch's Mattermost connection worked against it in testing; treat a
-  Mattermost bump as a change to re-verify.
+Switch's own stack bundles Mattermost 11.9; this repo runs the version in
+`docker-compose.yml`. Switch's Mattermost connection worked against it in testing; treat a
+Mattermost bump as a change to re-verify.
+
+## Related documentation
+
+- `docs/setup.md` — first-time setup and `apps.bridge.setup`, which wires Switch and Mattermost.
+- `apps/bridge/README.md` — the bridge that streams room events and records approvals.

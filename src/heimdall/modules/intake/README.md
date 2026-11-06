@@ -25,3 +25,8 @@ capped at `MAX_THREAD_TITLE_CHARS`, and stripped of Markdown and `@` mention syn
 `cla-signed`, `cla: yes`, or `cla: signed` when the repo requires a CLA.
 
 The six checks are linked issue, author assignment, required labels, open PR limit, CLA, and CI.
+
+## Related documentation
+
+- `docs/how-it-works.md` — intake is stage 2 of the request lifecycle.
+- `docs/config.md` — the `heimdall.yml` `intake` section and defaults.

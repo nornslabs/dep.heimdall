@@ -23,3 +23,8 @@ Public functions: `record_approval`, `approve_by_policy`, `pause_auto_suggestion
 
 Tables `approvals` and `workflow_dispatch_approvals` hold tenant-scoped authorizations.
 Workflow authorizations are unique per reproduction run and store the exact request hash.
+
+## Related documentation
+
+- `docs/how-it-works.md` — draft approval and Gjallarhorn posting (stages 7–8).
+- `docs/security.md` — draft-hash binding and why only Gjallarhorn writes to GitHub.

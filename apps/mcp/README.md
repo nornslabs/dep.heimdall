@@ -23,3 +23,8 @@ it. Memory tools (`recall`, `remember`, `forget`) are registered through
 || `main.py` | `create_server` plus per-agent tool handlers (`start_repro`, `get_repro`, memory tools) |
 || `_memory_tools.py` | `register_memory_tools`: read-only `recall` plus maintainer-gated `remember`/`forget` |
 || `_checks_tool.py` | `register_checks_tool`: `rerun_checks` asks triage to run all of a PR's checks again; triage decides whether it may |
+
+## Related documentation
+
+- `docs/agents.md` — agent runtime, tools, and the MCP tool contract per agent.
+- `agents/README.md` — the shared runtime agents build on.

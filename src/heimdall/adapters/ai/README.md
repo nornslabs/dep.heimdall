@@ -73,3 +73,8 @@ register_provider("my_gateway", MyGateway())   # then LLM_<AGENT>_PROVIDER=my_ga
 `send` makes one request and does not retry. It raises `AiUnavailable`, `AiRequestFailed` or
 `AiBadResponse` as in the table above. The helpers in `providers/_wire.py` already map HTTP
 statuses to these errors.
+
+## Related documentation
+
+- `docs/agents.md` — how agents use `AiAdapter` and `ai.chat(...)`.
+- `docs/config.md` — `LLM_DEFAULT_*` / `LLM_<AGENT>_*` environment variables.

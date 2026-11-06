@@ -29,3 +29,8 @@ async with unit_of_work(sessions) as session:
 
 Tables: procrastinate's own (`procrastinate_jobs`, `procrastinate_events`, ...); alembic's
 autogenerate ignores them (`include_in_migrations` in `adapters/db/metadata.py`).
+
+## Related documentation
+
+- `docs/architecture.md` — jobs go in the Postgres queue inside the state-change transaction.
+- `apps/worker/README.md` — the worker process that runs the queued jobs.

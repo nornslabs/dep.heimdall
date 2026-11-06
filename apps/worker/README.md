@@ -7,7 +7,7 @@ It wires settings, database, the Procrastinate queue app and the GitHub/Switch s
 registers one task per module job:
 
 || Task | Owner |
-|---|---|---|
+|---|---|
 | `intake.run_intake` | `intake` — applies `heimdall.yml` rules for a PR head |
 | `triage.handle_event` | `triage` — applies one persisted GitHub delivery to the state machine |
 | `repro.timeout` | `repro` — finishes reproduction when its paired run does not return |
@@ -23,7 +23,13 @@ or an agent poster keyed by the thread store; a `GitHubSender` posts GitHub comm
 approval outbox. Both run in the same transaction as the state change they follow.
 
 || File | Role |
-|---|---|---|
-|| `main.py` | `run_worker`: settings, engine, queue app, senders, task registration, run loop |
-|| `tasks.py` | `register_*_task`: one Procrastinate task per module job |
-|| `_threads.py` | `SessionThreadStore`: maps PR threads to outbox sessions |
+|---|---|
+| `main.py` | `run_worker`: settings, engine, queue app, senders, task registration, run loop |
+| `tasks.py` | `register_*_task`: one Procrastinate task per module job |
+| `_threads.py` | `SessionThreadStore`: maps PR threads to outbox sessions |
+
+## Related documentation
+
+- `docs/architecture.md` — the worker runs jobs and the outbox sender loop; outbox channels are
+  `switch` and `github`.
+- `src/heimdall/adapters/queue/README.md` — the Postgres job queue (procrastinate).

@@ -63,4 +63,9 @@ Choices the LLD leaves open:
 Huginn and Loki each report only their own check. `on_step_done_in_transaction` locks the
 PR row, adds any check already finished on the same head (`with_checks_done`), and stores
 the finishing check's head in `repro_done_head` or `review_done_head`. A check counts only
-while its stored head equals `prs.head_sha`, so a push makes both pending again.
+A check counts only while its stored head equals `prs.head_sha`, so a push makes both pending again.
+
+## Related documentation
+
+- `docs/how-it-works.md.triage.md` — the full transition table and rejection rules.
+- `docs/architecture.md` — the state machine is owned by `triage.domain.next_state`.

@@ -44,3 +44,9 @@ agent's reply (a post starting `Heimdall:`, `Huginn:` or `Loki:`) arrives in the
 bridge swaps 👀 for ✅. Switch agents cannot react, so the bridge, which sees every post with its
 Mattermost id, does it. Pending mentions are kept in memory and expire after 15 minutes; a failed
 reaction is logged and never blocks an answer.
+
+## Related documentation
+
+- `docs/setup.md` — first-time setup (`apps.bridge.setup`) and agent registration.
+- `docs/switch.md` — full Switch reference: agent registration by hand, addressing, two room ids.
+- `docs/architecture.md` — the bridge streams room events and records approvals.
