@@ -136,24 +136,24 @@ async def test_a_write_the_guard_refused_is_not_an_action_taken() -> None:
 
 
 async def test_a_recheck_is_accepted_only_after_the_recheck_tool_ran() -> None:
-    reply = _reply(evidence=[], action_taken="intake_rerun")
-    ran = await _tracker_that_saw(_tool("recheck_intake", {"rechecked": "yes"}))
+    reply = _reply(evidence=[], action_taken="checks_rerun")
+    ran = await _tracker_that_saw(_tool("rerun_checks", {"rechecked": "yes"}))
 
     assert reply_problems(reply, ran, agent=AgentName.HEIMDALL, mode="act") == ()
 
 
 async def test_a_claimed_recheck_that_never_ran_is_refused() -> None:
-    reply = _reply(evidence=[], action_taken="intake_rerun")
+    reply = _reply(evidence=[], action_taken="checks_rerun")
     nothing_ran = await _tracker_that_saw()
 
     problems = reply_problems(reply, nothing_ran, agent=AgentName.HEIMDALL, mode="act")
 
-    assert any("intake_rerun" in problem for problem in problems)
+    assert any("checks_rerun" in problem for problem in problems)
 
 
 async def test_a_recheck_cannot_be_claimed_in_ask_mode() -> None:
-    reply = _reply(evidence=[], action_taken="intake_rerun")
-    tracker = await _tracker_that_saw(_tool("recheck_intake", {"rechecked": "yes"}))
+    reply = _reply(evidence=[], action_taken="checks_rerun")
+    tracker = await _tracker_that_saw(_tool("rerun_checks", {"rechecked": "yes"}))
 
     problems = reply_problems(reply, tracker, agent=AgentName.HEIMDALL, mode="ask")
 
@@ -161,9 +161,9 @@ async def test_a_recheck_cannot_be_claimed_in_ask_mode() -> None:
 
 
 async def test_a_refused_recheck_does_not_count_as_having_run() -> None:
-    reply = _reply(evidence=[], action_taken="intake_rerun")
-    refused = await _tracker_that_saw(_tool("recheck_intake", "error: refused by guard"))
+    reply = _reply(evidence=[], action_taken="checks_rerun")
+    refused = await _tracker_that_saw(_tool("rerun_checks", "error: refused by guard"))
 
     problems = reply_problems(reply, refused, agent=AgentName.HEIMDALL, mode="act")
 
-    assert any("intake_rerun" in problem for problem in problems)
+    assert any("checks_rerun" in problem for problem in problems)

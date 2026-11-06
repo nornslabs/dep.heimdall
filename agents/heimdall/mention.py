@@ -9,8 +9,8 @@ from agents._mcp_tools import McpToolClient
 from agents._mention_ports import ActSetup
 from agents._runtime import AgentTool
 from agents.heimdall._auto_approve import approve_on_save
-from agents.heimdall._recheck_guard import report_recheck_refusal
-from agents.heimdall.allowed_tools import ACT_TOOLS, ASK_TOOLS, DRAFT_TOOLS, RECHECK_TOOL
+from agents.heimdall._rerun_guard import report_rerun_refusal
+from agents.heimdall.allowed_tools import ACT_TOOLS, ASK_TOOLS, DRAFT_TOOLS, RERUN_CHECKS_TOOL
 from agents.heimdall.config import BUDGET
 from agents.heimdall.guardrails import DeskGuard, guard_save_draft
 from agents.heimdall.scope import SCOPE
@@ -35,7 +35,7 @@ async def guard_act_tools(setup: ActSetup, tools: tuple[AgentTool, ...]) -> tupl
         tools: The act-mode tools from Heimdall's server.
 
     Returns:
-        The same tools with the draft tools and ``recheck_intake`` guarded.
+        The same tools with the draft tools and ``rerun_checks`` guarded.
     """
     finding_ids = await _finding_ids(McpToolClient(setup.server), setup)
     guard = DeskGuard(existing_finding_ids=finding_ids)
@@ -44,8 +44,8 @@ async def guard_act_tools(setup: ActSetup, tools: tuple[AgentTool, ...]) -> tupl
 
 def _guarded(setup: ActSetup, guard: DeskGuard, tool: AgentTool) -> AgentTool:
     """Guard a write tool: the draft cap on drafts, a visible refusal on a recheck."""
-    if tool.spec.name == RECHECK_TOOL:
-        return report_recheck_refusal(tool)
+    if tool.spec.name == RERUN_CHECKS_TOOL:
+        return report_rerun_refusal(tool)
     if tool.spec.name not in DRAFT_TOOLS:
         return tool
     return guard_save_draft(guard, approve_on_save(setup, tool))

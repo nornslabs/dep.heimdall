@@ -165,17 +165,17 @@ def test_broadcast_mentions_in_an_answer_are_neutralised() -> None:
     assert "@all" not in message
 
 
-def test_an_intake_rerun_reply_needs_no_evidence() -> None:
+def test_an_checks_rerun_reply_needs_no_evidence() -> None:
     reply = _reply(
         answer="Intake is running again on the current head.",
         evidence=[],
-        action_taken="intake_rerun",
+        action_taken="checks_rerun",
     )
 
-    assert reply.action_taken == "intake_rerun"
+    assert reply.action_taken == "checks_rerun"
 
 
-def test_an_unsummarised_intake_rerun_is_still_named_in_the_room() -> None:
-    line = render_unsummarised_actions(HUGINN_SCOPE, ["intake_rerun"])
+def test_an_unsummarised_checks_rerun_is_still_named_in_the_room() -> None:
+    line = render_unsummarised_actions(HUGINN_SCOPE, ["checks_rerun"])
 
-    assert "re-ran intake" in line
+    assert "re-ran the checks" in line

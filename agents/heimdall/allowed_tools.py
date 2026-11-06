@@ -16,7 +16,7 @@ ALLOWED_TOOLS: frozenset[str] = frozenset(
         "draft_reopen",
         "draft_merge",
         "draft_ask_contributor",
-        "recheck_intake",
+        "rerun_checks",
         "create_mechanical_task",
         "recall",
     }
@@ -30,9 +30,9 @@ DRAFT_TOOLS: frozenset[str] = frozenset(
 )
 """Every tool that saves a draft for approval. They share one per-command draft cap."""
 
-RECHECK_TOOL = "recheck_intake"
+RERUN_CHECKS_TOOL = "rerun_checks"
 """Queues intake again for the PR; triage decides whether the PR may go back."""
 
-ACT_TOOLS: frozenset[str] = ASK_TOOLS | DRAFT_TOOLS | frozenset({RECHECK_TOOL})
+ACT_TOOLS: frozenset[str] = ASK_TOOLS | DRAFT_TOOLS | frozenset({RERUN_CHECKS_TOOL})
 """Ask tools, the draft tools and the intake recheck; a mention never opens ``save_card`` or a
 mechanical task."""
