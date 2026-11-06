@@ -64,6 +64,7 @@ def test_mcp_server_registers_reproduction_tools() -> None:
                 "draft_reopen",
                 "draft_merge",
                 "draft_ask_contributor",
+                "recheck_intake",
                 "create_mechanical_task",
                 "recall",
             },

@@ -18,3 +18,13 @@ def test_action_tools_are_on_the_server_allowlist() -> None:
 def test_each_action_tool_reports_as_a_saved_draft() -> None:
     for name in ACTION_TOOLS:
         assert ACTION_FOR_TOOL[name] == "draft_saved"
+
+
+def test_recheck_opens_only_in_act_mode() -> None:
+    assert "recheck_intake" in ACT_TOOLS
+    assert "recheck_intake" not in ASK_TOOLS
+    assert "recheck_intake" in ALLOWED_TOOLS
+
+
+def test_recheck_reports_as_an_intake_rerun() -> None:
+    assert ACTION_FOR_TOOL["recheck_intake"] == "intake_rerun"

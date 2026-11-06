@@ -9,6 +9,7 @@ from agents._reply import (
     AgentReply,
     evidence_token,
     render_agent_reply,
+    render_unsummarised_actions,
 )
 from agents.huginn.scope import SCOPE as HUGINN_SCOPE
 from agents.loki.scope import SCOPE as LOKI_SCOPE
@@ -162,3 +163,19 @@ def test_broadcast_mentions_in_an_answer_are_neutralised() -> None:
     assert "@channel" not in message
     assert "@here" not in message
     assert "@all" not in message
+
+
+def test_an_intake_rerun_reply_needs_no_evidence() -> None:
+    reply = _reply(
+        answer="Intake is running again on the current head.",
+        evidence=[],
+        action_taken="intake_rerun",
+    )
+
+    assert reply.action_taken == "intake_rerun"
+
+
+def test_an_unsummarised_intake_rerun_is_still_named_in_the_room() -> None:
+    line = render_unsummarised_actions(HUGINN_SCOPE, ["intake_rerun"])
+
+    assert "re-ran intake" in line
