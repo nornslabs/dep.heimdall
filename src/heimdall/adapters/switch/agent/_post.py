@@ -15,6 +15,9 @@ class AgentPoster:
     A lock keeps posts in call order. There is no retry here on purpose: ``/message`` takes no
     idempotency key, so a blind retry after a timeout could double-post. Callers (the outbox)
     own retries.
+
+    Also provides feedback features (typing, reactions, progress posts) via Mattermost REST API
+    when bot token and team ID are configured.
     """
 
     def __init__(
@@ -31,6 +34,14 @@ class AgentPoster:
             timeout=POST_TIMEOUT_SECONDS,
             transport=transport,
         )
+        # Separate client for Mattermost REST API (bot token) for feedback features
+        self._mm_client: httpx.AsyncClient | None = None
+        if config.mattermost_bot_token and config.mattermost_team_id:
+            self._mm_client = httpx.AsyncClient(
+                headers={"Authorization": f"Bearer {config.mattermost_bot_token}"},
+                timeout=POST_TIMEOUT_SECONDS,
+                transport=transport,
+            )
 
     async def post(self, room_id: str, content: str) -> None:
         """Post ``content`` to ``room_id`` as this agent.
@@ -82,9 +93,160 @@ class AgentPoster:
             raise SwitchRequestFailed(f"Switch returned {response.status_code}")
         return _event_id(response)
 
+    async def send_typing(self, channel_id: str) -> None:
+        """Send a typing indicator for this agent in the given channel.
+
+        Uses Mattermost REST API: ``POST /api/v4/users/me/teams/{team_id}/channels/{channel_id}/typing``.
+        No-op if bot token or team ID is not configured. Fire-and-forget: errors are logged
+        but not raised to avoid disrupting the main flow.
+
+        Args:
+            channel_id: Mattermost channel (room) ID.
+        """
+        if not self._mm_client:
+            return
+        try:
+            url = f"{self._config.base_url.rstrip('/')}/api/v4/users/me/teams/{self._config.mattermost_team_id}/channels/{channel_id}/typing"
+            await self._mm_client.post(url)
+        except Exception:
+            # Silently ignore - typing is a best-effort UX feature
+            pass
+
+    async def add_reaction(self, post_id: str, emoji_name: str) -> None:
+        """Add a reaction to a post as the bot user.
+
+        Uses Mattermost REST API. No-op if bot token not configured.
+
+        Args:
+            post_id: The post to react to.
+            emoji_name: Emoji name (e.g., "eyes", "white_check_mark", "x").
+        """
+        if not self._mm_client:
+            return
+        try:
+            url = f"{self._config.base_url.rstrip('/')}/api/v4/users/me/posts/{post_id}/reactions"
+            await self._mm_client.post(url, json={"user_id": "me", "post_id": post_id, "emoji_name": emoji_name})
+        except Exception:
+            pass
+
+    async def remove_reaction(self, post_id: str, emoji_name: str) -> None:
+        """Remove the bot user's reaction from a post.
+
+        No-op if bot token not configured.
+
+        Args:
+            post_id: The post to remove reaction from.
+            emoji_name: Emoji name.
+        """
+        if not self._mm_client:
+            return
+        try:
+            url = f"{self._config.base_url.rstrip('/')}/api/v4/users/me/posts/{post_id}/reactions/{emoji_name}"
+            await self._mm_client.delete(url)
+        except Exception:
+            pass
+
+    async def post_progress(
+        self,
+        channel_id: str,
+        thread_id: str | None,
+        text: str,
+        *,
+        update_post_id: str | None = None,
+    ) -> str | None:
+        """Post or update one progress message and return its post id.
+
+        Creates with ``POST /api/v4/posts``, rooted in ``thread_id`` when given, and updates
+        with ``PATCH /api/v4/posts/{post_id}``. A progress post is a courtesy feature: it is
+        a no-op when the bot is not configured, and failures are swallowed so a slow Mattermost
+        never delays the reply.
+
+        Args:
+            channel_id: Channel (room) to post in.
+            thread_id: Thread to root the post in, or None for a top-level post.
+            text: Progress message text.
+            update_post_id: Id of a post created by an earlier call, to update in place.
+
+        Returns:
+            The post id, usable as ``update_post_id`` on the next call, or None when the bot
+            is not configured or the request failed.
+        """
+        if not self._mm_client:
+            return None
+        base = self._config.base_url.rstrip("/")
+        try:
+            if update_post_id is not None:
+                await self._mm_client.patch(
+                    f"{base}/api/v4/posts/{update_post_id}", json={"message": text}
+                )
+                return update_post_id
+            response = await self._mm_client.post(
+                f"{base}/api/v4/posts",
+                json={"channel_id": channel_id, "root_id": thread_id or "", "message": text},
+            )
+        except Exception:
+            # Silence network failures: the reply itself is what matters.
+            return None
+        return _post_id(response) if response.is_success else None
+
+    async def post_rich(
+        self,
+        room_id: str,
+        content: str,
+        thread_id: str | None,
+        *,
+        attachments: list[dict[str, object]],
+    ) -> str | None:
+        """Post one rich message with Mattermost attachments.
+
+        Unlike ``post_progress`` this is the reply itself, so transport and HTTP failures are
+        raised for the outbox to retry rather than swallowed. Returns None (without posting)
+        when the bot is not configured: callers fall back to plain markdown.
+
+        Args:
+            room_id: Channel (room) to post in.
+            content: Fallback message text shown when attachments are not rendered.
+            thread_id: Thread to root the post in, or None for a top-level post.
+            attachments: Mattermost attachment definitions for the rich card.
+            update_post_id: Id of a post created by an earlier call, to update in place.
+
+        Returns:
+            The post id, or None when the bot is not configured.
+
+        Raises:
+            SwitchUnavailable: the Mattermost API could not be reached or refused temporarily.
+            SwitchRequestFailed: the Mattermost API rejected the request.
+        """
+        if not self._mm_client:
+            return None
+        base = self._config.base_url.rstrip("/")
+        payload: dict[str, object] = {
+            "channel_id": room_id,
+            "root_id": thread_id or "",
+            "message": content,
+            "props": {"attachments": attachments},
+        }
+        async with self._lock:
+            try:
+                response = await self._mm_client.post(f"{base}/api/v4/posts", json=payload)
+            except httpx.TimeoutException as error:
+                raise SwitchUnavailable("Mattermost request timed out") from error
+            except httpx.RequestError as error:
+                raise SwitchUnavailable("Mattermost could not be reached") from error
+        if response.status_code >= 500 or response.status_code == 429:
+            raise SwitchUnavailable(f"Mattermost returned {response.status_code}")
+        if not response.is_success:
+            raise SwitchRequestFailed(f"Mattermost returned {response.status_code}")
+        post_id = _post_id(response)
+        if post_id is None:
+            raise SwitchRequestFailed("Mattermost reply has no post id")
+        return post_id
+
     async def aclose(self) -> None:
-        """Close the pooled HTTP client."""
+        """Close the pooled HTTP clients."""
         await self._client.aclose()
+        if self._mm_client:
+            await self._mm_client.aclose()
 
     async def _send_operation(self, body: dict[str, str]) -> httpx.Response:
         """Call the ``post_message`` operation, mapping transport failures to unavailable."""
@@ -117,6 +279,19 @@ def _event_id(response: httpx.Response) -> str:
     if not isinstance(event_id, str) or not event_id:
         raise SwitchRequestFailed("Switch reply has no event id")
     return event_id
+
+
+def _post_id(response: httpx.Response) -> str | None:
+    """Read the created post's id from a Mattermost posts reply, or None when it has none."""
+    try:
+        payload: object = response.json()
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    fields = cast(dict[str, object], payload)
+    post_id = fields.get("id")
+    return post_id if isinstance(post_id, str) and post_id else None
 
 
 def _field(value: object, name: str) -> object:
