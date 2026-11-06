@@ -1,5 +1,6 @@
 """Procrastinate worker for ready-for-reproduction Huginn jobs."""
 
+import asyncio
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
@@ -64,7 +65,7 @@ def _build_feedback_client(
     except ConfigInvalid:
         return None
     # No rooms needed for feedback client - it only makes REST calls
-    return SwitchAgentClient(config, on_message=lambda _: None)
+    return SwitchAgentClient(config, on_message=lambda _: asyncio.sleep(0))
 
 
 def register_huginn_task(
@@ -226,7 +227,9 @@ async def run_worker() -> None:
     )
     queue_app = create_queue_app(database_url)
     sessions = make_session_factory(engine)
-    register_huginn_task(queue_app, sessions, GitHubApiReader(clients), ai)
+    # Build feedback client for typing/reactions (optional)
+    feedback_client = _build_feedback_client(AgentName.HUGINN)
+    register_huginn_task(queue_app, sessions, GitHubApiReader(clients), ai, feedback_client)
     try:
         async with queue_app.open_async():
             await run_with_presence(
@@ -238,6 +241,8 @@ async def run_worker() -> None:
     finally:
         await engine.dispose()
         await ai.aclose()
+        if feedback_client:
+            await feedback_client.aclose()
 
 
 def main() -> None:
