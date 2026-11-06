@@ -26,6 +26,9 @@ class AgentConnectionConfig:
         connection_id: Chosen once per process and reused on every reconnect.
         queue_size: Events buffered between the socket reader and the handler.
         dedupe_size: How many recent message ids are remembered to drop replays.
+        mattermost_bot_token: Bot token for Mattermost REST API (typing, reactions, progress).
+            Optional; if not set, feedback features are disabled.
+        mattermost_team_id: Mattermost team ID for REST API calls. Optional.
     """
 
     base_url: str
@@ -38,6 +41,8 @@ class AgentConnectionConfig:
     initial_backoff_seconds: float = INITIAL_BACKOFF_SECONDS
     max_backoff_seconds: float = MAX_BACKOFF_SECONDS
     drain_timeout_seconds: float = DRAIN_TIMEOUT_SECONDS
+    mattermost_bot_token: str | None = field(default=None, repr=False)
+    mattermost_team_id: str | None = field(default=None, repr=False)
 
     @property
     def message_url(self) -> str:
