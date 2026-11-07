@@ -1,7 +1,7 @@
 """Fixtures for the e2e replay: real Postgres, fake GitHub and Switch, one running pipeline."""
 
-from collections.abc import AsyncIterator
 import os
+from collections.abc import AsyncIterator
 
 import pytest
 from cryptography.hazmat.primitives import serialization
