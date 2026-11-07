@@ -152,6 +152,16 @@ async def run_mode(
     messages = build_mention_messages(agent.instructions, agent.scope, pr, question, mode)
     outcome = await run_agent(run, messages)
     if isinstance(outcome, Completed):
+        log.debug(
+            "mention_reply_before_filter",
+            agent=name.value,
+            in_scope=outcome.payload.in_scope,
+            redirect_to=outcome.payload.redirect_to,
+            answer=outcome.payload.answer,
+            evidence=outcome.payload.evidence,
+            action_taken=outcome.payload.action_taken,
+            wants_action=outcome.payload.wants_action,
+        )
         return ModeResult(outcome.payload, tracker.actions())
     log.info(
         "mention_not_answered",

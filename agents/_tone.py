@@ -8,8 +8,12 @@ twice, it raises"), and code spans are ignored, so a field called `author` never
 
 import re
 
+from heimdall.shared.logging import get_logger
+
 _SENTENCE_BREAK = re.compile(r"((?<=[.!?])[ \t]+|\n+)")
 _CODE_SPAN = re.compile(r"`[^`]*`")
+
+log = get_logger(__name__)
 
 _PROVENANCE_GUESS = re.compile(
     r"\b(ai|llm|gpt|chatgpt|copilot|machine)[- ]generated\b"
@@ -44,13 +48,22 @@ def filter_tone(text: str) -> str:
     """
     parts = _SENTENCE_BREAK.split(text)
     kept: list[str] = []
+    removed: list[str] = []
     for index in range(0, len(parts), 2):
         sentence = parts[index]
         if _is_about_the_person(sentence):
+            removed.append(sentence)
             continue
         following = parts[index + 1] if index + 1 < len(parts) else ""
         kept.append(sentence + following)
-    return "".join(kept).strip()
+    result = "".join(kept).strip()
+    if removed:
+        log.debug(
+            "tone_filter_removed_sentences",
+            removed=removed,
+            kept=result,
+        )
+    return result
 
 
 def _is_about_the_person(sentence: str) -> bool:

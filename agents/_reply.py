@@ -12,12 +12,15 @@ from typing import Final, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from agents._scope import AgentScope
+from heimdall.shared.logging import get_logger
 
 MAX_ANSWER_CHARS: Final = 1200
 MAX_EVIDENCE: Final = 10
 MAX_EVIDENCE_CHARS: Final = 200
 
 NO_PR_REPLY: Final = "Mention me in a PR's thread and I'll answer about that PR."
+
+log = get_logger(__name__)
 FAILED_REPLY: Final = "I couldn't produce a grounded answer to that. Try asking more narrowly."
 ACT_DENIED_REPLY: Final = "Only maintainers can ask me to act; I've answered without acting."
 
@@ -143,6 +146,14 @@ def render_agent_reply(scope: AgentScope, reply: AgentReply) -> str:
         return f"{prefix} {scope.refusal_line()}"
     answer = _BROADCAST.sub(r"\1", reply.answer).strip()
     if not answer:
+        log.warning(
+            "agent_reply_empty_after_filter",
+            agent=scope.agent.value,
+            original_answer=reply.answer,
+            evidence=reply.evidence,
+            action_taken=reply.action_taken,
+            wants_action=reply.wants_action,
+        )
         return f"{prefix} {FAILED_REPLY}"
     if not reply.evidence:
         return f"{prefix} {answer}"
