@@ -1,5 +1,6 @@
 """Fixtures for the e2e replay: real Postgres, fake GitHub and Switch, one running pipeline."""
 
+import os
 from collections.abc import AsyncIterator
 
 import pytest
@@ -17,6 +18,28 @@ __all__ = ["database_url", "db_schema", "engine", "sessions"]
 
 APP_ID = 424_242
 RSA_KEY_BITS = 2048
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _heimdall_settings() -> None:
+    """Set required HEIMDALL_* environment variables for the e2e tests.
+
+    The e2e tests use fake GitHub and Switch, so we provide dummy values for
+    required settings that the real code would read from the environment.
+    """
+    os.environ.setdefault("HEIMDALL_DATABASE_URL", "postgresql://test:test@localhost:5432/test")
+    os.environ.setdefault("HEIMDALL_GITHUB_APP_ID", str(APP_ID))
+    os.environ.setdefault("HEIMDALL_GITHUB_PRIVATE_KEY_PATH", "/tmp/fake-key.pem")
+    os.environ.setdefault("HEIMDALL_GITHUB_WEBHOOK_SECRET", "fake-webhook-secret")
+    os.environ.setdefault("HEIMDALL_SWITCH_URL", "http://fake-switch")
+    os.environ.setdefault("HEIMDALL_SWITCH_TOKEN", "fake-switch-token")
+    os.environ.setdefault("HEIMDALL_DEFAULT_SWITCH_ROOM_ID", "fake-room-id")
+    os.environ.setdefault("HEIMDALL_DEFAULT_SWITCH_AGENT_ROOM_ID", "fake-agent-room-id")
+    os.environ.setdefault("HEIMDALL_LOG_LEVEL", "DEBUG")
+    # Clear the lru_cache so get_settings() picks up the new values
+    from heimdall.shared.settings import get_settings
+
+    get_settings.cache_clear()
 
 
 @pytest.fixture(scope="session")
