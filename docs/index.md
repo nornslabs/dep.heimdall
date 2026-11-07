@@ -34,4 +34,3 @@ When behaviour changes, the docstring and the relevant doc above are updated in 
 Docs never duplicate a scoped README — they reference it. Code samples are hand-written (Markdown is
 excluded from `ruff format` in `pyproject.toml`).
 
-Docs live under `docs/prd/` while proposed (`HEI-*.md`) and graduate into this folder when accepted.

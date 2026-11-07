@@ -242,10 +242,7 @@ outcome into a room card through the outbox.
 
 Each agent loads playbooks from `agents/<name>/skills/*.md` at startup and exposes a local
 `load_skill` tool; the system prompt carries only a name + description index. The runtime
-contract, skill format and startup validation are in `agents/README.md`. The per-agent moves are
-tracked in `docs/prd/HEI-91-huginn-agentic.md`, `docs/prd/HEI-92-loki-agentic.md` and
-`docs/prd/HEI-93-heimdall-agentic.md`; the shared pieces are `docs/prd/HEI-88-skills-loader.md`
-and `docs/prd/HEI-89-output-schemas.md`.
+contract, skill format and startup validation are in `agents/README.md`.
 
 The existing outbox path, approval hash and GitHub write rules are unchanged. Agent tests live
 under `tests/unit/agents/`.
